@@ -587,6 +587,8 @@ export function eventLabel(u) {
     case 'import': return 'Imported';
     case 'cancel': return 'Cancelled';
     case 'reopen': return `Reopened · ${LABEL[u.to] ?? u.to}`;
+    // A manager's note on a shared job (sharing.js).
+    case 'request': return `${{ question: 'Question', customer: 'Update from customer', request: 'Request' }[u.requestKind] ?? 'Request'}${u.cancels ? ' · customer cancelled' : ''}`;
     case 'status':
       if (u.to === 'in_progress' && (u.from === 'todo' || !u.from)) return 'Started';
       if (u.from === 'waiting' && u.to !== 'waiting') return `Stopped waiting · ${LABEL[u.to] ?? u.to}`;

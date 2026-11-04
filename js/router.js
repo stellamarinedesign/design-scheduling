@@ -9,6 +9,7 @@
 //   #/tasks/top            jobs not in any category
 //   #/archive, #/import    the archive, the staged import
 //   #/log                  the Log (?c=<id> filters it to a category)
+//   #/jobs                 a manager contributor's shared jobs
 //   …?t=<id>               with the task panel open on <id>: a task, a step
 //                          or a section inside a job
 //   …?n=<id>               with the panel open on a Log note (one or the
@@ -134,7 +135,7 @@ export const ROLE_TABS = {
   lead: ['home', 'tasks', 'team', 'log'],
   designer: ['tasks', 'log'],
   contributor: ['log'],
-  manager: ['log'],
+  manager: ['jobs', 'log'],
 };
 export const roleTabs = (role = state.role) => ROLE_TABS[role] ?? [];
 

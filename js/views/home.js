@@ -17,6 +17,7 @@ import { tile, enableDrag, backlogDays } from './tile.js';
 import { go } from '../router.js';
 import { newMasterCategory } from './sidebar.js';
 import { checksSection, crewSection } from './crew.js';
+import { requestsSection } from './managers.js';
 
 const FILTERS = [
   { key: 'in_progress', label: 'In progress', match: (s) => s === 'in_progress' || s === 'check' },
@@ -133,7 +134,9 @@ export function renderHome(root) {
   }
   inner.append(bsec);
 
-  // ── Ready for checking, and Crew ──
+  // ── Questions & requests from managers (only when there are any), Ready for checking, and Crew ──
+  const asked = requestsSection();
+  if (asked) inner.append(asked);
   inner.append(checksSection(), crewSection());
 }
 

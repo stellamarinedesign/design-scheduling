@@ -31,6 +31,8 @@ import { state, node, personName } from '../state.js';
 import * as T from '../tree.js';
 import * as S from '../status.js';
 import * as A from '../actions.js';
+import * as SH from '../sharing.js';
+import { shareMenu, shareText } from './managers.js';
 import { ageDays } from '../dates.js';
 import { tile, row, band, enableDrag, backlogDays } from './tile.js';
 import { go, route, routeHref } from '../router.js';
@@ -215,6 +217,8 @@ function categorySection(g) {
   master ? null : dot(T.colourOf(idx, g.id)),
   el('h2', { class: 'h2' }, T.nameOf(g)),
   g.kind === T.KIND.product ? el('span', { class: 'grp-kind' }, 'Product') : null,
+  // Shared with managers here (not just inherited): said once, on the group that chose it.
+  ['status', 'stage'].includes(SH.choiceOf(g)) ? el('span', { class: 'grp-kind', title: `Shared with managers: ${SH.SHARE_LABEL[SH.choiceOf(g)]}` }, 'Shared') : null,
   el('span', { class: 'meta' }, master ? `${cats} ${cats === 1 ? 'category' : 'categories'} · ${count} open` : `${count} open`),
   el('span', { class: 'sp' }),
   // A phone keeps the header to one row: + Job, + Group and the switches live in ⋯ there.
@@ -470,6 +474,7 @@ export function groupMenu(anchor, g, { at = null, focus = false } = {}) {
     { label: 'Rename', icon: 'edit', onSelect: () => A.rename(g.id) },
     isCat && g.kind === T.KIND.group ? { label: 'Colour…', icon: 'grid', onSelect: () => colourMenu(anchor, g) } : null,
     isCat ? { label: 'Steps template…', icon: 'tasks', onSelect: () => editTemplate(g) } : null,
+    lead && isCat ? { label: 'Share with managers…', icon: 'team', hint: shareText(g) === 'Not shared' ? null : shareText(g).split(' · ')[0], onSelect: () => shareMenu(anchor, g, { at }) } : null,
     lead && isCat && g.kind === T.KIND.group && !isTop ? { label: 'Add a product', icon: 'plus', onSelect: () => addGroup(g.id, { kind: T.KIND.product }) } : null,
     lead && isCat && g.kind === T.KIND.group ? { label: 'Turn into a job', icon: 'restore', onSelect: () => A.turnIntoJob(g.id) } : null,
     { label: 'Move to…', icon: 'move', onSelect: async () => (await import('./pickers.js')).moveDialog(g.id) },

@@ -23,6 +23,7 @@ import { confirmDialog, promptDialog } from './dialog.js';
 import * as TM from './team.js';
 import * as NT from './notes.js';
 import * as PH from './photos.js';
+import * as SH from './sharing.js';
 import { openNote, openTask } from './router.js';
 
 const ctx = () => ({ by: state.me, at: nowISO(), role: state.role, canWrite });
@@ -192,7 +193,7 @@ const STATUS_WORD = {
  * Change a task's status. Waiting asks what it waits on; a send-back asks
  * why; Done on a job with open work inside asks whether to close it too.
  */
-export async function setStatus(id, to, { comment, note, blockedBy, reason, advance = false } = {}) {
+export async function setStatus(id, to, { comment, note, blockedBy, reason, advance = false, clearRequests = false } = {}) {
   const t = node(id);
   if (!t || t.kind !== T.KIND.task) return;
   const from = t.status ?? 'todo';
@@ -259,6 +260,8 @@ export async function setStatus(id, to, { comment, note, blockedBy, reason, adva
       if (!r2.error && r2.patches.length) { extra.patches.push(...r2.patches); extra.updates.push(...r2.updates); started = next; }
     }
   }
+  // Cancelled from a customer's update: that note is answered by it.
+  if (clearRequests) extra.patches.push({ id, requestOpen: 0 });
   const patches = mergePatches([...r.patches, ...extra.patches]);
   const inverse = inverseOf(patches);
   write({ patch: patches, updates: [...r.updates, ...extra.updates] });
@@ -308,6 +311,8 @@ export function postUpdate(id, text, photos = []) {
   const refs = photos.map((p) => ({ ...PH.refOf(p), by: state.me }));
   const r = S.postUpdate(state.idx, id, text, { ...c, canWrite: canWrite(node(id)), photos: refs });
   if (r.error) { toast(r.error, { warn: true }); return false; }
+  // A reply on a job answers the managers' notes waiting on it.
+  if (r.patches[0] && (node(id)?.requestOpen ?? 0) > 0) r.patches[0].requestOpen = 0;
   const patches = [...r.patches, ...touchJob(id, c.at, { self: false })];
   write({ patch: patches, updates: r.updates, images: photos.map((p) => ({ ...p, by: state.me, at: c.at })) }, 'The update did not post');
   if (r.patches[0]?.status === 'in_progress') toast('Posted, and started');
@@ -617,6 +622,72 @@ export function ensureInboxes() {
 // ---------------------------------------------------------------------------
 // the Log
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// sharing with managers (sharing.js)
+// ---------------------------------------------------------------------------
+
+/**
+ * Share a job or a group with managers (the lead): 'status', 'stage', 'off',
+ * or null for "as the group above". The effective flags follow at once, in
+ * the same write, and the reconcile keeps them right afterwards.
+ */
+export function setShare(id, choice) {
+  const n = node(id);
+  if (!n || state.role !== 'lead') return;
+  const value = ['status', 'stage', 'off'].includes(choice) ? choice : null;
+  if ((n.shared ?? null) === value) return;
+  const at = nowISO();
+  const after = T.buildIndex(state.nodes.map((x) => (x.id === id ? { ...x, shared: value } : x)));
+  const patches = [{ id, shared: value, updatedAt: at }, ...SH.sharePatches(after)];
+  const inverse = inverseOf(patches);
+  write({ patch: patches }, 'Sharing did not save');
+  const { level, from } = SH.shareOf(after, id);
+  const jobs = after.nodes.filter((x) => x.kind === T.KIND.task && T.isJob(after, x) && SH.shareOf(after, x.id).level).length;
+  const word = level ? `Shared with managers: ${SH.SHARE_LABEL[level].toLowerCase()}${from && from.id !== id ? ` (from ${T.nameOf(from)})` : ''}` : 'Not shared with managers';
+  toast(`${word} · ${plural(jobs, 'job')} shared in all`, { action: 'Undo', onAction: () => write({ patch: inverse }) });
+}
+
+/**
+ * The lead's app keeps `sharedEffective` / `shareLevel` right: a job moved
+ * into a shared group, a step a designer added to a shared job, a job
+ * archived out of one. Idempotent; runs on every change and writes only
+ * what differs.
+ */
+const sharePending = new Set();
+export function ensureSharing() {
+  if (state.role !== 'lead' || !state.ready) return;
+  const fixes = SH.sharePatches(state.idx).filter((p) => !sharePending.has(p.id));
+  if (!fixes.length) return;
+  for (const p of fixes) sharePending.add(p.id);
+  write({ patch: fixes }).finally(() => { for (const p of fixes) sharePending.delete(p.id); });
+}
+
+/** A manager's note on a shared job: a Question, an Update from customer, or a Request. */
+export function postRequest(id, { kind, text, cancels = false }) {
+  const job = node(id);
+  const r = SH.requestWrite(job, { kind, text, cancels, by: state.me, at: nowISO() });
+  if (r.error) { toast(r.error, { warn: true }); return false; }
+  write({ patch: [r.patch], updates: [r.update] }, 'The note did not send');
+  toast(offline() ? 'Will send when back online' : 'Sent to the design team');
+  return true;
+}
+
+/** The lead has dealt with the managers' notes on a job. */
+export function answerRequests(id) {
+  const job = node(id);
+  if (!job || state.role !== 'lead' || !(job.requestOpen > 0)) return;
+  const was = job.requestOpen;
+  write({ patch: [{ id, requestOpen: 0 }] });
+  toast('Marked answered', { action: 'Undo', onAction: () => write({ patch: [{ id, requestOpen: was }] }) });
+}
+
+/** One tap from a customer's "cancelled": the job is cancelled, the note's words as the reason. */
+export function cancelFromRequest(id) {
+  const job = node(id);
+  if (!job || state.role !== 'lead' || !S.isOpen(job.status)) return;
+  setStatus(id, 'cancelled', { reason: SH.cancelReason(job, realName), clearRequests: true });
+}
 
 /**
  * The Log's two live windows (store.js): every open or actioned note, and

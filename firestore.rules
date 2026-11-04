@@ -21,8 +21,12 @@ rules_version = '2';
 //                (its parentId is the lead's to change), and creates tasks
 //                only for themselves or for nobody yet; may take their own
 //                submission back
-//   manager      (Phase 2) reads only jobs shared with managers; posts
-//                `request` updates on them; the categories, and the Log
+//   manager      reads the jobs the lead shared (`sharedEffective`, which
+//                the lead's app keeps on each shared job and, for a job
+//                shared with its stage, on its steps); posts `request`
+//                updates on them and moves the job's own `request` /
+//                `requestOpen` copy on by one, and nothing else; the
+//                categories, and the Log
 //   contributor  the Log, and the categories (groups) its notes are filed
 //                under: no jobs or tasks at all
 //
@@ -138,13 +142,13 @@ service cloud.firestore {
           && !data().diff(was()).affectedKeys().hasAny(['checkedBy', 'checkedAt']);
       }
 
-      // Contributors and managers read the categories (groups) and no task:
-      // the Log files notes under them, and its picker and paths need the
-      // names. The app's query asks for groups alone, as a rule on a query
-      // requires.
+      // Contributors and managers read the categories (groups and products)
+      // and no task: the Log files notes under them, and its picker and the
+      // Jobs list's sections need the names. The app's query asks for those
+      // kinds alone, as a rule on a query requires.
       allow read: if lead() || designer()
         || (manager() && resource.data.get('sharedEffective', false) == true)
-        || ((contributor() || manager()) && resource.data.kind == 'group');
+        || ((contributor() || manager()) && resource.data.kind in ['group', 'product']);
 
       // A designer's new task is theirs or nobody's: handing work to someone
       // else is the lead's.
@@ -159,6 +163,20 @@ service cloud.firestore {
       allow update: if lead() || (designer() && noReview() && noNewDone() && noSharingChange() && data().kind == was().kind && (
            (was().kind == 'task' && isMine(was()) && noOwnerChange() && noMove())
         || (was().kind in ['step', 'group'] && ownsParentOf(was()) && ownsParentOf(data()))));
+
+      // A manager's note on a shared job: the job keeps the latest one and
+      // counts it open - one more than before, by them, short - and that is
+      // all a manager ever changes on it.
+      function managerRequest() {
+        let r = data().get('request', {});
+        return was().kind == 'task' && was().get('sharedEffective', false) == true
+          && data().diff(was()).affectedKeys().hasOnly(['request', 'requestOpen'])
+          && data().get('requestOpen', 0) == was().get('requestOpen', 0) + 1
+          && r.get('by', '') == email()
+          && r.get('kind', '') in ['question', 'customer', 'request']
+          && r.get('text', '') is string && r.get('text', '').size() <= 280;
+      }
+      allow update: if manager() && managerRequest();
 
       allow delete: if lead();
 
@@ -176,7 +194,9 @@ service cloud.firestore {
           && request.resource.data.get('photos', []).size() <= 12
           && (lead() || !(request.resource.data.get('kind', '') in ['approve', 'sendback']))
           && (lead() || designer()
-          || (manager() && request.resource.data.kind == 'request' && task().get('sharedEffective', false) == true));
+          || (manager() && request.resource.data.kind == 'request' && task().get('sharedEffective', false) == true
+            && request.resource.data.get('requestKind', '') in ['question', 'customer', 'request']
+            && request.resource.data.get('text', '') is string && request.resource.data.get('text', '').size() <= 1000));
         allow update: if signedIn() && resource.data.by == email()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text']);
         allow delete: if lead();

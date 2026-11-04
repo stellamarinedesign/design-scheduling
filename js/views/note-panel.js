@@ -52,8 +52,6 @@ const canEdit = (n) => A.canEditNote(n);
 
 export function renderNotePanel(root, id, { fresh = false } = {}) {
   rootEl = root;
-  // The task panel's redraw-on-blur belongs to a task; not here.
-  root.onfocusout = null;
   if (fresh || shownId !== id) textOpen = false;
   const keepScroll = !fresh && shownId === id ? root.querySelector('.panel-body')?.scrollTop ?? 0 : 0;
   shownId = id;

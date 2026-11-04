@@ -12,6 +12,7 @@ import * as C from '../js/convert.js';
 import * as TM from '../js/team.js';
 import * as NT from '../js/notes.js';
 import * as PH from '../js/photos.js';
+import * as SH from '../js/sharing.js';
 import { sampleNodes, tiledoData, tiledoArchive, excelRows } from './samples.js';
 
 const results = [];
@@ -1067,6 +1068,85 @@ export async function run() {
     expect([r.updates[0].text, r.updates[0].photos.length, r.patches[0].lastNote.text], ['', 2, 'Added 2 photos']);
     ok(S.postUpdate(idx, 'j1', '', { by: BY, at: AT }).error, 'nothing at all is refused');
     ok(!('photos' in S.postUpdate(idx, 'j1', 'Words only', { by: BY, at: AT }).updates[0]), 'no empty photo list');
+  });
+
+  // -------------------------------------------------------------------------
+  group = 'sharing';
+  const shared = (patches) => T.buildIndex(apply(sampleNodes(), patches));
+  test('a job takes the nearest choice above it; its own wins; Not shared stops it', () => {
+    const idx = shared([{ id: 'g-alpha', shared: 'stage' }, { id: 'g-alpha-sub', shared: 'status' }, { id: 'j2', shared: 'off' }]);
+    expect(SH.shareOf(idx, 'j1').level, 'stage');
+    expect(SH.shareOf(idx, 'j1').from.id, 'g-alpha', 'and says where from');
+    expect(SH.shareOf(idx, 'j3').level, 'status', 'a sub-group\'s own choice');
+    expect(SH.shareOf(idx, 'j2').level, null, 'off inside a shared group');
+    expect(SH.shareOf(idx, 'j4').level, null, 'nothing above it chose');
+    expect(SH.inherited(idx, 'j2').level, 'stage', 'what it would get without its own choice');
+    expect(SH.choiceOf({ shared: true }), null, 'only the three words count');
+  });
+  test('the flags: on shared jobs, on a stage job\'s steps through sections, never into a subtask', () => {
+    const idx = shared([{ id: 'g-alpha', shared: 'stage' }, { id: 'g-beta', shared: 'status' }]);
+    const p = SH.sharePatches(idx);
+    const by = Object.fromEntries(p.map((x) => [x.id, x.shareLevel]));
+    expect(Object.keys(by).sort(), ['j1', 'j2', 'j3', 'j4', 's1', 's2', 's2a', 's2b', 's3'].sort());
+    expect([by.j1, by.s2a, by.j4], ['stage', 'stage', 'status']);
+    ok(!('t1' in by) && !('t2' in by) && !('sec' in by), 'subtasks and sections are not flagged');
+    const after = T.buildIndex(apply(sampleNodes(), [{ id: 'g-alpha', shared: 'stage' }, { id: 'g-beta', shared: 'status' }, ...p]));
+    expect(SH.sharePatches(after), [], 'idempotent');
+    const unshared = T.buildIndex(apply(after.nodes, [{ id: 'g-alpha', shared: null }]));
+    const off = SH.sharePatches(unshared);
+    expect(off.map((x) => [x.id, x.sharedEffective]).sort(), [['j1', false], ['j2', false], ['j3', false], ['s1', false], ['s2', false], ['s2a', false], ['s2b', false], ['s3', false]].sort(), 'turned off where it went');
+    expect(SH.sharePatches(index()), [], 'nothing shared, nothing written');
+  });
+  test('outside words: Ready for check is Being checked; a send-back is still In progress', () => {
+    expect(SH.outsideStatus('check'), { pill: 'check', label: 'Being checked' });
+    expect(SH.outsideStatus('fix'), { pill: 'in_progress', label: 'In progress' });
+    expect(SH.outsideStatus('waiting').label, 'Waiting');
+  });
+  test('the Jobs list: shared jobs only, filters, busiest first, done only this month', () => {
+    const now = Date.parse('2026-11-20T02:00:00.000Z');
+    const idx = shared([
+      { id: 'j1', sharedEffective: true, status: 'check', lastActivityAt: '2026-11-19T00:00:00.000Z' },
+      { id: 'j2', sharedEffective: true, status: 'fix', lastActivityAt: '2026-11-18T00:00:00.000Z' },
+      { id: 'j3', sharedEffective: true, status: 'done', doneAt: '2026-10-30T00:00:00.000Z' },
+      { id: 'j4', sharedEffective: true, status: 'done', doneAt: '2026-11-03T00:00:00.000Z' },
+      { id: 't1', sharedEffective: true },
+    ]);
+    const ids = (f, q = '') => SH.jobsList(idx, { filter: f, query: q, now }).map((j) => j.id);
+    expect(ids('all'), ['j1', 'j2', 'j4'], 'last month\'s done drops off; a subtask is never listed');
+    expect(ids('in_progress'), ['j2']);
+    expect(ids('check'), ['j1']);
+    expect(ids('done'), ['j4']);
+    expect(ids('all', 'small range'), [], 'search reaches the category path');
+    expect(ids('all', 'alpha hinge'), ['j2']);
+    expect(SH.filterCounts(idx, now), { all: 3, in_progress: 1, waiting: 0, check: 1, done: 1 });
+  });
+  test('by category: a section per category below the master, deeper groups under the title', () => {
+    const idx = shared([{ id: 'j1', sharedEffective: true }, { id: 'j3', sharedEffective: true }, { id: 'j4', sharedEffective: true }]);
+    const secs = SH.byCategory(idx, ['j4', 'j3', 'j1'].map((id) => idx.byId.get(id)));
+    expect(secs.map((s) => [s.id, s.items.map((x) => [x.job.id, x.sub])]), [['g-alpha', [['j3', 'Small range'], ['j1', '']]], ['g-beta', [['j4', '']]]]);
+  });
+  test('the stage: the current step, its state, and how far, from the steps the reader can see', () => {
+    const lead = index();
+    expect(SH.stageOf(lead, lead.byId.get('j1')).line, 'Head (next) · 2 of 5');
+    // A manager reads the steps, not the subtasks.
+    const mgr = T.buildIndex(sampleNodes().filter((n) => !['t1', 't2'].includes(n.id)));
+    const st = SH.stageOf(mgr, mgr.byId.get('j1'));
+    expect([st.line, st.strip], ['Head (next) · 2 of 3', ['done', 'doing', 'na']]);
+    const waiting = T.buildIndex(apply(mgr.nodes, [{ id: 'j1', status: 'waiting' }]));
+    expect(SH.stageOf(waiting, waiting.byId.get('j1')).line, 'Head (waiting) · 2 of 3');
+    expect(SH.stageOf(lead, lead.byId.get('j2')), null, 'no steps, no stage');
+  });
+  test('a manager\'s note: the update in full, the job\'s copy short, one more open', () => {
+    const job = { id: 'j1', requestOpen: 1 };
+    const r = SH.requestWrite(job, { kind: 'customer', text: `  ${'x'.repeat(400)}  `, cancels: true, by: 'casey@example.test', at: AT });
+    expect([r.patch.requestOpen, r.patch.request.text.length, r.patch.request.cancels, r.update.kind, r.update.requestKind, r.update.text.length], [2, SH.REQUEST_LINE_MAX, true, 'request', 'customer', 400]);
+    expect(SH.requestWrite({ id: 'j1' }, { kind: 'question', text: 'When?', cancels: true, by: 'c', at: AT }).patch.request.cancels, false, 'only a customer update cancels');
+    expect(SH.requestWrite({ id: 'j1' }, { kind: 'nonsense', text: 'Hm', by: 'c', at: AT }).update.requestKind, 'question');
+    ok(SH.requestWrite({ id: 'j1' }, { kind: 'question', text: '  ', by: 'c', at: AT }).error, 'nothing written, nothing sent');
+    expect(SH.cancelReason({ request: { text: 'Gone with another supplier', by: 'casey@example.test' } }, () => 'Casey'), 'Customer cancelled (via Casey): Gone with another supplier');
+    const idx = shared([{ id: 'j2', requestOpen: 1, request: { at: '2026-11-04T05:00:00.000Z' } }, { id: 'j1', requestOpen: 2, request: { at: '2026-11-04T03:00:00.000Z' } }, { id: 'j3', requestOpen: 0 }]);
+    expect(SH.requestQueue(idx).map((j) => j.id), ['j1', 'j2'], 'the longest waiting first');
+    expect(S.eventLabel({ kind: 'request', requestKind: 'customer', cancels: true }), 'Update from customer · customer cancelled');
   });
 
   group = 'writes';

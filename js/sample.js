@@ -48,17 +48,18 @@ export async function loadSample() {
   const say = (taskId, kind, text, days, extra = {}) => updates.push({ taskId, at: ago(days), by: me, kind, text, ...extra });
 
   const prod = group('Production');
-  const davits = group('Davits', prod, { colour: 2, stepsTemplate: [{ label: 'Concept' }, { label: '3D model' }, { label: 'Drawings' }, { label: 'Laser files' }, { label: 'Build form' }, { label: 'Checked' }] });
+  // Shared with managers (invented): Davits with their stage, Watermakers status only.
+  const davits = group('Davits', prod, { shared: 'stage', colour: 2, stepsTemplate: [{ label: 'Concept' }, { label: '3D model' }, { label: 'Drawings' }, { label: 'Laser files' }, { label: 'Build form' }, { label: 'Checked' }] });
   // Jobs sit above a category's sub-groups, as new ones do.
   const exploded = task('Exploded diagrams: 550kg davit', davits, 'in_progress', 1, { revision: 'R2' });
   step('Concept', exploded, 'done'); step('3D model', exploded, 'done'); step('Drawings', exploded, 'done'); step('PDF set', exploded, 'doing');
-  task('Davit BOM levels', davits, 'todo', 31, { brief: '- Define which assembly level each BOM covers\n- Agree the part-number ranges with production' });
+  task('Davit BOM levels', davits, 'todo', 31, { shared: 'off', brief: '- Define which assembly level each BOM covers\n- Agree the part-number ranges with production' });
   const single = group('Single stage', davits);
   const plinths = group('Plinths', davits);
   const lifters = group('Cylinder Lifters', prod, { colour: 1 });
   const rotary = group('Rotary Lifters', prod, { colour: 5 });
   const chairs = group('Helm Chairs', prod, { colour: 7 });
-  const water = group('Watermakers', prod, { colour: 6 });
+  const water = group('Watermakers', prod, { colour: 6, shared: 'status' });
   const fixes = group('Minor Fixes', prod, { colour: 4 });
   const progs = group('Programs');
   const laser = group('Laser automation', progs, { colour: 10 });
@@ -100,7 +101,7 @@ export async function loadSample() {
   step('Outline', guide, 'done'); step('Concept drawing process', guide, 'todo'); step('Checks list', guide, 'todo'); step('Examples', guide, 'todo');
   task('Premium chair recline mechanism', chairs, 'in_progress', 3);
   task('Armrest profile', chairs, 'waiting', 8, { waiting: { note: 'Supplier sample of the new profile', since: ago(8), prevStatus: 'todo', blockedBy: [] } });
-  task('600LPH boxed frame', water, 'in_progress', 8);
+  const frame = task('600LPH boxed frame', water, 'in_progress', 8);
   const plate = task('600LPH manifold plate', water, 'in_progress', 8, { assignee: sam, statusAt: ago(9), lastBy: sam });
   step('3D model', plate, 'done'); step('Drawings', plate, 'todo'); step('Laser files', plate, 'todo');
   const hinge = task('Watertight door hinge update', fixes, 'check', 8, { assignee: sam, submittedBy: sam, submittedAt: ago(8), statusAt: ago(8), lastBy: sam,
@@ -117,11 +118,21 @@ export async function loadSample() {
   task('Sheet size table', big, 'todo', 40);
   task('Part spacing by thickness', big, 'todo', 40);
 
+  // Two notes from the invented manager: a question, and a customer cancelling.
+  const casey = LOCAL_AS.manager;
+  const ask = (id, kind, text, days, cancels = false) => {
+    const n = nodes.find((x) => x.id === id);
+    n.request = { kind, text, cancels, by: casey, at: ago(days) };
+    n.requestOpen = (n.requestOpen ?? 0) + 1;
+    updates.push({ taskId: id, at: ago(days), by: casey, kind: 'request', requestKind: kind, text, cancels });
+  };
+  ask(boom, 'question', 'The customer asks whether the R3 drawings will be ready by the end of next week.', 0.15);
+  ask(frame, 'customer', 'Customer has cancelled the boxed frame; they are going with the open frame instead.', 0.4, true);
+
   await Store.commit({ set: nodes, updates });
 
   // The Log: invented notes from the invented team, with drawn sample photos.
   const riley = LOCAL_AS.contributor;
-  const casey = LOCAL_AS.manager;
   const titleOf = (id) => nodes.find((n) => n.id === id)?.title;
   const notes = [];
   const images = [];

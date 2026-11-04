@@ -37,6 +37,7 @@ import { promptDialog } from '../dialog.js';
 import { shortPath } from '../paths.js';
 import { photoTray, acceptPhotos, thumbRow } from './photo-ui.js';
 import { jobNotesList } from './note-panel.js';
+import { shareMenu, shareText, requestCallout } from './managers.js';
 
 let rootEl = null;
 let openId = null;
@@ -106,7 +107,7 @@ export function renderPanel(root, id, { fresh = false } = {}) {
     watchTimeline(id);
     watchJobNotes(id);
     const review = contextAction(n);
-    body.append(top(n), childrenSection(n), review ? el('div', { class: 'panel-review' }, review) : null, briefSection(n), fromLogSection(), foldersSection(n), updatesSection(n), footer(n));
+    body.append(top(n), requestCallout(n), childrenSection(n), review ? el('div', { class: 'panel-review' }, review) : null, briefSection(n), fromLogSection(), foldersSection(n), updatesSection(n), footer(n));
   } else {
     stopTimeline();
     body.append(nodeTop(n), childrenSection(n));
@@ -117,9 +118,18 @@ export function renderPanel(root, id, { fresh = false } = {}) {
   // a focused field would put the title in edit mode (and the keyboard up on
   // a phone). Tab reaches the title next.
   if (fresh) { root.tabIndex = -1; root.focus({ preventScroll: true }); }
-  root.onfocusout = () => setTimeout(() => {
-    if (stale && !panelEditing() && openId === id) renderPanel(root, id);
-  }, 0);
+  // A change that arrived while a field was being edited is drawn once the
+  // field lets go. A real listener, once per panel element: `onfocusout` is
+  // not an event-handler property in Chrome or Edge, so assigning one did
+  // nothing, and the panel stayed stale after Ctrl+Enter until the next
+  // change. The panel element also shows Log notes and a manager's job
+  // sheet: only a task still open here is redrawn.
+  if (!root.dataset.blurWired) {
+    root.dataset.blurWired = '1';
+    root.addEventListener('focusout', () => setTimeout(() => {
+      if (stale && !panelEditing() && openId && state.openId === openId && rootEl === root) renderPanel(root, openId);
+    }, 0));
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -256,7 +266,12 @@ function top(n) {
       ? el('button', { class: 'pv-btn', type: 'button', 'aria-haspopup': 'menu', 'aria-label': `Priority: ${prio}`, onclick: (e) => priorityMenu(e.currentTarget, n) }, prioText)
       : el('span', { class: 'pv-static' }, prioText)),
     pc('Due', dueInput),
-    pc('Rev', rev)));
+    pc('Rev', rev),
+    // What managers see of it: the lead's choice, here or from the category above.
+    lead() && T.isJob(state.idx, n) ? pc('Managers', el('button', {
+      class: 'pv-btn', type: 'button', 'aria-haspopup': 'menu', 'aria-label': `Shared with managers: ${shareText(n)}. Change`,
+      onclick: (e) => shareMenu(e.currentTarget, n),
+    }, el('span', { class: shareText(n) === 'Not shared' ? 'pv-muted' : '' }, shareText(n)))) : null));
 
   const chips = blockChips(n);
   if (chips) wrap.append(chips);

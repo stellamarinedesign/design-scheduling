@@ -157,6 +157,7 @@ export function taskMenu(anchor, t, { extra = [], at = null } = {}) {
     lead ? { label: 'Assign to…', icon: 'user', hint: t.assignee && t.assignee !== state.me ? personName(t.assignee) : null, onSelect: () => assignMenu(anchor, t, { at }) } : null,
     lead ? { label: 'Move to…', icon: 'move', onSelect: async () => { const { moveDialog } = await import('./pickers.js'); moveDialog(t.id); } } : null,
     lead && T.isJob(state.idx, t) ? { label: 'Turn into a category', icon: 'folderPlus', onSelect: () => A.turnIntoCategory(t.id) } : null,
+    lead && T.isJob(state.idx, t) ? { label: 'Share with managers…', icon: 'team', onSelect: async () => (await import('./managers.js')).shareMenu(anchor, t, { at }) } : null,
     'sep',
     can ? { label: 'Archive', icon: 'archive', onSelect: () => A.archive(t.id) } : null,
     lead ? { label: 'Delete…', icon: 'trash', danger: true, onSelect: () => A.remove(t.id) } : null,

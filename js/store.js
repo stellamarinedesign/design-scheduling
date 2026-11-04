@@ -358,23 +358,49 @@ export const Store = {
   },
 
   /**
-   * The categories alone, for someone who reads no tasks (a contributor, a
-   * manager): groups, live. The rules let them read groups and nothing else
-   * in `tasks`; the query has to ask for exactly that or it is refused.
+   * The categories alone, for someone who reads no tasks (a contributor):
+   * groups and products, live. The rules let them read those and nothing
+   * else in `tasks`; the query has to ask for exactly that or it is refused.
    */
   watchGroups(cb, onError) {
     if (this.mode === 'local') {
-      const w = { cb: (nodes, meta) => cb(nodes.filter((n) => n.kind === 'group'), meta) };
+      const w = { cb: (nodes, meta) => cb(nodes.filter((n) => n.kind === 'group' || n.kind === 'product'), meta) };
       this._watchers.add(w);
       queueMicrotask(() => w.cb(this._live(), { fromSelf: false }));
       return () => this._watchers.delete(w);
     }
     const { collection, query, where, onSnapshot } = this._fs;
     return onSnapshot(
-      query(collection(this._db, COL.tasks), where('kind', '==', 'group'), where('archivedAt', '==', null)),
+      query(collection(this._db, COL.tasks), where('kind', 'in', ['group', 'product']), where('archivedAt', '==', null)),
       (snap) => cb(snap.docs.map((d) => ({ ...d.data(), id: d.id })), { fromSelf: snap.metadata.hasPendingWrites }),
       (e) => onError?.(e),
     );
+  },
+
+  /**
+   * A manager's tree: the categories, and the jobs (with, for a job shared
+   * with its stage, its steps) that the lead has shared - two live queries,
+   * one list. A shared node is one with `sharedEffective == true`, which is
+   * what the rules test, so the query must ask for it.
+   */
+  watchShared(cb, onError) {
+    if (this.mode === 'local') {
+      const keep = (n) => n.kind === 'group' || n.kind === 'product' || n.sharedEffective === true;
+      const w = { cb: (nodes, meta) => cb(nodes.filter(keep), meta) };
+      this._watchers.add(w);
+      queueMicrotask(() => w.cb(this._live(), { fromSelf: false }));
+      return () => this._watchers.delete(w);
+    }
+    const parts = { groups: null, shared: null };
+    const send = (meta) => { if (parts.groups && parts.shared) cb([...parts.groups, ...parts.shared], meta); };
+    const stopGroups = this.watchGroups((nodes, meta) => { parts.groups = nodes; send(meta); }, onError);
+    const { collection, query, where, onSnapshot } = this._fs;
+    const stopShared = onSnapshot(
+      query(collection(this._db, COL.tasks), where('sharedEffective', '==', true), where('archivedAt', '==', null)),
+      (snap) => { parts.shared = snap.docs.map((d) => ({ ...d.data(), id: d.id })); send({ fromSelf: snap.metadata.hasPendingWrites }); },
+      (e) => onError?.(e),
+    );
+    return () => { stopGroups(); stopShared(); };
   },
 
   /** A photo's full image, as a Blob; null when it is not there. */

@@ -25,6 +25,7 @@ import { renderMyTasks } from './views/mytasks.js';
 import { renderTeam } from './views/team.js';
 import { renderPanel, panelEditing, panelUp } from './views/panel.js';
 import { renderLog } from './views/log.js';
+import { renderJobs, renderJobSheet } from './views/jobs.js';
 import { renderNotePanel } from './views/note-panel.js';
 import { openComposer } from './views/composer.js';
 // Loaded up front, not on demand: N (or the capture hotkey) is followed at
@@ -46,6 +47,7 @@ const TABS = {
   tasks: { label: 'Tasks', icon: 'tasks' },
   team: { label: 'Team', icon: 'team' },
   log: { label: 'Log', icon: 'log' },
+  jobs: { label: 'Jobs', icon: 'tasks' },
 };
 
 $('menuBtn').append(icon('menu', 20));
@@ -75,6 +77,7 @@ installContextMenus();
 
 const lead = () => state.role === ROLE.LEAD;
 const designer = () => state.role === ROLE.DESIGNER;
+const manager = () => state.role === ROLE.MANAGER;
 const openSearch = () => { if (lead() || designer()) searchNow(); };
 /**
  * The one way to add, by where you are: on the Log a note (anyone); else a
@@ -120,7 +123,8 @@ document.addEventListener('keydown', (e) => {
     if (sideOpen) { setSide(false); return; }
     if (state.noteId && !typing(e.target)) { closePanel(); return; }
     // The panel is a page you drill into: Esc goes up one level, and closes it from a job.
-    if (state.openId && !typing(e.target)) { panelUp(); return; }
+    // A manager's job sheet is one page: Esc closes it.
+    if (state.openId && !typing(e.target)) { if (manager()) closePanel(); else panelUp(); return; }
   }
   if (typing(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === 'n' || e.key === 'N') { e.preventDefault(); quickAdd(); }
@@ -164,6 +168,7 @@ function drawView() {
   else if (tab === 'team') renderTeam(view);
   else if (tab === 'tasks') { if (lead()) renderTasks(view, p[0] === 'tasks' ? (p[1] ?? null) : null); else renderMyTasks(view); }
   else if (tab === 'log') renderLog(view);
+  else if (tab === 'jobs') renderJobs(view);
   else comingSoon(view);
   // A redraw of the same page keeps its place; another page starts at the top.
   view.scrollTop = lastPath === route.path ? top : 0;
@@ -201,7 +206,7 @@ function drawChrome() {
     a.setAttribute('aria-label', n ? `${TABS[a.dataset.tab]?.label}, ${n} ${COUNT_WORDS[a.dataset.tab] ?? ''}` : TABS[a.dataset.tab]?.label ?? '');
   }
   const title = special ? (route.parts[0] === 'archive' ? 'Archive' : 'Import')
-    : tab === 'home' ? 'Home' : tab === 'team' ? 'Team' : tab === 'log' ? 'Log'
+    : tab === 'home' ? 'Home' : tab === 'team' ? 'Team' : tab === 'log' ? 'Log' : tab === 'jobs' ? 'Jobs'
       : tab === 'tasks' ? (lead() ? viewTitle(route.parts[0] === 'tasks' ? route.parts[1] : null) : 'Tasks') : 'Design Scheduling';
   // The + button adds what this page holds: a note on the Log; a job or a task elsewhere.
   const onLog = tab === 'log' && !special;
@@ -217,12 +222,20 @@ function setBehindInert(on) {
 }
 
 let lastNote = null;
+// A Log note or a manager's job sheet holding a field being typed in is not
+// redrawn under the cursor; it catches up once the field lets go (the task
+// panel does the same itself, in panel.js).
+let sheetStale = false;
+const typingInPanel = () => panel.contains(document.activeElement) && document.activeElement.matches('textarea, input:not([type=checkbox])');
+panel.addEventListener('focusout', () => setTimeout(() => {
+  if (sheetStale && !typingInPanel() && (state.noteId || manager())) { sheetStale = false; drawPanel(); }
+}, 0));
 function drawPanel(meta = {}) {
   const id = state.openId;
   setBehindInert(Boolean(id || state.noteId) && window.matchMedia('(max-width: 699px)').matches);
   // A Log note: anyone listed may read one.
   if (state.noteId) {
-    if (lastNote === state.noteId && panel.contains(document.activeElement) && document.activeElement.matches('textarea, input')) return;
+    if (lastNote === state.noteId && typingInPanel()) { sheetStale = true; return; }
     panel.hidden = false;
     renderNotePanel(panel, state.noteId, { fresh: lastNote !== state.noteId });
     lastNote = state.noteId;
@@ -230,6 +243,14 @@ function drawPanel(meta = {}) {
     return;
   }
   lastNote = null;
+  // A manager's sheet: a shared job, read-only, with their notes on it.
+  if (id && manager()) {
+    if (lastOpen === id && typingInPanel()) { sheetStale = true; return; }
+    panel.hidden = false;
+    renderJobSheet(panel, id, { fresh: lastOpen !== id });
+    lastOpen = id;
+    return;
+  }
   panel.setAttribute('aria-label', 'Task details');
   if (!id || !(lead() || designer())) { panel.hidden = true; panel.textContent = ''; lastOpen = null; return; }
   // A field being edited is never clobbered by the echo of a write (yours or
@@ -324,13 +345,17 @@ async function start() {
     drawAll(meta);
     if (!state.reconciled && state.ready) { state.reconciled = true; A.reconcileOnLoad(); }
     A.ensureInboxes();
+    A.ensureSharing();
     A.reconcileNotes();
   });
   Store.watchPeople((people) => { state.people = people; if (state.ready) drawAll(); });
   drawAll();
   // A contributor or a manager reads no tasks, only the categories (the
   // rules refuse the rest): the Log's category picker and paths need them.
+  // A manager also reads the jobs the lead shared (and, for those shared
+  // with their stage, the steps).
   if (works) Store.watchTasks((nodes, meta) => setNodes(nodes, meta), (e) => setError(e));
+  else if (manager()) Store.watchShared((nodes, meta) => setNodes(nodes, meta), (e) => setError(e));
   else Store.watchGroups((nodes, meta) => setNodes(nodes, meta), (e) => setError(e));
   // Everyone listed has the Log.
   A.startLog();
