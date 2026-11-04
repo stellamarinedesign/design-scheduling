@@ -1,8 +1,13 @@
 // views/composer.js — + Note: the Log's composer, TEXT FIRST (Log brief,
 // 2026-11-04). Someone on the workshop floor with a phone in one hand types
-// what they saw; the first line becomes the title. Then, all optional: the
+// what they saw: a Title box, then a Detail box. Then, all optional: the
 // kind (Issue · Idea · Reference), the category (their recent ones first),
 // a job (the lead and designers), and photos.
+//
+// TWO BOXES, ONE TEXT. A note is still stored as one text whose first line is
+// its title (notes.js reads it that way). With a single box, contributors
+// would write a whole paragraph as the "first line" (owner, 2026-11-05), so
+// the composer asks for the two apart and joins them on Post.
 //
 // THE DRAFT IS KEPT. Every keystroke and every photo is saved on this device
 // (the text in localStorage, the photos in IndexedDB), so a call, a closed
@@ -30,8 +35,29 @@ const loadDraft = () => { try { return JSON.parse(localStorage.getItem(DRAFT) ??
 const saveDraft = (d) => { try { localStorage.setItem(DRAFT, JSON.stringify(d)); } catch { /* private window: no draft */ } };
 const dropDraft = () => { try { localStorage.removeItem(DRAFT); } catch { /* nothing kept */ } };
 
+/** A stored text as its title line and the detail below it. */
+const splitText = (text) => {
+  const s = String(text ?? '');
+  const lines = s.split(/\r?\n/);
+  const i = lines.findIndex((l) => l.trim());
+  return i < 0 ? { title: '', detail: '' } : { title: lines[i].trim(), detail: NT.bodyOf({ text: s }) };
+};
+/** The two boxes as one stored text: the title line, then the detail. */
+const joinText = (title, detail) => {
+  const t = String(title ?? '').trim();
+  const d = String(detail ?? '').replace(/^\s*\n/, '').trimEnd();
+  return d ? `${t}\n${d}` : t;
+};
+/** A draft's two parts; a draft kept before the split holds one `text`. */
+const draftParts = (d) => (d?.title !== undefined ? { title: String(d.title ?? ''), detail: String(d.detail ?? '') } : splitText(d?.text));
+
 /** Is there a draft waiting? (+ Note says "Draft".) */
-export const hasDraft = () => { const d = loadDraft(); return Boolean(d && (String(d.text ?? '').trim() || d.photoIds?.length)); };
+export const hasDraft = () => {
+  const d = loadDraft();
+  if (!d) return false;
+  const { title, detail } = draftParts(d);
+  return Boolean(title.trim() || detail.trim() || d.photoIds?.length);
+};
 
 /** The kind a new note starts as: the last one this device used; else by role. */
 const defaultKind = () => prefs.get('noteKind', state.role === 'designer' ? 'reference' : 'issue');
@@ -56,12 +82,19 @@ export function openComposer({ noteId = null, groupId, jobId } = {}) {
     box.classList.add('composer');
     box.append(el('h3', {}, editing ? 'Edit note' : 'New note'));
 
-    const text = el('textarea', {
-      class: 'textarea composer-text', id: 'ncText', rows: isPhone() ? '5' : '6', maxlength: String(NT.TEXT_MAX), 'data-autofocus': '',
-      placeholder: 'What did you notice? The first line is the title.\nThen as much detail as helps.', 'aria-label': 'The note: its first line is the title',
+    // A card shows TITLE_MAX characters of the title, so the box stops there.
+    const start = editing ? splitText(editing.text) : draft ? draftParts(draft) : { title: '', detail: '' };
+    const title = el('input', {
+      class: 'input composer-title', id: 'ncTitle', type: 'text', maxlength: String(NT.TITLE_MAX), 'data-autofocus': '',
+      autocomplete: 'off', placeholder: 'Title', 'aria-label': 'Title',
     });
-    text.value = editing?.text ?? draft?.text ?? '';
-    box.append(text);
+    const text = el('textarea', {
+      class: 'textarea composer-text', id: 'ncText', rows: isPhone() ? '5' : '6', maxlength: String(NT.TEXT_MAX - NT.TITLE_MAX - 1),
+      placeholder: 'Detail', 'aria-label': 'Detail',
+    });
+    title.value = start.title;
+    text.value = start.detail;
+    box.append(title, text);
 
     // Kind
     const seg = el('div', { class: 'seg kind-seg', role: 'group', 'aria-label': 'Kind' });
@@ -118,32 +151,37 @@ export function openComposer({ noteId = null, groupId, jobId } = {}) {
     // The draft: saved as it changes. Typing it is never "unsaved", so
     // closing never asks.
     let timer = null;
+    const isEmpty = () => !title.value.trim() && !text.value.trim() && !tray.count();
+    const draftNow = () => ({ title: title.value, detail: text.value, kind: pick.kind, groupId: pick.groupId, jobId: pick.jobId, photoIds: tray.ids(), at: new Date().toISOString() });
     function persist() {
       if (editing) return;
       clearTimeout(timer);
       timer = setTimeout(() => {
-        const empty = !text.value.trim() && !tray.count();
+        const empty = isEmpty();
         if (empty) dropDraft();
-        else saveDraft({ text: text.value, kind: pick.kind, groupId: pick.groupId, jobId: pick.jobId, photoIds: tray.ids(), at: new Date().toISOString() });
+        else saveDraft(draftNow());
         status.textContent = empty ? '' : 'Draft kept on this device';
         markClean();
       }, 250);
     }
+    title.addEventListener('input', persist);
     text.addEventListener('input', persist);
 
     const post = async () => {
       err.textContent = '';
       if (tray.busy()) { err.textContent = 'A photo is still being prepared. A moment.'; return; }
-      if (!text.value.trim() && !tray.count()) { err.textContent = 'Write something first: the first line is the title.'; text.focus(); return; }
+      // A title always: it is what the card, the panel and a job's brief show.
+      if (!title.value.trim()) { err.textContent = isEmpty() ? 'Write a title first.' : 'Add a title: a few words for the card.'; title.focus(); return; }
+      const body = joinText(title.value, text.value);
       if (editing) {
         markClean();
-        const okd = await A.editNote(editing.id, { text: text.value, kind: pick.kind, groupId: pick.groupId, keep: tray.kept(), added: tray.ready() });
+        const okd = await A.editNote(editing.id, { text: body, kind: pick.kind, groupId: pick.groupId, keep: tray.kept(), added: tray.ready() });
         if (okd) close(editing.id);
         return;
       }
       clearTimeout(timer);
       const ids = tray.ids();
-      const id = await A.postNote({ text: text.value, kind: pick.kind, groupId: pick.groupId, jobIds: pick.jobId ? [pick.jobId] : [], photos: tray.ready() });
+      const id = await A.postNote({ text: body, kind: pick.kind, groupId: pick.groupId, jobIds: pick.jobId ? [pick.jobId] : [], photos: tray.ready() });
       if (!id) return;
       prefs.set('noteKind', pick.kind);
       if (pick.groupId) prefs.set('noteRecentCats', NT.pushRecent(prefs.get('noteRecentCats', []), pick.groupId));
@@ -155,14 +193,16 @@ export function openComposer({ noteId = null, groupId, jobId } = {}) {
       // its + Note still said "(draft)". Draw it again now the draft is gone.
       redraw();
     };
-    text.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); post(); } });
+    // Ctrl+Enter posts from either box; Enter in the title goes on to the detail.
+    for (const f of [title, text]) f.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); post(); } });
+    title.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.isComposing) { e.preventDefault(); text.focus(); } });
 
     const leave = () => {
       if (!editing) {
         clearTimeout(timer);
-        const empty = !text.value.trim() && !tray.count();
+        const empty = isEmpty();
         if (!empty) {
-          saveDraft({ text: text.value, kind: pick.kind, groupId: pick.groupId, jobId: pick.jobId, photoIds: tray.ids(), at: new Date().toISOString() });
+          saveDraft(draftNow());
           toast('Draft kept: + Note brings it back');
         } else dropDraft();
         markClean();
@@ -188,8 +228,8 @@ export function openComposer({ noteId = null, groupId, jobId } = {}) {
 
     // A draft's photos come back from this device.
     if (draft?.photoIds?.length) tray.restore(draft.photoIds);
-    if (draft && (draft.text || draft.photoIds?.length)) status.textContent = 'Draft from earlier, kept on this device';
-    requestAnimationFrame(() => { text.setSelectionRange(text.value.length, text.value.length); });
+    if (draft && (start.title || start.detail || draft.photoIds?.length)) status.textContent = 'Draft from earlier, kept on this device';
+    requestAnimationFrame(() => { title.setSelectionRange(title.value.length, title.value.length); });
     // Esc closes the same way as Close: the draft is kept, nothing asked.
     if (!editing) onEscape(leave);
   }, { label: editing ? 'Edit note' : 'New note', wide: true, guard: true });

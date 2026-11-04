@@ -103,7 +103,7 @@ export function renderLog(root) {
   if (!notes.length) {
     inner.append(el('section', { class: 'welcome log-empty' },
       el('h2', { class: 'h2' }, 'Post the first improvement or issue'),
-      el('p', {}, 'Something on the floor that could be better, an idea, or a photo worth keeping as reference: type the first line, add a photo, post. Everyone listed sees it.'),
+      el('p', {}, 'Something on the floor that could be better, an idea, or a photo worth keeping as reference: give it a title, add a photo if it helps, and post. Everyone listed sees it.'),
       el('div', { class: 'acts' }, btn('New note', () => openComposer(), { cls: 'primary', ic: 'plus' }))));
     return;
   }

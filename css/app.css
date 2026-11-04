@@ -853,6 +853,7 @@ input::-ms-reveal { display: none; }
 .jrow-thumb { width: 36px; height: 36px; border-radius: var(--radius); object-fit: cover; }
 .jrow-ic { width: 36px; height: 36px; border-radius: var(--radius); display: grid; place-items: center; background: var(--bg2); color: var(--text3); }
 .box.composer { gap: var(--sp-3); }
+.composer-title { font-size: var(--fs-md); font-weight: 600; }
 .composer-text { min-height: 132px; font-size: var(--fs-md); line-height: 1.45; resize: vertical; }
 .composer-props { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr); gap: var(--sp-3); align-items: start; }
 .pick-btn { margin-left: 0; border: 1px solid var(--border); max-width: 100%; min-height: 32px; }
