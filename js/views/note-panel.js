@@ -152,7 +152,10 @@ function linkedJobs(n) {
     const j = node(l.id);
     // Someone who reads no tasks (or a job archived since) sees the title the note kept.
     if (!j) {
-      rows.append(el('div', { class: 'jrow static' }, el('span', { class: 'jrow-title' }, l.title || 'A job'), el('span', { class: 'meta' }, state.role === 'lead' || state.role === 'designer' ? 'Archived or deleted' : '')));
+      const team = state.role === 'lead' || state.role === 'designer';
+      rows.append(el('div', { class: 'jrow static' },
+        el('span', { class: 'jrow-main' }, el('span', { class: 'jrow-title' }, l.title || 'A job'), team ? el('span', { class: 'meta' }, 'Archived or deleted') : null),
+        A.canTriage() ? iconBtn('close', `Unlink ${l.title || 'this job'}`, () => A.unlinkNote(n.id, l.id), 'sm') : null));
       continue;
     }
     rows.append(el('div', { class: 'jrow' },

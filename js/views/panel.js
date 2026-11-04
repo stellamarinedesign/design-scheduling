@@ -893,7 +893,10 @@ function updatesSection(n) {
   ta.addEventListener('input', () => { compose.text = ta.value; });
   const post = () => {
     if (tray.busy()) { toast('A photo is still being prepared. A moment.', { warn: true }); return; }
-    if (A.postUpdate(n.id, ta.value, tray.ready())) { ta.value = ''; compose.text = ''; tray.clear(); ta.blur(); }
+    const said = ta.value;
+    // Refused: the words go back in the box (the photos have to be added again).
+    const onFail = () => { if (compose.id === n.id && !compose.text) { compose.text = said; const box = rootEl?.querySelector('.compose-input'); if (box && !box.value) box.value = said; } };
+    if (A.postUpdate(n.id, ta.value, tray.ready(), { onFail })) { ta.value = ''; compose.text = ''; tray.clear(); ta.blur(); }
   };
   ta.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); post(); }

@@ -22,6 +22,7 @@ import * as C from './convert.js';
 import { confirmDialog, promptDialog } from './dialog.js';
 import * as TM from './team.js';
 import * as NT from './notes.js';
+import { mergeNotes } from './notes.js';
 import * as PH from './photos.js';
 import * as SH from './sharing.js';
 import { openNote, openTask } from './router.js';
@@ -306,7 +307,7 @@ export const reopen = (id) => { const t = node(id); if (t) setStatus(id, S.reope
  * Post an update, with photos if any (prepared by photos.js): the photos and
  * the update go in one batch. On a To-do task it starts it.
  */
-export function postUpdate(id, text, photos = []) {
+export function postUpdate(id, text, photos = [], { onFail = null } = {}) {
   const c = ctx();
   const refs = photos.map((p) => ({ ...PH.refOf(p), by: state.me }));
   const r = S.postUpdate(state.idx, id, text, { ...c, canWrite: canWrite(node(id)), photos: refs });
@@ -314,7 +315,8 @@ export function postUpdate(id, text, photos = []) {
   // A reply on a job answers the managers' notes waiting on it.
   if (r.patches[0] && (node(id)?.requestOpen ?? 0) > 0) r.patches[0].requestOpen = 0;
   const patches = [...r.patches, ...touchJob(id, c.at, { self: false })];
-  write({ patch: patches, updates: r.updates, images: photos.map((p) => ({ ...p, by: state.me, at: c.at })) }, 'The update did not post');
+  write({ patch: patches, updates: r.updates, images: photos.map((p) => ({ ...p, by: state.me, at: c.at })) }, 'The update did not post (its words are back in the box)')
+    .catch(() => onFail?.());
   if (r.patches[0]?.status === 'in_progress') toast('Posted, and started');
   else if (photos.length && offline()) toast('Will post when back online');
   return true;
@@ -499,10 +501,24 @@ export async function remove(id) {
   if (!ok) return false;
   const all = [id, ...below];
   const r = S.removeBlockers(state.idx, all.filter((x) => node(x)?.kind === T.KIND.task), ctx());
-  write({ remove: all, patch: r.patches, updates: r.updates });
-  toast(`Deleted ${T.nameOf(n)}`);
+  // Log notes linked to what goes are unlinked with it: an issue with no job
+  // left is Open again, for someone to take up.
+  const at = nowISO();
+  const notes = [];
+  for (const n0 of allLinked(all)) {
+    let n1 = n0;
+    for (const jid of all) { const p = NT.unlinkPatch(n1, jid, { by: state.me, at }); if (p) n1 = { ...n1, ...p }; }
+    notes.push(Object.fromEntries(Object.entries(n1).filter(([k]) => k === 'id' || ['jobIds', 'links', 'state', 'actioned', 'updatedAt', 'lastBy'].includes(k))));
+  }
+  write({ remove: all, patch: r.patches, updates: r.updates, notes });
+  const reopened = notes.filter((p) => p.state === 'open').length;
+  toast(`Deleted ${T.nameOf(n)}${notes.length ? ` · ${plural(notes.length, 'Log note')} unlinked${reopened ? `, ${reopened} open again` : ''}` : ''}`);
   return true;
 }
+
+/** The notes in hand linked to any of these ids. */
+const allLinked = (ids) => mergeNotes(state.log.triage, state.log.feed, state.log.solo ? [state.log.solo] : [])
+  .filter((n) => (n.jobIds ?? []).some((j) => ids.includes(j)));
 
 /** Delete an archived node for good (from the archive page). */
 export async function removeArchived(item, archived) {
@@ -664,11 +680,11 @@ export function ensureSharing() {
 }
 
 /** A manager's note on a shared job: a Question, an Update from customer, or a Request. */
-export function postRequest(id, { kind, text, cancels = false }) {
+export function postRequest(id, { kind, text, cancels = false }, { onFail = null } = {}) {
   const job = node(id);
   const r = SH.requestWrite(job, { kind, text, cancels, by: state.me, at: nowISO() });
   if (r.error) { toast(r.error, { warn: true }); return false; }
-  write({ patch: [r.patch], updates: [r.update] }, 'The note did not send');
+  write({ patch: [r.patch], updates: [r.update] }, 'The note did not send (it is back in the box)').catch(() => onFail?.());
   toast(offline() ? 'Will send when back online' : 'Sent to the design team');
   return true;
 }
@@ -729,7 +745,7 @@ const deletable = (refs) => (refs ?? []).filter((r) => r?.id && (state.role === 
  *        `photos` are prepared by photos.js
  * @returns {Promise<string|null>} the new note's id
  */
-export async function postNote({ text, kind, groupId = null, jobIds = [], photos = [] }) {
+export async function postNote({ text, kind, groupId = null, jobIds = [], photos = [] }, { onFail = null } = {}) {
   if (!String(text ?? '').trim() && !photos.length) { toast('Write the note first.', { warn: true }); return null; }
   const at = nowISO();
   const id = Store.newId();
@@ -741,7 +757,9 @@ export async function postNote({ text, kind, groupId = null, jobIds = [], photos
   // A draft's photos are read off this device's photo store; held in memory
   // now, so the draft can be cleared while the write is still on its way.
   const images = await Promise.all(photos.map(async (p) => ({ ...p, blob: new Blob([await p.blob.arrayBuffer()], { type: p.type }), by: state.me, at })));
-  write({ noteSet: [note], images }, 'The note did not post');
+  // Refused (the rules, a role changed): what was written goes back into
+  // the draft, photos and all, rather than vanishing with the closed composer.
+  write({ noteSet: [note], images }, 'The note did not post (it is back in your draft: + Note)').catch(() => onFail?.(images));
   toast(offline() ? 'Will post when back online' : 'Posted to the Log', { action: 'Open', onAction: () => openNote(id) });
   return id;
 }

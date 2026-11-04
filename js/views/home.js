@@ -8,7 +8,7 @@
 //    more, picked afresh each day, weighted toward the oldest. ▶ Start on each.
 // 3. READY FOR CHECKING and 4. CREW: the team (views/crew.js).
 
-import { el, btn, prefs, isPhone } from '../ui.js';
+import { el, btn, prefs, isPhone, loadProblem } from '../ui.js';
 import { state, isMine } from '../state.js';
 import * as T from '../tree.js';
 import * as A from '../actions.js';
@@ -171,8 +171,7 @@ function loading() {
 export function errorState() {
   return el('div', { class: 'state-msg', role: 'alert' },
     el('h1', { class: 'h1' }, 'Your tasks did not load'),
-    el('p', {}, String(state.error?.message ?? state.error)),
-    el('p', {}, 'If you are offline, they load when the connection is back. Otherwise reload the page.'),
+    ...loadProblem(state.error).map((line) => el('p', {}, line)),
     el('div', {}, btn('Reload', () => location.reload())));
 }
 

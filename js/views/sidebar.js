@@ -55,6 +55,7 @@ export function renderSidebar(root, { notes = [] } = {}) {
     ? openNotes.filter((n) => n.groupId === g.id || T.ancestorChain(idx, n.groupId).some((a) => a.id === g.id)).length
     : T.openJobCount(idx, g.id));
 
+  if (state.error && !state.ready) { root.append(el('p', { class: 'side-empty' }, 'The categories did not load.')); return; }
   if (!state.ready) {
     for (let i = 0; i < 6; i++) root.append(el('div', { class: 'si', 'aria-hidden': 'true' }, el('span', { class: 'skel-line', style: { width: `${50 + (i * 17) % 40}%` } })));
     return;

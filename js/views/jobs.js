@@ -16,7 +16,7 @@
 // customer (with "The customer has cancelled", which gives the lead a
 // one-tap Cancel job), or a Request. Nothing here changes the job itself.
 
-import { el, btn, icon, iconBtn, dot, avatar, pill, prefs, isPhone } from '../ui.js';
+import { el, btn, icon, iconBtn, dot, avatar, pill, prefs, isPhone, loadProblem } from '../ui.js';
 import { state, node, personName, realName } from '../state.js';
 import * as T from '../tree.js';
 import * as SH from '../sharing.js';
@@ -65,8 +65,7 @@ export function renderJobs(root) {
   if (state.error && !state.ready) {
     inner.append(el('div', { class: 'state-msg', role: 'alert' },
       el('h2', { class: 'h2' }, 'The jobs did not load'),
-      el('p', {}, String(state.error?.message ?? state.error)),
-      el('p', {}, 'If you are offline, they load when the connection is back. Otherwise reload the page.'),
+      ...loadProblem(state.error).map((line) => el('p', {}, line)),
       el('div', {}, btn('Reload', () => location.reload()))));
     return;
   }
@@ -175,7 +174,7 @@ export function renderJobSheet(root, id, { fresh = false } = {}) {
   if (!job || job.sharedEffective !== true) {
     root.append(bar, el('div', { class: 'panel-body' }, !state.ready
       ? [el('div', { class: 'skel', style: { 'min-height': '60px' } }), el('div', { class: 'skel' })]
-      : el('div', { class: 'state-msg' }, el('h2', { class: 'h2' }, 'Not shared any more'), el('p', {}, 'The Design lead has stopped sharing this job, or it was archived.'))));
+      : el('div', { class: 'state-msg' }, el('h2', { class: 'h2' }, 'Not shared any more'), el('p', {}, 'The Design lead has stopped sharing this job, or it was archived or deleted.'))));
     return;
   }
   watchThread(id);
@@ -247,7 +246,10 @@ function noteBox(job) {
   cancelLine.append(cancelBox, el('span', {}, 'The customer has cancelled this job'));
   draw();
   const send = () => {
-    if (A.postRequest(job.id, { kind: draft.kind, text: ta.value, cancels: draft.kind === 'customer' && draft.cancels })) {
+    const said = { kind: draft.kind, text: ta.value, cancels: draft.cancels };
+    // Refused (the job stopped being shared, say): the note goes back in the box.
+    const onFail = () => { if (draft.id === job.id && !draft.text) { Object.assign(draft, said); redraw(); } };
+    if (A.postRequest(job.id, { kind: draft.kind, text: ta.value, cancels: draft.kind === 'customer' && draft.cancels }, { onFail })) {
       Object.assign(draft, { text: '', cancels: false });
       ta.value = '';
       cancelBox.checked = false;

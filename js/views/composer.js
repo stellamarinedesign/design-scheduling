@@ -167,7 +167,10 @@ export function openComposer({ noteId = null, groupId, jobId } = {}) {
     title.addEventListener('input', persist);
     text.addEventListener('input', persist);
 
+    // One post at a time: a second click while photos are being read must not post twice.
+    let posting = false;
     const post = async () => {
+      if (posting) return;
       err.textContent = '';
       if (tray.busy()) { err.textContent = 'A photo is still being prepared. A moment.'; return; }
       // A title always: it is what the card, the panel and a job's brief show.
@@ -181,7 +184,17 @@ export function openComposer({ noteId = null, groupId, jobId } = {}) {
       }
       clearTimeout(timer);
       const ids = tray.ids();
-      const id = await A.postNote({ text: body, kind: pick.kind, groupId: pick.groupId, jobIds: pick.jobId ? [pick.jobId] : [], photos: tray.ready() });
+      const kept = draftNow();
+      // Refused by the rules: the words and photos go back into the draft,
+      // after this has cleared it (a refusal can arrive before or after).
+      const onFail = (images) => setTimeout(async () => {
+        await Promise.all((images ?? []).map((p) => PH.draftSave(p).catch(() => {})));
+        saveDraft({ ...kept, photoIds: (images ?? []).map((p) => p.id), at: new Date().toISOString() });
+        redraw();
+      }, 0);
+      posting = true;
+      const id = await A.postNote({ text: body, kind: pick.kind, groupId: pick.groupId, jobIds: pick.jobId ? [pick.jobId] : [], photos: tray.ready() }, { onFail })
+        .finally(() => { posting = false; });
       if (!id) return;
       prefs.set('noteKind', pick.kind);
       if (pick.groupId) prefs.set('noteRecentCats', NT.pushRecent(prefs.get('noteRecentCats', []), pick.groupId));

@@ -999,6 +999,8 @@ export async function run() {
     expect(NT.unlinkPatch(linked, 'nope', { by: BY, at: AT }), null);
     const ref = NT.linkPatch(mk({ kind: 'reference' }), { id: 'j1', title: 'x' }, { by: BY, at: AT });
     ok(!('state' in ref), 'a reference note stays filed when linked');
+    const done = NT.unlinkPatch({ ...linked, state: 'resolved' }, 'j1', { by: BY, at: AT });
+    ok(!('state' in done) && done.jobIds.length === 0, 'a resolved note stays resolved when its job is unlinked (deleted, archived)');
   });
   test('dismiss keeps the reason; reopen goes back to open, or actioned with a job', () => {
     const d = NT.dismissPatch(mk(), '  Already fixed  ', { by: BY, at: AT });

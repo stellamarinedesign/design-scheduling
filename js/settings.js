@@ -14,7 +14,7 @@ import { Store } from './store.js';
 import { openDialog } from './dialog.js';
 import { openPasswordDialog } from './password.js';
 import { ROLES, ROLE_LABEL, ROLE_WORDS, normaliseAccess, accountRows, withRole, withoutAccount, withMaster, roleOf, tempPassword } from './access.js';
-import { el, btn, toast, prefs } from './ui.js';
+import { el, btn, toast, prefs, isRefusal } from './ui.js';
 import { getPrefix, setPrefix } from './folders.js';
 import { VERSION } from './version.js';
 import { go } from './router.js';
@@ -148,7 +148,7 @@ function storage() {
     barEl.firstChild.style.width = `${Math.max(pct, photos ? 1 : 0)}%`;
     line.textContent = `${photos} photo${photos === 1 ? '' : 's'}, about ${mb(bytes)}, across ${notes} Log note${notes === 1 ? '' : 's'} and task updates. `
       + (Store.mode === 'local' ? 'In this browser only.' : `The free plan holds ${mb(GIB)} for everything; photos use about ${pct < 0.1 ? 'under 0.1' : pct.toFixed(1)}% of it.`);
-  }).catch((e) => { line.textContent = `Could not count: ${e.message}`; });
+  }).catch((e) => { line.textContent = isRefusal(e) ? 'Could not count the photos: this account is not allowed to.' : `Could not count the photos just now (${e.message}). Open Settings again to retry.`; });
   return section('Photo storage', el('div', { class: 'storage' }, line, barEl));
 }
 

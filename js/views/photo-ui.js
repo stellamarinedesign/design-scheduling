@@ -60,6 +60,8 @@ export function photoTray({ existing = [], max = 12, onChange = () => {}, keepDr
         src ? el('img', { src, alt: '' }) : el('span', { class: 'tray-wait' }, 'Preparing…'),
         it.state === 'preparing' ? null : remove));
     });
+    // Full: the add buttons say so by standing down (and the reason is their title).
+    for (const b of controls?.querySelectorAll('button') ?? []) { b.disabled = items.length >= max; b.title = items.length >= max ? `${max} photos at most` : ''; }
   };
 
   const add = async (files) => {
@@ -173,12 +175,22 @@ export function openLightbox(refs, start = 0, { caption = '' } = {}) {
     const ref = refs[i];
     const me = ++shown;
     count.textContent = many ? `${i + 1} / ${refs.length}` : '';
+    msg.classList.remove('wait');
+    // Said only if the full photo takes a moment (a phone on a slow line).
+    const slow = setTimeout(() => { if (me === shown) { msg.textContent = 'Loading the full photo…'; msg.classList.add('wait'); } }, 500);
     img.src = PH.thumb(ref);
     img.alt = `Photo ${i + 1} of ${refs.length}${caption ? `: ${caption}` : ''}`;
     img.classList.add('soft');
     msg.textContent = '';
-    PH.url(ref).then((u) => { if (me === shown) { img.src = u; img.classList.remove('soft'); } })
-      .catch((e) => { if (me === shown) msg.textContent = `Only the small copy is here: ${e.message}`; });
+    PH.url(ref).then((u) => { clearTimeout(slow); if (me === shown) { img.src = u; img.classList.remove('soft'); msg.textContent = ''; } })
+      .catch((e) => {
+        clearTimeout(slow);
+        if (me !== shown) return;
+        // The small copy is all there is: shown sharp, and said why.
+        img.classList.remove('soft');
+        msg.classList.remove('wait');
+        msg.textContent = e?.code === 'missing' ? 'The full-size photo is missing; this is the small copy.' : 'The full-size photo did not load (offline?); this is the small copy.';
+      });
   }
   const onKey = (e) => {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(); }

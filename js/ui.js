@@ -192,8 +192,28 @@ export function hideToast() {
   toastTimer = setTimeout(() => { host.hidden = true; }, 220);
 }
 
-/** An error, said plainly, in the warning toast. */
-export const toastError = (e, what = 'That did not save') => toast(`${what}: ${e?.message ?? e}`, { warn: true, ms: 8000 });
+/** Did the rules refuse it? (Firestore's permission-denied.) */
+export const isRefusal = (e) => e?.code === 'permission-denied' || /insufficient permissions/i.test(e?.message ?? '');
+
+/**
+ * Why something did not load, in two plain sentences: what happened, and
+ * what to do. A refusal is not a connection problem, and says so.
+ * @returns {[string, string]}
+ */
+export function loadProblem(e) {
+  if (isRefusal(e)) return ['This account is not allowed to see it.', 'If the Design lead has just changed your access, reload. Otherwise ask them.'];
+  return [String(e?.message ?? e ?? 'Something went wrong.'), 'If you are offline, it loads when the connection is back. Otherwise reload the page.'];
+}
+
+/**
+ * An error, said plainly, in the warning toast. A refusal by the rules is
+ * said as one: the account may not make that change (a role changed, or a
+ * job stopped being shared), and a reload shows what it can do now.
+ */
+export function toastError(e, what = 'That did not save') {
+  const why = isRefusal(e) ? 'this account is not allowed to make that change. Reload to see what you can do now.' : (e?.message ?? String(e));
+  toast(`${what}: ${why}`, { warn: true, ms: 9000 });
+}
 
 // ---------------------------------------------------------------------------
 // popover menu

@@ -191,7 +191,7 @@ export function url(ref) {
   if (!ref?.id) return Promise.reject(new Error('No photo.'));
   if (!full.has(ref.id)) {
     const p = import('./store.js').then(({ Store }) => Store.getImage(ref.id)).then((blob) => {
-      if (!blob) throw new Error('That photo is not there any more.');
+      if (!blob) throw Object.assign(new Error('That photo is not there any more.'), { code: 'missing' });
       return URL.createObjectURL(blob);
     });
     p.catch(() => full.delete(ref.id));

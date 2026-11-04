@@ -18,7 +18,7 @@
 // Wide: 3-4 columns, the sidebar pinned. Half-screen: 2. Phone: 1, with the
 // floating + for a new note.
 
-import { el, icon, btn, dot, avatar, menu, isPhone, prefs, pill } from '../ui.js';
+import { el, icon, btn, dot, avatar, menu, isPhone, prefs, pill, loadProblem } from '../ui.js';
 import { state, node, personName, realName, allNotes } from '../state.js';
 import * as T from '../tree.js';
 import * as NT from '../notes.js';
@@ -57,7 +57,7 @@ export function renderLog(root) {
     NT.PILLS.map((p) => el('button', {
       class: 'fp', type: 'button', 'aria-pressed': String(p.key === pillKey),
       onclick: () => { prefs.set('logPill', p.key); redraw(); },
-    }, p.label, p.key === 'open' ? el('b', {}, String(openCount)) : null)));
+    }, p.label, p.key === 'open' && state.log.loaded ? el('b', {}, String(openCount)) : null)));
 
   // The category: a chip to clear it; for those without the sidebar, a button to choose one.
   const catChip = cat ? el('button', {
@@ -91,8 +91,7 @@ export function renderLog(root) {
   if (state.log.error && !state.log.loaded) {
     inner.append(el('div', { class: 'state-msg', role: 'alert' },
       el('h2', { class: 'h2' }, 'The Log did not load'),
-      el('p', {}, String(state.log.error?.message ?? state.log.error)),
-      el('p', {}, 'If you are offline, it loads when the connection is back. Otherwise reload the page.'),
+      ...loadProblem(state.log.error).map((line) => el('p', {}, line)),
       el('div', {}, btn('Reload', () => location.reload()))));
     return;
   }

@@ -118,12 +118,15 @@ export function linkPatch(note, job, { by, at }) {
   return p;
 }
 
-/** Unlink a job. An issue or idea with nothing linked any more goes back to Open. */
+/**
+ * Unlink a job. An Actioned issue or idea with nothing linked any more goes
+ * back to Open; a Resolved one stays resolved (its work was done).
+ */
 export function unlinkPatch(note, jobId, { by, at }) {
   if (!note || !(note.jobIds ?? []).includes(jobId)) return null;
   const jobIds = note.jobIds.filter((x) => x !== jobId);
   const p = { id: note.id, jobIds, links: (note.links ?? []).filter((l) => l.id !== jobId), updatedAt: at, lastBy: by };
-  if (!jobIds.length && isTriage(note) && ['actioned', 'resolved'].includes(note.state)) {
+  if (!jobIds.length && isTriage(note) && note.state === 'actioned') {
     p.state = 'open';
     p.actioned = null;
   }
