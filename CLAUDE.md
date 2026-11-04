@@ -53,7 +53,10 @@ parent. Starting here is what loads this file, the project skills and the Impecc
 ## Behaviour rules worth knowing
 
 - **Groups anywhere.** Categories are not a fixed list. Every node is a `tasks` document with
-  `kind: 'group' | 'task' | 'step'`. Steps are light ticks that can nest and mix with real subtasks.
+  `kind: 'group' | 'product' | 'task' | 'step'`.
+  - Steps are light ticks that can nest and mix with real subtasks.
+  - Products are rows of the Progress page; their jobs are revisions, and the row shows the
+    latest job's top-level steps.
   - Groups can sit at the top (master categories), inside groups (categories,
     sub-categories) or inside jobs (sections).
   - A node's category path, colour and steps template come from its group ancestors.
@@ -63,8 +66,11 @@ parent. Starting here is what loads this file, the project skills and the Impecc
   - **Category:** a group.
   - **Job:** a task whose parent is a group.
   - **Task:** anything nested under a job.
-  - **Roles:** Design lead · Designer · Contributor. In code and the access document they are
-    `lead | designer | contributor`.
+  - **Roles:** Design lead · Designer · Contributor · Manager contributor (working name). In
+    code and the access document they are `lead | designer | contributor | manager`.
+    - Contributors see the Log only.
+    - Manager contributors see Jobs (the jobs the lead has shared) and the Log, and can
+      add questions, customer updates or requests on those jobs.
 
   The data collection is still `tasks`, for every level.
 - **Tabs:** Home · Tasks · Team · Log. The full categorised list is the **Tasks** tab, not

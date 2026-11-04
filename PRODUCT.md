@@ -31,9 +31,12 @@ Static site with no build step. It uses plain ES modules, served as-is by GitHub
   - Do the CAD and drafting work (SolidWorks, AutoCAD): GAs, drawings, laser files, laser
     checklists, build forms.
   - See and manage their own work, post progress updates, and submit work for checking.
-- **Contributors.** Workshop and sales staff.
-  - Post photo notes about design improvements, issues and ideas from their phones, and can view
-    related jobs.
+- **Contributors.** Workshop staff.
+  - Post photo notes about design improvements, issues and ideas from their phones.
+  - They see the Log only.
+- **Manager contributors** (working name). Sales or management.
+  - Also see a read-only Jobs list of the jobs the Design lead chooses to share.
+  - Can add questions, customer updates (e.g. a cancellation) or requests on those jobs.
   - They do not manage jobs or tasks.
 
 ## Product Purpose
@@ -102,7 +105,7 @@ It's built around Stella's own drafting workflow, not a generic project tool:
 - **Task:** anything nested under a job, at any depth.
 - **Statuses:** To do, In progress, Waiting, Ready for check, Fix (sent back), Done,
   Cancelled.
-- **Roles:** Design lead, Designer, Contributor.
+- **Roles:** Design lead, Designer, Contributor, Manager contributor (working name).
 
 **Capabilities, delivered in phases:**
 
