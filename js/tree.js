@@ -117,6 +117,24 @@ export function hasTaskChildren(idx, id) {
     || (c.kind === KIND.group && hasTaskChildren(idx, c.id)));
 }
 
+/**
+ * The task a node belongs to: itself when it is a task, else the nearest task
+ * above it, through steps and sections. A step's or a section's owner is the
+ * person that task is theirs to (the rules make the same walk for a designer).
+ */
+export function ownerTask(idx, id) {
+  const n = idx.byId.get(id);
+  if (!n) return null;
+  if (n.kind === KIND.task) return n;
+  const chain = ancestorChain(idx, id);
+  for (let i = chain.length - 1; i >= 0; i--) {
+    const a = chain[i];
+    if (a.kind === KIND.task) return a;
+    if (a.kind !== KIND.step && a.kind !== KIND.group) return null;
+  }
+  return null;
+}
+
 /** The job a node belongs to (itself when it is one), or null. */
 export function jobOf(idx, id) {
   const n = idx.byId.get(id);

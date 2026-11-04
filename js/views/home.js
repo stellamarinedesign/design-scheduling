@@ -6,7 +6,7 @@
 //    own `homeOrder`); on touch the ⋯ menu has Move earlier / later.
 // 2. BACKLOG: one row of my To-do jobs and sub-jobs untouched for 14 days or
 //    more, picked afresh each day, weighted toward the oldest. ▶ Start on each.
-// Ready for checking and Crew come with the team, in Phase 2.
+// 3. READY FOR CHECKING and 4. CREW: the team (views/crew.js).
 
 import { el, btn, prefs, isPhone } from '../ui.js';
 import { state, isMine } from '../state.js';
@@ -16,6 +16,7 @@ import * as BL from '../backlog.js';
 import { tile, enableDrag, backlogDays } from './tile.js';
 import { go } from '../router.js';
 import { newMasterCategory } from './sidebar.js';
+import { checksSection, crewSection } from './crew.js';
 
 const FILTERS = [
   { key: 'in_progress', label: 'In progress', match: (s) => s === 'in_progress' || s === 'check' },
@@ -131,6 +132,9 @@ export function renderHome(root) {
     });
   }
   inner.append(bsec);
+
+  // ── Ready for checking, and Crew ──
+  inner.append(checksSection(), crewSection());
 }
 
 function backlogTile(t, pool) {

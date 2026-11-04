@@ -12,17 +12,19 @@ rules_version = '2';
 //
 //   lead         everything
 //   designer     reads all tasks (paths and blocked-by chips need them);
-//                creates their own; edits what they created or are assigned;
-//                never marks anything done (only a lead does, by any route:
-//                decided 2026-11-04), never sends back, never sets
-//                checkedBy/checkedAt; may take their own submission back
+//                creates their own; edits what they created or are assigned,
+//                and the steps and sections inside those at any depth the
+//                walk below reaches; never marks anything done (only a lead
+//                does, by any route: decided 2026-11-04), never sends back,
+//                never sets checkedBy/checkedAt, never reassigns (assignee
+//                and createdBy are the lead's to change); may take their own
+//                submission back
 //   manager      (Phase 2) reads only jobs shared with managers; posts
 //                `request` updates on them
 //   contributor  (Phase 2) the Log only: no tasks at all
 //
-// Phase 1 is the lead alone. The designer and manager paths are written now so
-// the rules exist before the accounts do; "harden the rules" is a Phase 2 step
-// (PLAN), with test accounts proving each refusal.
+// Phase 2 brings the team. Every refusal above wants proving with a test
+// account before the team relies on it (PLAN, "Verification: Rules").
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -66,9 +68,12 @@ service cloud.firestore {
     }
 
     // ---- people: display names --------------------------------------------
+    // Your own name, or (the lead, a master) anyone's. Just a name.
     match /people/{who} {
       allow read: if listed();
-      allow write: if signedIn() && (who == email() || lead());
+      allow write: if signedIn() && (who == email() || lead() || master())
+        && request.resource.data.keys().hasOnly(['name'])
+        && request.resource.data.name is string && request.resource.data.name.size() <= 60;
     }
 
     // ---- the tree: groups, products, tasks and steps -----------------------
@@ -84,10 +89,24 @@ service cloud.firestore {
       // sub-step under a step the designer made passes too. (A sub-step under
       // a step someone else made is a level further; Phase 2 hardening
       // decides whether designers get that far.)
+      //
+      // DEEPER (Phase 2): a step the lead's template made has the lead as its
+      // createdBy, so a designer ticking a SUB-step of it in their own job
+      // was refused. When the parent is not theirs, the walk goes on up
+      // through steps and sections to the task they sit in, at most four
+      // levels (rules cannot loop; templates nest two deep). Repeated gets of
+      // one document within a request are counted once.
+      function nodeAfter(id) { return getAfter(/databases/$(database)/documents/tasks/$(id)).data; }
+      function taskMine(n) { return n.kind == 'task' && isMine(n); }
+      function inJob(n) { return n.kind in ['step', 'group'] && n.get('parentId', null) != null; }
+      function walk4(id) { return taskMine(nodeAfter(id)); }
+      function walk3(id) { let n = nodeAfter(id); return taskMine(n) || (inJob(n) && walk4(n.parentId)); }
+      function walk2(id) { let n = nodeAfter(id); return taskMine(n) || (inJob(n) && walk3(n.parentId)); }
+      function walkUp(id) { let n = nodeAfter(id); return inJob(n) && walk2(n.parentId); }
       function ownsParentOf(d) {
         return d.get('parentId', null) != null
           && existsAfter(/databases/$(database)/documents/tasks/$(d.parentId))
-          && isMine(getAfter(/databases/$(database)/documents/tasks/$(d.parentId)).data);
+          && (isMine(nodeAfter(d.parentId)) || walkUp(d.parentId));
       }
       // Sharing with managers is the lead's decision alone.
       function sharingKeys() { return ['shared', 'sharedEffective', 'shareLevel']; }
@@ -98,6 +117,9 @@ service cloud.firestore {
       // already done may still have its other fields edited by its owner).
       function noDoneOnCreate() { return data().get('status', 'todo') != 'done'; }
       function noNewDone() { return was().get('status', '') == 'done' || data().get('status', '') != 'done'; }
+      // Who has a task, and who made it, are the lead's to change: a designer
+      // cannot hand their work on, or claim someone else's.
+      function noOwnerChange() { return !data().diff(was()).affectedKeys().hasAny(['assignee', 'createdBy']); }
       // Only a lead approves (check -> done) or sends back (check -> fix).
       function noReview() {
         return !(was().get('status', '') == 'check' && data().get('status', '') in ['done', 'fix'])
@@ -116,7 +138,7 @@ service cloud.firestore {
       // moved to the top or into a lead's category, or a step into someone
       // else's job.
       allow update: if lead() || (designer() && noReview() && noNewDone() && noSharingChange() && data().kind == was().kind && (
-           (was().kind == 'task' && isMine(was()))
+           (was().kind == 'task' && isMine(was()) && noOwnerChange())
         || (was().kind in ['step', 'group'] && ownsParentOf(was()) && ownsParentOf(data()))));
 
       allow delete: if lead();

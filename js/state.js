@@ -4,6 +4,7 @@
 // (a few hundred nodes is nothing) and every view is derived from it.
 
 import { buildIndex } from './tree.js';
+import { nameFor } from './team.js';
 
 export const state = {
   nodes: [],
@@ -13,7 +14,8 @@ export const state = {
   me: 'local',        // the address that goes in createdBy / assignee / by
   role: 'lead',
   mode: 'local',      // 'local' | 'firestore'
-  people: {},         // email → {name, initials} (Phase 2 fills it)
+  people: {},         // email → {name}: people/{email}, live
+  access: { leads: [], designers: [], contributors: [], managers: [], masters: [] },
 };
 
 const subs = new Set();
@@ -38,8 +40,16 @@ export const node = (id) => state.idx.byId.get(id) ?? null;
 export function personName(email) {
   if (!email) return 'Unassigned';
   if (email === state.me) return 'You';
-  return state.people[email]?.name ?? String(email).replace(/@.*/, '');
+  return nameFor(state.people, email);
 }
 
-/** Is this mine (assigned to me, or to nobody — the lead's own work in Phase 1)? */
-export const isMine = (n) => !n.assignee || n.assignee === state.me;
+/** A person's own name, never "You": for text that others read too. */
+export const realName = (email) => nameFor(state.people, email);
+
+/**
+ * Is this mine? Assigned to me; for the lead, also assigned to nobody (the
+ * lead's own work, as in Phase 1). A designer's work is only what is theirs.
+ */
+export const isMine = (n) => n.assignee === state.me || (!n.assignee && state.role === 'lead');
+
+export const isLead = () => state.role === 'lead';

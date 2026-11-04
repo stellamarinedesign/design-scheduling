@@ -232,7 +232,7 @@ const restoreTo = (t) => {
 
 function unblockOne(t, { by, at, why }) {
   return {
-    patch: { id: t.id, status: restoreTo(t), waiting: null, updatedAt: at, lastActivityAt: at },
+    patch: { id: t.id, status: restoreTo(t), waiting: null, updatedAt: at, lastActivityAt: at, statusAt: at },
     update: { taskId: t.id, at, by, kind: 'unblock', from: 'waiting', to: restoreTo(t), text: why },
   };
 }
@@ -389,7 +389,7 @@ export function cancelInside(idx, id, { by, at, reason = '', canWrite = () => tr
     if (n.kind === KIND.task && isOpen(n.status)) {
       if (!canWrite(n)) continue;
       patches.push({
-        id: d, status: 'cancelled', waiting: null, fixNote: null, updatedAt: at, lastActivityAt: at,
+        id: d, status: 'cancelled', waiting: null, fixNote: null, updatedAt: at, lastActivityAt: at, statusAt: at,
         cancelled: cancelRecord(n, { by, at, reason, withId: id }),
       });
       updates.push({ taskId: d, at, by, kind: 'cancel', from: n.status, to: 'cancelled', text: reason ? `${reason} (cancelled with its job)` : 'Cancelled with its job' });
@@ -410,7 +410,7 @@ export function reopenInside(idx, id, { by, at, canWrite = () => true } = {}) {
     if (n.kind === KIND.task && n.status === 'cancelled' && n.cancelled?.withId === id) {
       if (!canWrite(n)) continue;
       const f = reopenFields(idx, n);
-      patches.push({ id: d, ...f, updatedAt: at, lastActivityAt: at });
+      patches.push({ id: d, ...f, updatedAt: at, lastActivityAt: at, statusAt: at });
       updates.push({ taskId: d, at, by, kind: 'reopen', from: 'cancelled', to: f.status, text: 'Reopened with its job' });
     } else if (n.kind === KIND.step && n.cancelledFrom?.withId === id) {
       patches.push({ id: d, state: n.cancelledFrom.state ?? 'todo', cancelledFrom: null, updatedAt: at });
@@ -466,7 +466,7 @@ export function changeStatus(idx, id, to, { by, at, note = '', blockedBy = [], c
     const f = reopenFields(idx, t);
     const back = reopenInside(idx, id, { by, at, canWrite });
     return {
-      patches: [{ id, ...f, updatedAt: at, lastActivityAt: at }, ...back.patches],
+      patches: [{ id, ...f, updatedAt: at, lastActivityAt: at, statusAt: at }, ...back.patches],
       updates: [{ taskId: id, at, by, kind: 'reopen', from, to: f.status, text: '' }, ...back.updates],
     };
   }
@@ -474,6 +474,9 @@ export function changeStatus(idx, id, to, { by, at, note = '', blockedBy = [], c
   if (to === 'fix' && from === 'check' && !String(comment).trim()) return { error: 'Say what needs fixing: a send-back always says why.' };
 
   const patch = { id, status: to, updatedAt: at, lastActivityAt: at };
+  // When it reached this status: Crew's bars show how long it has sat there.
+  // Editing a wait is not a new status, so its clock keeps running.
+  if (!(from === 'waiting' && to === 'waiting')) patch.statusAt = at;
   if (to === 'waiting') {
     // Editing a wait: the blockers it already has were checked when they were
     // added. Keep those still open, drop any that finished or went, and check
@@ -539,16 +542,26 @@ export function changeStatus(idx, id, to, { by, at, note = '', blockedBy = [], c
   return { patches, updates };
 }
 
+/** How much of the latest update a task carries for its row. */
+export const LAST_NOTE_MAX = 280;
+
 /** Posting an update: activity now, and a To-do task starts. */
-export function postUpdate(idx, id, text, { by, at } = {}) {
+export function postUpdate(idx, id, text, { by, at, canWrite = true } = {}) {
   const t = idx.byId.get(id);
   const body = String(text ?? '').trim();
   if (!t) return { error: 'That task has gone.' };
   if (!body) return { error: 'Write the update first.' };
-  const patch = { id, updatedAt: at, lastActivityAt: at };
   const update = { taskId: id, at, by, kind: 'comment', text: body };
+  // Someone who may not write the task (a designer on the lead's job) still
+  // posts: the update goes in, the task itself is left alone.
+  if (!canWrite) return { patches: [], updates: [update] };
+  // The latest update rides on the task too, so a row (a designer's list,
+  // Ready for checking, a manager's Jobs) can show it without reading the
+  // timeline.
+  const patch = { id, updatedAt: at, lastActivityAt: at, lastNote: { text: body.slice(0, LAST_NOTE_MAX), by, at } };
   if (t.kind === KIND.task && (t.status ?? 'todo') === 'todo') {
     patch.status = 'in_progress';
+    patch.statusAt = at;
     update.from = 'todo';
     update.to = 'in_progress';
   }

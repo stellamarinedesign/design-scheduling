@@ -20,7 +20,7 @@
 // under the cursor (app.js asks `panelEditing()` first).
 
 import { el, icon, iconBtn, btn, pill, avatar, menu, toast, isPhone, canDrag, prefs, withMenu } from '../ui.js';
-import { state, node, personName } from '../state.js';
+import { state, node, personName, realName } from '../state.js';
 import * as T from '../tree.js';
 import * as S from '../status.js';
 import * as A from '../actions.js';
@@ -28,7 +28,7 @@ import { Store } from '../store.js';
 import * as SF from '../stella-folder.js';
 import { whenLabel, daysUntil, ageLabel } from '../dates.js';
 import { normaliseFolder, learnPrefix, fullPath, displayPath, leafName } from '../folders.js';
-import { statusMenu, taskMenu, checkBox, whoBadge, subtext, enableDrag } from './tile.js';
+import { statusMenu, taskMenu, checkBox, whoBadge, subtext, enableDrag, assignMenu } from './tile.js';
 import * as BL from '../backlog.js';
 import { backlogPool } from './home.js';
 import { revealCategory } from './tasks.js';
@@ -53,6 +53,14 @@ export function panelEditing() {
 
 /** A category or product is a place in the Tasks list, not something the panel shows. */
 const isPlace = (n) => T.isGroupLike(n) && !T.isSection(state.idx, n);
+
+/**
+ * May this person change what the panel shows? The same test the rules make:
+ * the lead anything; a designer their own tasks, and the steps and sections
+ * inside them. Anyone who can open it can still post an update.
+ */
+const editable = (n) => (n?.kind === T.KIND.task ? A.canWrite(n) : A.canWriteStep(n));
+const lead = () => state.role === 'lead';
 
 /** One level up, if the panel can show it: null at a job. */
 const upNode = (n) => { const p = T.parentOf(state.idx, n); return p && !isPlace(p) ? p : null; };
@@ -119,6 +127,8 @@ export function renderPanel(root, id, { fresh = false } = {}) {
 const plainClick = (e) => !(e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || e.button);
 
 function crumb(a) {
+  // A designer has no category tree to go to: the place is named, not linked.
+  if (isPlace(a) && !lead()) return el('span', {}, T.nameOf(a));
   if (isPlace(a)) {
     return el('a', {
       href: routeHref('/tasks', { c: a.id }), title: 'Show it in the Tasks list',
@@ -170,16 +180,21 @@ function moreMenu(anchor, n) {
   if (n.kind === T.KIND.step) { stepMenu(anchor, n); return; }
   if (n.kind !== T.KIND.task) { sectionMenu(anchor, n); return; }
   const job = T.isJob(state.idx, n);
-  menu(anchor, [
-    { label: 'Move to…', icon: 'move', onSelect: async () => (await import('./pickers.js')).moveDialog(n.id) },
-    !job ? { label: 'Make it a step', icon: 'tasks', onSelect: () => A.demoteTask(n.id) } : null,
-    state.role === 'lead' && job ? { label: 'Turn into a category', icon: 'folderPlus', onSelect: () => A.turnIntoCategory(n.id) } : null,
-    n.backlogIgnored ? { label: 'Show in the Backlog again', icon: 'restore', onSelect: () => A.setBacklogIgnored(n.id, false) }
-      : BL.canHideFromBacklog(state.idx, n.id, backlogPool()) ? { label: 'Hide from the Backlog', icon: 'hide', onSelect: () => A.setBacklogIgnored(n.id, true) } : null,
+  const items = [
+    lead() ? { label: 'Assign to…', icon: 'user', onSelect: () => assignMenu(anchor, n) } : null,
+    lead() ? { label: 'Move to…', icon: 'move', onSelect: async () => (await import('./pickers.js')).moveDialog(n.id) } : null,
+    lead() && !job ? { label: 'Make it a step', icon: 'tasks', onSelect: () => A.demoteTask(n.id) } : null,
+    lead() && job ? { label: 'Turn into a category', icon: 'folderPlus', onSelect: () => A.turnIntoCategory(n.id) } : null,
+    lead() && n.backlogIgnored ? { label: 'Show in the Backlog again', icon: 'restore', onSelect: () => A.setBacklogIgnored(n.id, false) }
+      : lead() && BL.canHideFromBacklog(state.idx, n.id, backlogPool()) ? { label: 'Hide from the Backlog', icon: 'hide', onSelect: () => A.setBacklogIgnored(n.id, true) } : null,
     'sep',
-    { label: 'Archive', icon: 'archive', onSelect: () => { const out = leaveTo(n); A.archive(n.id); out(); } },
-    { label: 'Delete…', icon: 'trash', danger: true, onSelect: async () => { const out = leaveTo(n); if (await A.remove(n.id)) out(); } },
-  ], { label: 'Task actions' });
+    editable(n) ? { label: 'Archive', icon: 'archive', onSelect: () => { const out = leaveTo(n); A.archive(n.id); out(); } } : null,
+    lead() ? { label: 'Delete…', icon: 'trash', danger: true, onSelect: async () => { const out = leaveTo(n); if (await A.remove(n.id)) out(); } } : null,
+  ].filter(Boolean);
+  if (items[0] === 'sep') items.shift();
+  if (items[items.length - 1] === 'sep') items.pop();
+  if (!items.length) { toast('Nothing to change here: it is not yours. Post an update instead.'); return; }
+  menu(anchor, items, { label: 'Task actions' });
 }
 
 // ---------------------------------------------------------------------------
@@ -190,7 +205,7 @@ function moreMenu(anchor, n) {
 function titleField(n) {
   const key = n.kind === T.KIND.task ? 'title' : n.kind === T.KIND.step ? 'label' : 'name';
   const was = n[key] ?? '';
-  const title = el('textarea', { class: 'title-edit', rows: '1', 'aria-label': n.kind === T.KIND.task ? 'Title' : 'Name', spellcheck: 'true', maxlength: '300' });
+  const title = el('textarea', { class: 'title-edit', rows: '1', 'aria-label': n.kind === T.KIND.task ? 'Title' : 'Name', spellcheck: 'true', maxlength: '300', readonly: !editable(n) });
   title.value = was;
   const fit = () => { title.style.height = 'auto'; title.style.height = `${Math.min(title.scrollHeight, 3 * 1.3 * 19 + 8)}px`; };
   requestAnimationFrame(fit);
@@ -212,10 +227,11 @@ function top(n) {
   if (isPhone()) wrap.append(crumbs(n));
   wrap.append(titleField(n));
 
+  const can = editable(n);
   const due = daysUntil(n.due);
-  const dueInput = el('input', { type: 'date', class: `pv-input${due !== null && due <= 2 && S.isOpen(n.status) ? ' warn-text' : ''}`, 'aria-label': 'Due date', value: n.due ?? '' });
+  const dueInput = el('input', { type: 'date', class: `pv-input${due !== null && due <= 2 && S.isOpen(n.status) ? ' warn-text' : ''}`, 'aria-label': 'Due date', value: n.due ?? '', disabled: !can });
   dueInput.addEventListener('change', () => A.updateFields(n.id, { due: dueInput.value || null }));
-  const rev = el('input', { type: 'text', class: 'pv-input mono', 'aria-label': 'Revision', placeholder: 'None', value: n.revision ?? '', maxlength: '40' });
+  const rev = el('input', { type: 'text', class: 'pv-input mono', 'aria-label': 'Revision', placeholder: 'None', value: n.revision ?? '', maxlength: '40', readonly: !can });
   rev.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); rev.blur(); }
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); rev.value = n.revision ?? ''; rev.blur(); }
@@ -224,12 +240,18 @@ function top(n) {
 
   // One compact row: each value carries its own small label, and wraps on a phone.
   const pc = (label, ...v) => el('div', { class: 'pc' }, el('span', { class: 'pc-lbl', 'aria-hidden': 'true' }, label), ...v);
+  // Only the lead gives work to someone; everyone sees who has it.
+  const who = [n.assignee ? face(n.assignee) : null, el('span', { class: n.assignee ? '' : 'pv-muted' }, personName(n.assignee))];
+  const prio = { high: 'High', normal: 'Normal', low: 'Low' }[n.priority] ?? 'Normal';
+  const prioText = el('span', { class: n.priority === 'high' ? 'warn-text' : n.priority === 'low' ? 'pv-muted' : '' }, prio);
   wrap.append(el('div', { class: 'props' },
-    pill(n.status, { onClick: (e) => statusMenu(e.currentTarget, n) }),
-    pc('Who', el('button', { class: 'pv-btn', type: 'button', 'aria-haspopup': 'menu', 'aria-label': `Assignee: ${personName(n.assignee)}`, onclick: (e) => assigneeMenu(e.currentTarget, n) },
-      n.assignee ? face(n.assignee) : null, el('span', { class: n.assignee ? '' : 'pv-muted' }, personName(n.assignee)))),
-    pc('Priority', el('button', { class: 'pv-btn', type: 'button', 'aria-haspopup': 'menu', 'aria-label': `Priority: ${{ high: 'High', normal: 'Normal', low: 'Low' }[n.priority] ?? 'Normal'}`, onclick: (e) => priorityMenu(e.currentTarget, n) },
-      el('span', { class: n.priority === 'high' ? 'warn-text' : n.priority === 'low' ? 'pv-muted' : '' }, { high: 'High', normal: 'Normal', low: 'Low' }[n.priority] ?? 'Normal'))),
+    pill(n.status, can ? { onClick: (e) => statusMenu(e.currentTarget, n) } : {}),
+    pc('Who', lead()
+      ? el('button', { class: 'pv-btn', type: 'button', 'aria-haspopup': 'menu', 'aria-label': `Assignee: ${personName(n.assignee)}. Change`, onclick: (e) => assignMenu(e.currentTarget, n) }, ...who)
+      : el('span', { class: 'pv-static' }, ...who)),
+    pc('Priority', can
+      ? el('button', { class: 'pv-btn', type: 'button', 'aria-haspopup': 'menu', 'aria-label': `Priority: ${prio}`, onclick: (e) => priorityMenu(e.currentTarget, n) }, prioText)
+      : el('span', { class: 'pv-static' }, prioText)),
     pc('Due', dueInput),
     pc('Rev', rev)));
 
@@ -251,26 +273,11 @@ function nodeTop(n) {
     wrap.append(el('div', { class: 'props' },
       el('div', { class: 'pc' }, box, el('span', {}, inside ? `${p.done} of ${p.total} done` : S.STEP_LABEL[n.state ?? 'todo'])),
       el('span', { class: 'meta wrap' }, `A step${job ? ` of ${job.title}` : ''}: a tick, with no status or updates of its own.`),
-      btn('Make it a task', () => A.promoteStep(n.id), { cls: 'sm ghost', ic: 'tasks', title: 'Its own status, assignee and updates' })));
+      lead() ? btn('Make it a task', () => A.promoteStep(n.id), { cls: 'sm ghost', ic: 'tasks', title: 'Its own status, assignee and updates' }) : null));
   } else {
     wrap.append(el('div', { class: 'props' }, el('span', { class: 'meta wrap' }, `A section${job ? ` of ${job.title}` : ''}: a heading for its tasks and steps.`)));
   }
   return wrap;
-}
-
-function assigneeMenu(anchor, n) {
-  const people = [state.me, ...Object.keys(state.people).filter((p) => p !== state.me)];
-  menu(anchor, [
-    { heading: 'Assign to' },
-    ...people.map((p) => ({ label: personName(p), checked: n.assignee === p, onSelect: () => assign(n, p) })),
-    { label: 'Unassigned', checked: !n.assignee, onSelect: () => assign(n, null) },
-  ], { label: 'Assign to' });
-}
-
-function assign(n, who) {
-  if ((n.assignee ?? null) === who) return;
-  A.updateFields(n.id, { assignee: who });
-  A.write({ updates: [{ taskId: n.id, at: new Date().toISOString(), by: state.me, kind: 'assign', text: who ? `Assigned to ${personName(who)}` : 'Unassigned' }] });
 }
 
 function priorityMenu(anchor, n) {
@@ -296,6 +303,7 @@ function blockChips(n) {
 
 /** The primary action for where this task is. At most one red button. */
 function contextAction(n) {
+  if (!A.canWrite(n)) return readOnlyAction(n);
   const lead = state.role === 'lead';
   const since = (iso) => (iso ? ` · ${whenLabel(iso)}` : '');
   switch (n.status) {
@@ -313,7 +321,7 @@ function contextAction(n) {
     }
     case 'fix':
       return el('div', { class: 'callout fix' },
-        el('div', { class: 'callout-head' }, `Sent back${n.checkedBy ? '' : ''}${since(n.updatedAt)}`),
+        el('div', { class: 'callout-head' }, `Sent back${since(n.statusAt ?? n.updatedAt)}`),
         n.fixNote ? el('div', { class: 'callout-body' }, n.fixNote) : null,
         el('div', { class: 'acts' },
           btn('Submit for check again', () => A.setStatus(n.id, 'check'), { cls: 'primary' }),
@@ -355,6 +363,25 @@ function contextAction(n) {
   }
 }
 
+/**
+ * Someone else's task, seen by a designer: where it stands, said plainly,
+ * with nothing to press (the rules would refuse it). Updates still post.
+ */
+function readOnlyAction(n) {
+  const head = { check: 'Ready for check', fix: 'Sent back', waiting: 'Waiting', cancelled: 'Cancelled', done: 'Done' }[n.status];
+  const body = n.status === 'fix' ? n.fixNote : n.status === 'waiting' ? S.waitingLine(state.idx, n) : n.status === 'cancelled' ? n.cancelled?.reason : '';
+  let whose = 'Nobody has it yet, and only the Design lead changes it.';
+  if (n.assignee) {
+    whose = state.access.leads.includes(n.assignee)
+      ? `${personName(n.assignee)} has it.`
+      : `${personName(n.assignee)} has it. Only they or the Design lead change it.`;
+  }
+  return el('div', { class: `callout ${{ check: 'check', fix: 'fix', waiting: 'waiting' }[n.status] ?? ''}`.trim() },
+    head ? el('div', { class: 'callout-head' }, head) : null,
+    body ? el('div', { class: 'callout-body' }, body) : null,
+    el('div', { class: 'meta wrap' }, `${whose} You can post an update below.`));
+}
+
 // ---------------------------------------------------------------------------
 // brief
 // ---------------------------------------------------------------------------
@@ -394,7 +421,9 @@ function briefSection(n) {
     requestAnimationFrame(() => { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); });
     return sec;
   }
-  head.append(btn('Edit', () => { briefEditing = true; renderPanel(rootEl, n.id); }, { cls: 'sm ghost', ic: 'edit' }));
+  if (!editable(n)) {
+    if (!String(n.brief ?? '').trim()) { sec.append(el('p', { class: 'meta' }, 'No brief.')); return sec; }
+  } else head.append(btn('Edit', () => { briefEditing = true; renderPanel(rootEl, n.id); }, { cls: 'sm ghost', ic: 'edit' }));
   if (!String(n.brief ?? '').trim()) {
     sec.append(el('button', { class: 'brief-empty', type: 'button', onclick: () => { briefEditing = true; renderPanel(rootEl, n.id); } }, 'What needs doing, and any instructions'));
     return sec;
@@ -458,7 +487,7 @@ function childrenSection(n) {
       onDropInto: (dragId, groupId) => A.moveInto(dragId, groupId),
     });
   }
-  sec.append(addControls(n));
+  if (editable(n)) sec.append(addControls(n));
   return sec;
 }
 
@@ -589,28 +618,32 @@ function kidMenu(anchor, c, { at = null } = {}) {
 
 function stepMenu(anchor, s, { at = null } = {}) {
   const inside = containerStep(s);
-  menu(anchor, [
+  const can = editable(s);
+  const items = [
     { label: 'Open', icon: 'open', onSelect: () => openTask(s.id) },
     'sep',
-    ...(inside ? [] : [{ heading: 'Step' }, ...S.STEP_STATES.map((v) => ({ label: S.STEP_LABEL[v], checked: (s.state ?? 'todo') === v, onSelect: () => A.setStepState(s.id, v) })), 'sep']),
-    { label: 'Add sub-steps', icon: 'plus', onSelect: async () => {
+    ...(inside || !can ? [] : [{ heading: 'Step' }, ...S.STEP_STATES.map((v) => ({ label: S.STEP_LABEL[v], checked: (s.state ?? 'todo') === v, onSelect: () => A.setStepState(s.id, v) })), 'sep']),
+    can ? { label: 'Add sub-steps', icon: 'plus', onSelect: async () => {
       const v = await promptDialog({ title: `Sub-steps of ${s.label}`, label: 'One a line', multiline: true, ok: 'Add', placeholder: 'Body\nExtension\nHead' });
       if (v) for (const line of v.split(/\r?\n/).map((x) => x.trim()).filter(Boolean)) A.addStep(s.id, line);
-    } },
-    { label: 'Make it a task', icon: 'tasks', onSelect: () => A.promoteStep(s.id) },
-    { label: 'Move to…', icon: 'move', onSelect: async () => (await import('./pickers.js')).moveDialog(s.id) },
-    { label: 'Rename', icon: 'edit', onSelect: () => A.rename(s.id) },
-    { label: 'Delete…', icon: 'trash', danger: true, onSelect: async () => { const out = openId === s.id ? leaveTo(s) : null; if (await A.remove(s.id)) out?.(); } },
-  ], { label: `${s.label} actions`, at });
+    } } : null,
+    lead() ? { label: 'Make it a task', icon: 'tasks', onSelect: () => A.promoteStep(s.id) } : null,
+    lead() ? { label: 'Move to…', icon: 'move', onSelect: async () => (await import('./pickers.js')).moveDialog(s.id) } : null,
+    can ? { label: 'Rename', icon: 'edit', onSelect: () => A.rename(s.id) } : null,
+    lead() ? { label: 'Delete…', icon: 'trash', danger: true, onSelect: async () => { const out = openId === s.id ? leaveTo(s) : null; if (await A.remove(s.id)) out?.(); } } : null,
+  ].filter(Boolean);
+  while (items[items.length - 1] === 'sep') items.pop();
+  menu(anchor, items, { label: `${s.label} actions`, at });
 }
 
 function sectionMenu(anchor, g, { at = null } = {}) {
+  const can = editable(g);
   menu(anchor, [
     { label: 'Open', icon: 'open', onSelect: () => openTask(g.id) },
-    { label: 'Rename', icon: 'edit', onSelect: () => A.rename(g.id) },
-    { label: 'Move to…', icon: 'move', onSelect: async () => (await import('./pickers.js')).moveDialog(g.id) },
-    'sep',
-    { label: 'Delete…', icon: 'trash', danger: true, onSelect: async () => { const out = openId === g.id ? leaveTo(g) : null; if (await A.remove(g.id)) out?.(); } },
+    can ? { label: 'Rename', icon: 'edit', onSelect: () => A.rename(g.id) } : null,
+    lead() ? { label: 'Move to…', icon: 'move', onSelect: async () => (await import('./pickers.js')).moveDialog(g.id) } : null,
+    lead() ? 'sep' : null,
+    lead() ? { label: 'Delete…', icon: 'trash', danger: true, onSelect: async () => { const out = openId === g.id ? leaveTo(g) : null; if (await A.remove(g.id)) out?.(); } } : null,
   ], { label: `${T.nameOf(g)} actions`, at });
 }
 
@@ -622,13 +655,15 @@ function foldersSection(n) {
   const sec = el('section', { class: 'psec', 'aria-label': 'Folders' });
   sec.append(el('div', { class: 'psec-head' }, el('h2', { class: 'lbl' }, 'Folders')));
   const folders = Array.isArray(n.folders) ? n.folders : [];
+  const can = editable(n);
+  if (!can && !folders.length) { sec.append(el('p', { class: 'meta' }, 'No folders linked.')); return sec; }
   for (const f of folders) {
     sec.append(el('div', { class: 'fold' },
       icon('folder', 16),
       f.label ? el('span', { class: 'fold-label' }, f.label) : null,
       el('span', { class: 'fold-path', title: displayPath(f.path) }, el('bdi', {}, isPhone() ? shortPath(f.path, 3) : displayPath(f.path))),
       btn(isPhone() ? 'Copy' : 'Copy path', () => copyPath(f.path), { cls: 'sm', ic: 'copy', title: 'Copies the full path for this PC: paste it into the File Explorer address bar' }),
-      iconBtn('more', `${leafName(f.path)} actions`, (e) => menu(e.currentTarget, [
+      !can ? null : iconBtn('more', `${leafName(f.path)} actions`, (e) => menu(e.currentTarget, [
         { label: f.label ? 'Change label' : 'Add a label', icon: 'edit', onSelect: async () => {
           const v = await promptDialog({ title: 'Label', value: f.label ?? '', placeholder: 'GA, Laser, Vessel files', required: false });
           if (v !== null) A.updateFields(n.id, { folders: folders.map((x) => (x === f ? { ...x, label: v } : x)) });
@@ -636,6 +671,7 @@ function foldersSection(n) {
         { label: 'Remove link', icon: 'trash', danger: true, onSelect: () => A.updateFields(n.id, { folders: folders.filter((x) => x !== f) }, { message: 'Folder link removed', undo: true }) },
       ]), 'sm')));
   }
+  if (!can) return sec;
   const err = el('div', { class: 'form-err', role: 'alert' });
   const input = el('input', { class: 'input', type: 'text', placeholder: 'Paste a folder path', 'aria-label': 'Paste a folder path', spellcheck: 'false' });
   const add = (raw) => {
@@ -769,11 +805,13 @@ function drawTimeline() {
   if (!timeline.loaded) { host.append(el('div', { class: 'meta', 'aria-busy': 'true' }, 'Loading updates…')); return; }
   if (!timeline.list.length) { host.append(el('p', { class: 'meta', style: { padding: '8px 0' } }, 'Post the first update.')); return; }
   for (const u of timeline.list) {
+    // An assignment names the person as this reader knows them ("You").
+    const assignText = u.kind === 'assign' && u.to !== undefined ? (u.to ? `To ${personName(u.to)}` : 'Unassigned') : null;
     host.append(el('div', { class: `ev ${u.kind}` },
       face(u.by),
       el('div', { style: { 'min-width': '0' } },
         el('div', { class: 'ev-head' }, el('span', { class: 'ev-who' }, personName(u.by)), el('span', { class: 'meta' }, `${S.eventLabel(u)} · ${whenLabel(u.at)}`)),
-        u.text ? el('div', { class: 'ev-text' }, u.text) : null)));
+        assignText ?? u.text ? el('div', { class: 'ev-text' }, assignText ?? u.text) : null)));
   }
   if (timeline.more) {
     host.append(btn('Older', () => {
@@ -788,7 +826,7 @@ function drawTimeline() {
 function updatesSection(n) {
   const sec = el('section', { class: 'psec', 'aria-label': 'Updates' });
   sec.append(el('div', { class: 'psec-head' }, el('h2', { class: 'lbl' }, 'Updates')));
-  const ta = el('textarea', { class: 'textarea compose-input', rows: '2', placeholder: n.status === 'todo' ? 'Post an update (it starts the task)…' : 'Post an update…', 'aria-label': 'Post an update' });
+  const ta = el('textarea', { class: 'textarea compose-input', rows: '2', placeholder: n.status === 'todo' && A.canWrite(n) ? 'Post an update (it starts the task)…' : 'Post an update…', 'aria-label': 'Post an update' });
   const post = () => {
     if (A.postUpdate(n.id, ta.value)) { ta.value = ''; ta.blur(); }
   };
@@ -806,14 +844,14 @@ function updatesSection(n) {
 function footer(n) {
   return el('div', { class: 'meta', style: { 'white-space': 'normal', display: 'flex', gap: '8px', 'flex-wrap': 'wrap', 'align-items': 'center' } },
     `Created ${whenLabel(n.createdAt)}${n.createdBy ? ` by ${personName(n.createdBy)}` : ''} · last activity ${ageLabel(n.lastActivityAt)} ago`,
-    n.backlogIgnored ? btn('Hidden from the Backlog · show it again', () => A.setBacklogIgnored(n.id, false), { cls: 'sm ghost' }) : null);
+    n.backlogIgnored && lead() ? btn('Hidden from the Backlog · show it again', () => A.setBacklogIgnored(n.id, false), { cls: 'sm ghost' }) : null);
 }
 
 /** Phone: the primary action and Post update pinned at the bottom. */
 function dock(n) {
   if (!isPhone()) return el('div', { class: 'panel-dock', hidden: true });
   const focusCompose = () => { const ta = rootEl.querySelector('.compose-input'); ta?.scrollIntoView({ block: 'center' }); ta?.focus(); };
-  const primary = {
+  const primary = !A.canWrite(n) ? null : {
     todo: ['Start', () => A.start(n.id)],
     in_progress: state.role === 'lead' ? ['Mark done', () => A.setStatus(n.id, 'done')] : ['Submit for check', () => A.setStatus(n.id, 'check')],
     check: state.role === 'lead' ? ['Approve', () => A.setStatus(n.id, 'done')]
@@ -826,11 +864,7 @@ function dock(n) {
     primary ? btn(primary[0], primary[1], { cls: n.status === 'waiting' || primary[2] === 'secondary' ? '' : 'primary' }) : null);
 }
 
-/**
- * A person's initials. You are "Me" in local mode, where there is no name to
- * take initials from; with accounts, initials come from the person's name.
- */
+/** A person's initials, from their name (people/{email}), else their address. */
 function face(email) {
-  if (email === state.me) return avatar(state.mode === 'local' ? 'Me' : (state.people[email]?.name ?? email), 'You');
-  return avatar(personName(email), personName(email));
+  return avatar(realName(email) || email, personName(email));
 }

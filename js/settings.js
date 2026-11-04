@@ -1,7 +1,7 @@
 // settings.js - the cog, top right. Copied from the board and trimmed to this
-// app: who is signed in, their password, sign out; the theme; this PC's
-// Stella Systems folder; the Backlog threshold; local-mode backup; and, for a
-// master, the accounts and their roles.
+// app: who is signed in, their name, password, sign out; the theme; this
+// PC's Stella Systems folder; the Backlog threshold; local-mode backup; and,
+// for a master, the accounts, their names and their roles.
 //
 // ACCOUNTS LIVE IN ONE PLACE. Who has which role is the `settings/access`
 // document, and the Firestore rules read that same document, so setting a
@@ -18,7 +18,8 @@ import { el, btn, toast, prefs } from './ui.js';
 import { getPrefix, setPrefix } from './folders.js';
 import { VERSION } from './version.js';
 import { go } from './router.js';
-import { state } from './state.js';
+import { state, realName } from './state.js';
+import { nameFor } from './team.js';
 
 const THEME_KEY = 'stella.design.theme';
 
@@ -29,7 +30,9 @@ export function openSettings() {
   openDialog((box, close, { dismiss, markClean }) => {
     box.classList.add('settings');
     box.append(el('h3', {}, 'Settings'));
-    box.append(account(close), appearance(), thisPc(markClean), backlog(markClean), data(close));
+    const lead = state.role === 'lead';
+    const designs = lead || state.role === 'designer';
+    box.append(...[account(close), yourName(markClean), appearance(), designs ? thisPc(markClean) : null, lead ? backlog(markClean) : null, lead || Store.mode === 'local' ? data(close) : null].filter(Boolean));
     const acc = el('div', { class: 'settings-section', hidden: true });
     box.append(acc);
     if (Auth.mode === 'firebase' && Auth.isMaster) { acc.hidden = false; accounts(acc, markClean); }
@@ -43,13 +46,28 @@ function account(close) {
   const local = Auth.mode !== 'firebase';
   return section('Account', el('div', { class: 'settings-row' },
     el('div', {},
-      el('div', {}, local ? 'Local mode' : (Auth.user?.email ?? '')),
+      el('div', {}, local ? `Local mode · viewing as ${realName(state.me)} (${ROLE_LABEL[state.role]})` : (Auth.user?.email ?? '')),
       el('div', { class: 'settings-row-sub' }, local
-        ? 'No accounts here: everything is saved in this browser only, never the live data. Open the app with ?local=0 to use the live data.'
+        ? 'No accounts here: everything is saved in this browser only, never the live data. "View as" in the strip under the header switches between an invented lead, designer, contributor and manager, to check their screens. Open the app with ?local=0 to use the live data.'
         : `${ROLE_LABEL[Auth.role] ?? 'Not listed'}${Auth.isMaster ? ' · master (may change the accounts)' : ''}`)),
     local ? null : el('div', { class: 'row' },
       btn('Password', () => { close(null); openPasswordDialog(); }, { cls: 'sm' }),
       btn('Sign out', async () => { close(null); await Auth.signOut(); location.reload(); }, { cls: 'sm' }))));
+}
+
+/** Your name as the team sees it: on tiles, lanes and the timeline. people/{you}. */
+function yourName(markClean) {
+  const input = el('input', { class: 'input', type: 'text', value: state.people[state.me]?.name ?? '', placeholder: nameFor({}, state.me), maxlength: '60', 'aria-label': 'Your name', autocomplete: 'name', style: { 'max-width': '280px' } });
+  const save = async () => {
+    const v = input.value.trim();
+    if (v === (state.people[state.me]?.name ?? '')) return;
+    try { await Store.savePerson(state.me, { name: v }); markClean(); toast(v ? `Saved: the team sees you as ${v}` : 'Name cleared'); }
+    catch (e) { toast(`Could not save: ${e.message}`, { warn: true }); }
+  };
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } });
+  input.addEventListener('change', save);
+  return section('Your name', el('div', { class: 'settings-row' },
+    el('div', { class: 'settings-row-sub' }, 'How the team sees you: your initials on tiles, your name on updates.'), input));
 }
 
 function appearance() {
@@ -131,7 +149,7 @@ function data(close) {
   return section('Data',
     el('div', { class: 'row', style: { 'flex-wrap': 'wrap' } },
       state.role === 'lead' ? btn('Import TileDo or Excel', () => { close(null); go('/import'); }, { cls: 'sm', ic: 'upload' }) : null,
-      btn('Archive', () => { close(null); go('/archive'); }, { cls: 'sm', ic: 'archive' }),
+      state.role === 'lead' ? btn('Archive', () => { close(null); go('/archive'); }, { cls: 'sm', ic: 'archive' }) : null,
       local ? btn('Back up to a file', () => {
         const blob = new Blob([JSON.stringify(Store.exportLocal(), null, 1)], { type: 'application/json' });
         const a = el('a', { href: URL.createObjectURL(blob), download: `design-scheduling-backup-${new Date().toISOString().slice(0, 10)}.json` });
@@ -183,8 +201,14 @@ async function accounts(host, markClean) {
       const self = r.email === me;
       const tick = el('input', { type: 'checkbox', checked: r.master, disabled: self, title: self ? 'Another master can change yours.' : 'Master: may change this list' });
       tick.addEventListener('change', () => save(withMaster(access, r.email, tick.checked), `${r.email} ${tick.checked ? 'is now a master' : 'is no longer a master'}.`));
+      // The name the team sees (people/{email}); saved as soon as it is left.
+      const nm = el('input', { class: 'input acct-name', type: 'text', value: state.people[r.email]?.name ?? '', placeholder: 'Name', maxlength: '60', 'aria-label': `Name for ${r.email}` });
+      nm.addEventListener('change', async () => {
+        try { await Store.savePerson(r.email, { name: nm.value }); markClean(); toast(`Saved the name for ${r.email}`); }
+        catch (e) { toast(`Could not save the name: ${e.message}`, { warn: true }); }
+      });
       table.append(el('div', { class: 'acct-row' },
-        el('span', { style: { 'overflow-wrap': 'anywhere' } }, r.email),
+        el('div', { class: 'acct-id' }, nm, el('span', { class: 'settings-row-sub', style: { 'overflow-wrap': 'anywhere' } }, r.email)),
         roleSelect(r.role, (v) => save(withRole(access, r.email, v), `${r.email} is now ${ROLE_LABEL[v]}.`), self),
         el('label', { class: 'check-line' }, tick, 'Master'),
         el('div', { class: 'row' },
@@ -193,6 +217,7 @@ async function accounts(host, markClean) {
     }
     card.append(table);
     const input = el('input', { class: 'input', type: 'email', placeholder: 'name@example.com', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'New account address' });
+    const name = el('input', { class: 'input acct-name', type: 'text', placeholder: 'Name', maxlength: '60', 'aria-label': 'New account name' });
     let role = 'designer';
     const err = el('div', { class: 'form-err', role: 'alert' });
     const add = async () => {
@@ -200,10 +225,14 @@ async function accounts(host, markClean) {
       err.textContent = '';
       if (!isEmail(email)) { err.textContent = 'That does not look like an email address.'; return; }
       if (accountRows(access).some((x) => x.email === email)) { err.textContent = `${email} is already listed, as ${ROLE_LABEL[roleOf(access, email)]}.`; return; }
-      if (await save(withRole(access, email, role), `${email} added as ${ROLE_LABEL[role]}.`)) await makeUser(email);
+      if (await save(withRole(access, email, role), `${email} added as ${ROLE_LABEL[role]}.`)) {
+        if (name.value.trim()) { try { await Store.savePerson(email, { name: name.value }); } catch (e) { toast(`Added, but the name did not save: ${e.message}`, { warn: true }); } }
+        await makeUser(email);
+      }
     };
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') add(); });
-    card.append(el('div', { class: 'row', style: { 'flex-wrap': 'wrap' } }, input, roleSelect(role, (v) => { role = v; }), btn('Add', add, { cls: 'sm' })), err);
+    name.addEventListener('keydown', (e) => { if (e.key === 'Enter') add(); });
+    card.append(el('div', { class: 'row', style: { 'flex-wrap': 'wrap' } }, name, input, roleSelect(role, (v) => { role = v; }), btn('Add', add, { cls: 'sm' })), err);
     if (fresh) card.append(freshBox(fresh));
   };
 

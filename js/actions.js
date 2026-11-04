@@ -12,7 +12,7 @@
 // it can; on a phone with no signal that can be minutes, and the toast should
 // not wait for it. A write that fails says so in the warning toast.
 
-import { state, node, isMine } from './state.js';
+import { state, node, isMine, personName, realName } from './state.js';
 import { Store } from './store.js';
 import * as T from './tree.js';
 import * as S from './status.js';
@@ -20,6 +20,7 @@ import { nowISO } from './dates.js';
 import { toast, toastError } from './ui.js';
 import * as C from './convert.js';
 import { confirmDialog, promptDialog } from './dialog.js';
+import * as TM from './team.js';
 
 const ctx = () => ({ by: state.me, at: nowISO(), role: state.role, canWrite });
 
@@ -31,13 +32,23 @@ const ctx = () => ({ by: state.me, at: nowISO(), role: state.role, canWrite });
  * write them, catches the unblocks.
  */
 export function canWrite(t) {
-  return state.role === 'lead' || t?.createdBy === state.me || t?.assignee === state.me;
+  if (state.role === 'lead') return true;
+  if (state.role !== 'designer' || !t) return false;
+  return t.createdBy === state.me || t.assignee === state.me;
 }
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-/** Write a change; a failure is said, never swallowed. */
+/**
+ * Write a change; a failure is said, never swallowed. Whoever makes activity
+ * on a task is noted with it (`lastBy`), which is how Crew knows when a
+ * designer was last heard from without reading every timeline.
+ */
 export function write(change, what = 'That did not save') {
-  const p = Store.commit(change);
+  const stamp = (p) => ('lastActivityAt' in p && !('lastBy' in p) ? { ...p, lastBy: state.me } : p);
+  const c = { ...change };
+  if (c.patch) c.patch = c.patch.map(stamp);
+  if (c.set) c.set = c.set.map((n) => (n.kind === T.KIND.task ? stamp(n) : n));
+  const p = Store.commit(c);
   p.catch((e) => toastError(e, what));
   return p;
 }
@@ -64,13 +75,13 @@ function mergePatches(list) {
 // ---------------------------------------------------------------------------
 
 /** A task node with every field written, so queries and rules see real values. */
-export function taskNode({ id = Store.newId(), parentId = null, order, title, brief = '', at = nowISO(), status = 'todo' }) {
+export function taskNode({ id = Store.newId(), parentId = null, order, title, brief = '', at = nowISO(), status = 'todo', assignee = state.me }) {
   return {
     id, kind: T.KIND.task, parentId, order,
     title: String(title).trim(), brief: String(brief ?? '').trim(),
     status, waiting: null, priority: 'normal',
-    assignee: state.me, createdBy: state.me,
-    createdAt: at, updatedAt: at, lastActivityAt: at,
+    assignee: assignee ?? null, createdBy: state.me,
+    createdAt: at, updatedAt: at, lastActivityAt: at, statusAt: at,
     due: null, revision: null, folders: [],
     checkedBy: null, checkedAt: null, doneAt: null, cancelled: null,
     homeOrder: null, backlogIgnored: false, archivedAt: null,
@@ -94,11 +105,19 @@ function nextColour() {
  * template of its nearest group unless told not to.
  * @returns {string} the new id
  */
-export function createTask({ title, parentId = null, brief = '', useTemplate = true }) {
+export function createTask({ title, parentId = null, brief = '', useTemplate = true, assignee }) {
   const at = nowISO();
   const parent = parentId ? node(parentId) : null;
   const inJob = parent && (parent.kind === T.KIND.task || parent.kind === T.KIND.step || T.isSection(state.idx, parent));
-  const n = taskNode({ parentId, order: T.newOrder(state.idx, parentId, inJob ? 'end' : 'beforeGroups'), title, brief, at });
+  // Who it is for: as asked; inside a job, whoever has that job (the work
+  // follows it); otherwise whoever adds it.
+  const who = assignee !== undefined ? assignee : inJob ? (T.ownerTask(state.idx, parentId)?.assignee ?? state.me) : state.me;
+  // A parent that is not here yet (a designer's own group, before the lead's
+  // app has made it): after whatever already names it.
+  const order = parentId && !parent
+    ? Math.max(0, ...state.nodes.filter((x) => x.parentId === parentId).map((x) => x.order ?? 0)) + T.ORDER_GAP
+    : T.newOrder(state.idx, parentId, inJob ? 'end' : 'beforeGroups');
+  const n = taskNode({ parentId, order, title, brief, at, assignee: who });
   const set = [n];
   if (useTemplate && !inJob && parentId) {
     const t = T.stepsTemplateOf(state.idx, parentId);
@@ -276,11 +295,12 @@ export const reopen = (id) => { const t = node(id); if (t) setStatus(id, S.reope
 
 /** Post an update. On a To-do task it starts it. */
 export function postUpdate(id, text) {
-  const r = S.postUpdate(state.idx, id, text, ctx());
+  const c = ctx();
+  const r = S.postUpdate(state.idx, id, text, { ...c, canWrite: canWrite(node(id)) });
   if (r.error) { toast(r.error, { warn: true }); return false; }
-  const patches = [...r.patches, ...touchJob(id, r.patches[0].lastActivityAt, { self: false })];
+  const patches = [...r.patches, ...touchJob(id, c.at, { self: false })];
   write({ patch: patches, updates: r.updates });
-  if (r.patches[0].status === 'in_progress') toast('Posted, and started');
+  if (r.patches[0]?.status === 'in_progress') toast('Posted, and started');
   return true;
 }
 
@@ -307,8 +327,13 @@ export function cycleStep(id) {
   setStepState(id, S.nextStepState(s.state ?? 'todo'));
 }
 
-/** May this person tick this step? The rules' test: its parent is theirs. */
-const canWriteStep = (s) => state.role === 'lead' || canWrite(node(s?.parentId));
+/**
+ * May this person tick this step? The rules' test: its parent is theirs, or
+ * the task it sits in (through steps and sections) is - so a designer ticks
+ * the sub-steps the lead's template made in a job assigned to them.
+ */
+export const canWriteStep = (s) => state.role === 'lead'
+  || (state.role === 'designer' && (canWrite(node(s?.parentId)) || canWrite(T.ownerTask(state.idx, s?.id))));
 
 /**
  * THE CHECKBOX on a step or subtask (decided 2026-11-04). A click goes
@@ -322,6 +347,7 @@ export function tick(id, dir = 1) {
   const n = node(id);
   if (!n) return;
   if (n.kind === T.KIND.step) {
+    if (!canWriteStep(n)) { toast('Only whoever has this job, or the Design lead, ticks its steps.', { warn: true }); return; }
     const from = n.state ?? 'todo';
     const to = dir > 0 ? S.nextStepState(from) : S.stepBack(from);
     if (!to) return;
@@ -354,12 +380,12 @@ export function setStepState(id, value) {
   write({ patch: [{ id, state: value, updatedAt: at }, ...touchJob(id, at)] });
 }
 
-/** "Make it a task": the step becomes a real subtask in the same place. */
+/** "Make it a task": the step becomes a real subtask in the same place, for whoever has the job. */
 export function promoteStep(id) {
   const s = node(id);
   if (!s || s.kind !== T.KIND.step) return;
   const at = nowISO();
-  const base = taskNode({ id, parentId: s.parentId, order: s.order, title: s.label, at, status: s.state === 'done' ? 'done' : s.state === 'doing' ? 'in_progress' : s.state === 'na' ? 'cancelled' : 'todo' });
+  const base = taskNode({ id, parentId: s.parentId, order: s.order, title: s.label, at, assignee: T.ownerTask(state.idx, s.parentId)?.assignee ?? state.me, status: s.state === 'done' ? 'done' : s.state === 'doing' ? 'in_progress' : s.state === 'na' ? 'cancelled' : 'todo' });
   write({ patch: [{ ...base, kind: T.KIND.task }] });
   toast('Now a task, with its own status and updates', { action: 'Undo', onAction: () => write({ patch: [{ id, kind: T.KIND.step }] }) });
 }
@@ -524,6 +550,54 @@ export async function rename(id) {
   const key = n.kind === T.KIND.task ? 'title' : n.kind === T.KIND.step ? 'label' : 'name';
   const v = await promptDialog({ title: 'Rename', value: T.nameOf(n), ok: 'Rename' });
   if (v && v !== T.nameOf(n)) updateFields(id, { [key]: v });
+}
+
+// ---------------------------------------------------------------------------
+// the team
+// ---------------------------------------------------------------------------
+
+/**
+ * Assign a task (the lead). The open tasks inside it that were following it
+ * go with it; an `assign` event names who it went to.
+ */
+export function assign(id, who) {
+  const n = node(id);
+  if (!n || n.kind !== T.KIND.task || state.role !== 'lead') return;
+  if ((n.assignee ?? null) === (who ?? null)) return;
+  const at = nowISO();
+  const patches = TM.reassignPatches(state.idx, id, who ?? null, { at });
+  const inverse = inverseOf(patches);
+  const update = { taskId: id, at, by: state.me, kind: 'assign', from: n.assignee ?? null, to: who ?? null, text: who ? `Assigned to ${realName(who)}` : 'Unassigned' };
+  write({ patch: patches, updates: [update] });
+  const more = patches.length - 1;
+  toast(`${who ? `Assigned to ${personName(who)}` : 'Unassigned'}${more ? ` · ${plural(more, 'task')} inside too` : ''}`, {
+    action: 'Undo',
+    onAction: () => write({ patch: inverse, updates: [{ ...update, at: nowISO(), from: who ?? null, to: n.assignee ?? null, text: n.assignee ? `Assigned back to ${realName(n.assignee)}` : 'Unassigned' }] }),
+  });
+}
+
+/**
+ * A designer's own task, assigned to themselves, in their group under "From
+ * designers" (team.js): the lead files it into a category later.
+ * @returns {string} the new id
+ */
+export function addOwnTask({ title, brief = '' }) {
+  return createTask({ title, brief, parentId: TM.inboxId(state.me), useTemplate: false, assignee: state.me });
+}
+
+/**
+ * The lead's app makes the "From designers" groups that designers' own
+ * tasks name (team.js inboxFixes). Idempotent: it runs on every snapshot
+ * and writes only what is missing, once.
+ */
+const inboxPending = new Set();
+export function ensureInboxes() {
+  if (state.role !== 'lead' || !state.ready) return;
+  const fixes = TM.inboxFixes(state.idx, { designers: state.access.designers, people: state.people, by: state.me, at: nowISO() })
+    .filter((n) => !inboxPending.has(n.id));
+  if (!fixes.length) return;
+  for (const n of fixes) inboxPending.add(n.id);
+  write({ set: fixes }).finally(() => { for (const n of fixes) inboxPending.delete(n.id); });
 }
 
 export { isMine };

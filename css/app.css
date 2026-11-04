@@ -614,6 +614,122 @@ input::-ms-reveal { display: none; }
 .acct-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: var(--sp-2); align-items: center; }
 .acct-fresh { border: 1px solid var(--border2); border-radius: var(--radius); padding: 10px; display: flex; flex-direction: column; gap: 6px; }
 
+/* ── Roles: what each sees (app.js). Only the lead has the category tree. ── */
+.app:not([data-role="lead"]) .side,
+.app:not([data-role="lead"]) .hd .menu-btn,
+.app:not([data-role="lead"]) .hd .new-job { display: none; }
+.tab .count { margin-left: 2px; }
+.tb-ic { position: relative; display: grid; place-items: center; }
+.tb-ic .count { position: absolute; top: -6px; left: calc(100% - 6px); min-width: 18px; height: 18px; padding: 0 5px; }
+/* Local mode: where changes go, and who this browser is viewing as. */
+.mode-note { display: flex; align-items: center; gap: var(--sp-2) var(--sp-3); flex-wrap: wrap; }
+.mode-text { flex: 1 1 260px; min-width: 0; }
+.view-as { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--text2); }
+.view-as .sel { height: 28px; }
+.pv-static { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; color: var(--text); font-size: 14px; min-width: 0; }
+.pv-static span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Ready for checking: tiles with the review in place ──────────── */
+.check-grid { grid-template-columns: repeat(auto-fill, minmax(264px, 1fr)); }
+.tile.check-tile { min-height: 0; }
+.check-tile .tile-path .av { width: 22px; height: 22px; }
+.check-tile .tile-foot { gap: 6px; margin-top: 4px; }
+
+/* ── Lanes: Crew on Home, and the Team tab's columns ─────────────── */
+.lane { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+.lane-head { display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; min-height: 44px; padding: 6px 14px; border-bottom: 1px solid var(--border); }
+.lane-name { font-size: 14.5px; font-weight: 600; }
+.team-who h2 { font-size: 14.5px; font-weight: 600; }
+.lane-empty { padding: 10px 14px; }
+.lrow {
+  position: relative; display: grid; grid-template-columns: 124px minmax(0, 1fr) auto 30px; align-items: center; gap: 12px;
+  min-height: 52px; padding: 6px 6px 6px 14px; cursor: pointer;
+}
+.lrow.with-track { grid-template-columns: 124px minmax(0, 1fr) minmax(120px, 320px) 44px 30px; }
+.lrow.no-pill { grid-template-columns: minmax(0, 1fr) auto 30px; }
+.lrow + .lrow { border-top: 1px solid var(--bg2); }
+.lrow:hover { background: var(--bg); }
+.lrow[aria-current="true"] { background: var(--bg); }
+.lrow .open-link { position: absolute; inset: 0; background: none; border: 0; z-index: 0; border-radius: inherit; }
+.lrow > :not(.open-link) { position: relative; z-index: 1; pointer-events: none; }
+.lrow > :not(.open-link) :is(button, a), .lrow > .ib { pointer-events: auto; }
+.lrow .open-link:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.lrow-pill { display: flex; }
+.lrow-main { min-width: 0; }
+.lrow-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lrow[aria-current="true"] .lrow-title { color: var(--text); }
+.lrow-sub { font-size: var(--fs-sm); color: var(--text3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lrow-sub .dot { vertical-align: middle; margin-bottom: 1px; }
+.lrow-sub.fix { color: var(--st-fix-text); }
+.lrow-sub.wait { color: var(--st-waiting-text); }
+.lrow-age { text-align: right; }
+.lrow.axis { min-height: 0; padding-top: 0; padding-bottom: 0; cursor: default; }
+.lrow.axis:hover { background: none; }
+.axis-marks { display: flex; justify-content: space-between; font-size: var(--fs-sm); color: var(--text3); }
+/* Time in the status: a bar that grows leftward from "now"; two weeks fills it. */
+.track { position: relative; display: block; height: 8px; border-radius: var(--radius-pill); background: var(--bg2); }
+.track i { position: absolute; right: 0; top: 0; bottom: 0; border-radius: var(--radius-pill); background: var(--text3); }
+.track.t-in_progress i { background: var(--st-progress); }
+.track.t-waiting i { background: var(--st-waiting); }
+.track.t-check i { background: var(--st-check); }
+.track.t-fix i { background: var(--st-fix); }
+
+.team-cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--sp-3); align-items: start; }
+.team-col { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); display: flex; flex-direction: column; min-width: 0; }
+.team-col.drop-into { outline: 2px dashed var(--focus); outline-offset: 2px; }
+.team-head { padding: 12px 14px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+.team-who { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+.team-who .meta { white-space: normal; }
+.team-stats { display: flex; flex-direction: column; gap: 2px; }
+.team-body { padding: 4px 0 8px; display: flex; flex-direction: column; }
+.team-body .band { padding: 8px 14px 2px; }
+.team-body .lrow { padding-left: 14px; }
+.team-fold { align-self: flex-start; margin: 6px 8px 0; }
+.team-none { padding: 10px 14px; }
+
+/* ── A designer's Tasks list: grouped by what to do next ─────────── */
+.view-inner.my { gap: var(--sp-5); max-width: 1280px; }
+.my-head .my-search { width: 240px; height: 32px; }
+.my-grp { display: flex; flex-direction: column; gap: var(--sp-2); }
+.my-grp-head { display: flex; align-items: center; gap: var(--sp-2); min-height: 32px; }
+.my-list { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); overflow: hidden; display: flex; flex-direction: column; }
+.my-row {
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 132px 140px auto; gap: var(--sp-3) 14px; align-items: center;
+  min-height: 64px; padding: 10px 12px 10px 14px; cursor: pointer;
+}
+.my-row + .my-row { border-top: 1px solid var(--bg2); }
+.my-row:hover { background: var(--bg); }
+.my-row[aria-current="true"] { background: var(--bg); }
+.my-row .open-link { position: absolute; inset: 0; background: none; border: 0; z-index: 0; }
+.my-row > :not(.open-link) { position: relative; z-index: 1; pointer-events: none; }
+.my-row > :not(.open-link) :is(button, a) { pointer-events: auto; }
+.my-row .open-link:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.my-main { min-width: 0; }
+.my-title-row { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.my-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.my-row.finished .my-title { color: var(--text3); }
+.my-next { font-size: var(--fs-sm); color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 3px; }
+.my-next.back { color: var(--st-fix-text); }
+.my-next.wait { color: var(--st-waiting-text); }
+.my-steps { display: flex; flex-direction: column; gap: 5px; align-items: flex-start; min-width: 0; }
+.strip { display: flex; gap: 3px; flex-wrap: wrap; }
+.strip i { width: 12px; height: 6px; border-radius: var(--radius-pill); background: var(--bg2); }
+.strip i.s-done { background: var(--st-done-text); }
+.strip i.s-doing { background: var(--st-progress-text); }
+.strip i.s-fix { background: var(--st-fix-text); }
+.strip i.s-wait { background: var(--st-waiting-text); }
+.strip i.s-na { background: transparent; box-shadow: inset 0 0 0 1px var(--border2); }
+.my-when { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; min-width: 0; text-align: right; }
+.my-due { font-size: var(--fs-sm); color: var(--text2); overflow-wrap: break-word; max-width: 100%; }
+.my-due.soon { color: var(--amber-text); }
+.my-place { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.my-act { display: flex; justify-content: flex-end; }
+.skel.my-skel { min-height: 64px; border-radius: 0; border-width: 0 0 1px; }
+
+/* ── Accounts: a name beside each address ────────────────────────── */
+.acct-id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.acct-name { height: 32px; max-width: 240px; }
+
 /* ── Phone tab bar and add button ────────────────────────────────── */
 .tabbar { display: none; }
 .fab { display: none; }
@@ -633,6 +749,8 @@ input::-ms-reveal { display: none; }
 }
 
 @media (max-width: 1099px) {
+  .lrow.with-track { grid-template-columns: 116px minmax(0, 1fr) minmax(90px, 200px) 40px 30px; gap: 10px; }
+  .my-row { grid-template-columns: minmax(0, 1fr) 112px 118px auto; gap: var(--sp-2) 10px; }
   .hd .menu-btn { display: inline-grid; }
   .hd-title { display: none; }
   .search-field { display: none; }
@@ -723,6 +841,36 @@ input::-ms-reveal { display: none; }
   .toast { bottom: calc(80px + env(safe-area-inset-bottom)); }
   .imp-row { grid-template-columns: minmax(0, 1fr); }
   .acct-row { grid-template-columns: 1fr; }
+  .acct-name { max-width: none; height: 44px; }
+
+  /* The team on a phone: one column of everything, lanes stacked. */
+  .check-grid { grid-template-columns: 1fr; }
+  .lrow.axis { display: none; }
+  .lrow, .lrow.with-track {
+    grid-template-columns: minmax(0, 1fr) auto 44px; grid-template-areas: "pill age more" "main main main";
+    gap: 4px 8px; padding: 8px 4px 10px 12px;
+  }
+  .lrow.with-track { grid-template-areas: "pill age more" "main main main" "track track track"; }
+  .lrow.no-pill { grid-template-areas: "main age more"; }
+  .lrow-pill { grid-area: pill; }
+  .lrow-main { grid-area: main; }
+  .lrow .track { grid-area: track; margin: 4px 8px 0 0; }
+  .lrow-age { grid-area: age; }
+  .lrow > .ib { grid-area: more; }
+  .lrow-title { white-space: normal; overflow-wrap: break-word; -webkit-hyphens: auto; hyphens: auto; }
+  .lrow .ib, .lrow > .ib { width: 44px; height: 44px; }
+  .team-cols { grid-template-columns: 1fr; }
+  .team-fold { min-height: 44px; }
+
+  .my-head .my-search { order: 10; width: 100%; height: 44px; }
+  .my-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "main main" "steps act" "when act"; gap: 6px 10px; padding: 12px 12px 12px 14px; }
+  .my-main { grid-area: main; }
+  .my-steps { grid-area: steps; }
+  .my-when { grid-area: when; align-items: flex-start; text-align: left; flex-direction: row; flex-wrap: wrap; gap: 2px 8px; }
+  .my-act { grid-area: act; align-self: center; }
+  .my-title { white-space: normal; overflow-wrap: break-word; -webkit-hyphens: auto; hyphens: auto; }
+  .my-next { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .view-as { margin-left: 0; }
 }
 
 @media (hover: none) {

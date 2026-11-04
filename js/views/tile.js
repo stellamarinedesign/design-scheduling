@@ -21,6 +21,7 @@ import * as S from '../status.js';
 import * as A from '../actions.js';
 import { ageLabel, ageDays, dayLabel, dayOf } from '../dates.js';
 import { openTask } from '../router.js';
+import { assignable } from '../team.js';
 
 export const backlogDays = () => {
   try { return Number(JSON.parse(localStorage.getItem('stella.design.pref.backlogDays'))) || 14; } catch { return 14; }
@@ -117,28 +118,56 @@ export function statusMenu(anchor, t) {
   menu(anchor, [{ heading: 'Set status' }, ...items], { label: 'Set status' });
 }
 
-/** The ⋯ menu on a tile or row. `extra` items go first (Home's Move earlier/later). */
+/**
+ * Assign to…: the leads and designers, you first. The lead's alone (a
+ * designer's own tasks are theirs already).
+ */
+export function assignMenu(anchor, t, { at = null } = {}) {
+  const people = assignable(state.access);
+  const list = [...(people.includes(state.me) ? [state.me] : []), ...people.filter((p) => p !== state.me)
+    .sort((a, b) => personName(a).localeCompare(personName(b)))];
+  menu(anchor, [
+    { heading: 'Assign to' },
+    ...list.map((p) => ({ label: personName(p), checked: t.assignee === p, onSelect: () => A.assign(t.id, p) })),
+    { label: 'Unassigned', checked: !t.assignee, onSelect: () => A.assign(t.id, null) },
+  ], { label: 'Assign to', at });
+}
+
+/**
+ * The ⋯ menu on a tile or row. `extra` items go first (Home's Move
+ * earlier/later). What it offers follows what the rules allow this person:
+ * the lead everything; a designer the status changes on their own work,
+ * never Done, Delete or moving things about the lead's tree.
+ */
 export function taskMenu(anchor, t, { extra = [], at = null } = {}) {
+  const lead = state.role === 'lead';
+  const can = A.canWrite(t);
   const items = [
     ...extra,
     ...(extra.length ? ['sep'] : []),
     { label: 'Open', icon: 'open', onSelect: () => openTask(t.id) },
     'sep',
-    t.status === 'todo' || t.status === 'fix' ? { label: 'Start', icon: 'play', onSelect: () => A.start(t.id) } : null,
-    state.role === 'lead' && S.isOpen(t.status) && t.status !== 'check' ? { label: 'Mark done', icon: 'check', onSelect: () => A.setStatus(t.id, 'done') } : null,
-    state.role !== 'lead' && ['in_progress', 'fix'].includes(t.status) ? { label: 'Submit for check', icon: 'check', onSelect: () => A.setStatus(t.id, 'check') } : null,
+    can && (t.status === 'todo' || t.status === 'fix') ? { label: 'Start', icon: 'play', onSelect: () => A.start(t.id) } : null,
+    lead && S.isOpen(t.status) && t.status !== 'check' ? { label: 'Mark done', icon: 'check', onSelect: () => A.setStatus(t.id, 'done') } : null,
+    !lead && can && ['in_progress', 'fix'].includes(t.status) ? { label: 'Submit for check', icon: 'check', onSelect: () => A.setStatus(t.id, 'check') } : null,
     S.canTakeBack(t, state.me) ? { label: 'Take back from check…', icon: 'undo', onSelect: () => A.takeBack(t.id) } : null,
-    t.status !== 'waiting' && S.isOpen(t.status) ? { label: 'Waiting…', icon: 'hide', onSelect: () => A.setStatus(t.id, 'waiting') } : null,
-    S.isOpen(t.status) ? { label: 'Cancel…', icon: 'close', onSelect: () => A.setStatus(t.id, 'cancelled') } : null,
-    t.status === 'cancelled' ? { label: `Reopen · back to ${S.LABEL[S.reopenTo(t)]}`, icon: 'restore', onSelect: () => A.reopen(t.id) } : null,
-    { label: 'Move to…', icon: 'move', onSelect: async () => { const { moveDialog } = await import('./pickers.js'); moveDialog(t.id); } },
-    state.role === 'lead' && T.isJob(state.idx, t) ? { label: 'Turn into a category', icon: 'folderPlus', onSelect: () => A.turnIntoCategory(t.id) } : null,
+    can && t.status !== 'waiting' && S.isOpen(t.status) ? { label: 'Waiting…', icon: 'hide', onSelect: () => A.setStatus(t.id, 'waiting') } : null,
+    can && S.isOpen(t.status) ? { label: 'Cancel…', icon: 'close', onSelect: () => A.setStatus(t.id, 'cancelled') } : null,
+    can && t.status === 'cancelled' ? { label: `Reopen · back to ${S.LABEL[S.reopenTo(t)]}`, icon: 'restore', onSelect: () => A.reopen(t.id) } : null,
+    lead ? { label: 'Assign to…', icon: 'user', hint: t.assignee && t.assignee !== state.me ? personName(t.assignee) : null, onSelect: () => assignMenu(anchor, t, { at }) } : null,
+    lead ? { label: 'Move to…', icon: 'move', onSelect: async () => { const { moveDialog } = await import('./pickers.js'); moveDialog(t.id); } } : null,
+    lead && T.isJob(state.idx, t) ? { label: 'Turn into a category', icon: 'folderPlus', onSelect: () => A.turnIntoCategory(t.id) } : null,
     'sep',
-    { label: 'Archive', icon: 'archive', onSelect: () => A.archive(t.id) },
-    { label: 'Delete…', icon: 'trash', danger: true, onSelect: () => A.remove(t.id) },
+    can ? { label: 'Archive', icon: 'archive', onSelect: () => A.archive(t.id) } : null,
+    lead ? { label: 'Delete…', icon: 'trash', danger: true, onSelect: () => A.remove(t.id) } : null,
   ];
+  // No dangling divider when the last group is empty (a designer on someone else's task).
+  while (items.length && (items[items.length - 1] === 'sep' || items[items.length - 1] === null)) items.pop();
   menu(anchor, items, { label: `${t.title} actions`, at });
 }
+
+/** The status pill: a button that opens the status menu, for whoever may change it. */
+const statusPill = (t) => pill(t.status, A.canWrite(t) ? { onClick: (e) => { e.stopPropagation(); statusMenu(e.currentTarget, t); } } : {});
 
 /**
  * A tile.
@@ -170,7 +199,7 @@ export function tile(t, { path = false, assignee = false, variant = 'normal', me
   }),
   el('div', { class: 'tile-top' },
     sub ? checkBox(t) : null,
-    pill(t.status, { onClick: (e) => { e.stopPropagation(); statusMenu(e.currentTarget, t); } }),
+    statusPill(t),
     el('span', { class: 'sp' }),
     el('span', { class: `meta${stale || variant === 'backlog' ? ' warn' : ''}`, title: 'Since the last activity' },
       variant === 'backlog' ? `${days}d untouched` : ageLabel(t.lastActivityAt)),
@@ -179,7 +208,7 @@ export function tile(t, { path = false, assignee = false, variant = 'normal', me
   path && pathText ? el('div', { class: 'tile-path' }, dot(colour), el('span', {}, pathText)) : null,
   line ? el('div', { class: `tile-sub ${line.cls}`.trim() }, line.text) : null,
   el('div', { class: 'tile-foot' },
-    t.status === 'todo' && !sub ? btn('Start', (e) => { e.stopPropagation(); A.start(t.id); }, { cls: 'sm', ic: 'play', title: 'Start: one tap to In progress' }) : null,
+    t.status === 'todo' && !sub && A.canWrite(t) ? btn('Start', (e) => { e.stopPropagation(); A.start(t.id); }, { cls: 'sm', ic: 'play', title: 'Start: one tap to In progress' }) : null,
     variant !== 'backlog' && prog.total ? bar(prog.done, prog.total) : el('span', { class: 'sp' }),
     variant !== 'backlog' && prog.total ? el('span', { class: 'meta' }, `${prog.done}/${prog.total}`) : null,
     assignee ? whoBadge(t.assignee) : null));
@@ -197,7 +226,7 @@ export function row(t, { path = false, assignee = false, drag = true } = {}) {
   const isSub = !T.isJob(state.idx, t);   // a subtask: the check control, in place of Start
   const r = el('div', { class: `trow${t.status === 'cancelled' ? ' muted' : ''}`, dataset: { id: t.id }, 'aria-current': open ? 'true' : null, draggable: drag && canDrag() ? 'true' : null },
     el('button', { class: 'open-link', type: 'button', dataset: { fk: `open-${t.id}` }, 'aria-label': `Open ${t.title}, ${S.LABEL[t.status]}`, onclick: () => openTask(t.id) }),
-    el('span', { class: 'trow-lead' }, isSub ? checkBox(t) : null, pill(t.status, { onClick: (e) => { e.stopPropagation(); statusMenu(e.currentTarget, t); } })),
+    el('span', { class: 'trow-lead' }, isSub ? checkBox(t) : null, statusPill(t)),
     el('div', { class: 'trow-main' },
       el('div', { class: 'trow-title' }, t.title),
       subLine ? el('div', { class: `trow-sub` }, subLine) : null),
@@ -205,7 +234,7 @@ export function row(t, { path = false, assignee = false, drag = true } = {}) {
       prog.total ? el('span', { class: 'meta' }, `${prog.done}/${prog.total}`) : null,
       assignee ? whoBadge(t.assignee) : null,
       el('span', { class: 'meta' }, ageLabel(t.lastActivityAt)),
-      t.status === 'todo' && !isSub ? iconBtn('play', `Start ${t.title}`, (e) => { e.stopPropagation(); A.start(t.id); }, 'sm') : null,
+      t.status === 'todo' && !isSub && A.canWrite(t) ? iconBtn('play', `Start ${t.title}`, (e) => { e.stopPropagation(); A.start(t.id); }, 'sm') : null,
       iconBtn('more', `More actions for ${t.title}`, (e) => { e.stopPropagation(); taskMenu(e.currentTarget, t); }, 'sm')));
   return withMenu(r, (at) => taskMenu(r.querySelector('.trow-end .ib:last-child') ?? r, t, { at }));
 }

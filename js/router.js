@@ -1,8 +1,10 @@
 // router.js — where you are, in the URL hash, so Back works and a link can be
 // shared or bookmarked.
 //
-//   #/home                 Home
-//   #/tasks                Tasks: the full list (?c=<id> reveals a category)
+//   #/home                 Home (the Design lead)
+//   #/tasks                Tasks: the full list (?c=<id> reveals a category);
+//                          a designer's own action-first list
+//   #/team                 Team (the Design lead)
 //   #/tasks/<id>           Focus: one category alone
 //   #/tasks/top            jobs not in any category
 //   #/archive, #/import    the archive, the staged import
@@ -103,5 +105,24 @@ export function closePanel() {
   setTimeout(() => { panel.classList.remove('closing'); closeTask(); }, 200);
 }
 
-/** The current tab: home or tasks. */
-export const currentTab = () => (route.parts[0] === 'home' || !route.parts[0] ? 'home' : 'tasks');
+/**
+ * The tabs each role has, first is where it lands (decided 2026-11-04):
+ * the lead Home · Tasks · Team · Log; a designer Tasks · Log (no Home);
+ * a contributor the Log only; a manager contributor Jobs · Log.
+ */
+export const ROLE_TABS = {
+  lead: ['home', 'tasks', 'team'],
+  designer: ['tasks'],
+  contributor: [],
+  manager: [],
+};
+export const roleTabs = (role = state.role) => ROLE_TABS[role] ?? [];
+
+/** Pages outside the tabs: the lead's archive and import. */
+export const isSpecial = () => route.parts[0] === 'archive' || route.parts[0] === 'import';
+
+/** The current tab: where the route says, if this role has it; else where the role lands. */
+export function currentTab() {
+  const tabs = roleTabs();
+  return tabs.includes(route.parts[0]) ? route.parts[0] : (tabs[0] ?? 'none');
+}

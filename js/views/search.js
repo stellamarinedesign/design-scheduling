@@ -37,7 +37,9 @@ export function openSearch() {
       list.textContent = '';
       const query = q.value.trim();
       const words = norm(query).split(/\s+/).filter(Boolean);
-      let hits = state.idx.nodes.filter((n) => (n.kind !== T.KIND.step || words.length) && (includeCancelled || n.status !== 'cancelled'));
+      // A designer has no category tree to open: their search is jobs and tasks.
+      let hits = state.idx.nodes.filter((n) => (n.kind !== T.KIND.step || words.length) && (includeCancelled || n.status !== 'cancelled')
+        && (state.role === 'lead' || n.kind === T.KIND.task));
       if (words.length) {
         hits = hits.filter((n) => {
           const hay = `${norm(T.nameOf(n))} ${norm(n.brief)} ${norm(n.revision)}`;

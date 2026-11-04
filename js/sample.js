@@ -4,17 +4,21 @@
 // screen in local mode, and only into this browser.
 
 import { Store, newId } from './store.js';
-import { state } from './state.js';
 import { ORDER_GAP } from './tree.js';
 import { toast } from './ui.js';
 import { dayOf } from './dates.js';
+import { LOCAL_AS, inboxId } from './team.js';
 
 const DAY = 86400000;
 const ago = (d, h = 0) => new Date(Date.now() - d * DAY - h * 3600000).toISOString();
 
 export async function loadSample() {
   if (Store.mode !== 'local') return;
-  const me = state.me;
+  // The lead's work is the local lead's, whoever this browser is viewing as;
+  // the designers' work goes to the invented team (team.js).
+  const me = LOCAL_AS.lead;
+  const alex = 'alex@local.test';
+  const sam = 'sam@local.test';
   const nodes = [];
   const updates = [];
   const order = new Map();
@@ -66,16 +70,27 @@ export async function loadSample() {
   say(boom, 'create', '', 12); say(boom, 'status', '', 5, { from: 'todo', to: 'in_progress' });
   say(boom, 'comment', 'Extension shape matches the larger unit now. Body pins swapped to standard.', 1);
 
-  const ext = task('450kg davit: R3 extension', single, 'check', 0.2, { revision: 'R3' });
+  const ext = task('450kg davit: R3 extension', single, 'check', 0.2, {
+    revision: 'R3', assignee: alex, submittedBy: alex, submittedAt: ago(0.2), statusAt: ago(0.2), lastBy: alex,
+    lastNote: { text: 'Drawings done, laser checklist updated. End-cap pin drawing still to confirm.', by: alex, at: ago(0.2) } });
   step('3D model', ext, 'done'); step('Drawings', ext, 'done'); step('Laser checklist', ext, 'done'); step('End-cap pin drawing', ext, 'todo');
-  say(ext, 'submit', 'Drawings done, laser checklist updated. End-cap pin drawing still to confirm.', 0.2, { from: 'in_progress', to: 'check' });
+  say(ext, 'submit', 'Drawings done, laser checklist updated. End-cap pin drawing still to confirm.', 0.2, { from: 'in_progress', to: 'check', by: alex });
 
   task('Electric plinth wiring diagram', plinths, 'in_progress', 6);
+  // The designers' own work (invented): Alex is busy, Sam has gone quiet.
+  const chock = task('Sliding chock drawings', single, 'in_progress', 0.3, { assignee: alex, due: dayOf(new Date(Date.now() + 9 * DAY)), statusAt: ago(4), lastBy: alex,
+    brief: '- Drawings and laser files to the current standard\n- Same layout as the fixed chock set; revision on every sheet',
+    lastNote: { text: 'GA done, drawings about half way.', by: alex, at: ago(0.3) } });
+  step('3D model', chock, 'done'); step('Drawings', chock, 'doing'); step('Laser files', chock, 'todo'); step('PDF', chock, 'done'); step('Build form', chock, 'todo'); step('Filed', chock, 'todo');
+  say(chock, 'comment', 'GA done, drawings about half way.', 0.3, { by: alex });
+  task('Exploded diagram: 650kg davit', davits, 'todo', 3, { assignee: alex, due: dayOf(new Date(Date.now() + 20 * DAY)), brief: 'Assembly only for now; A3 to match the 550.' });
+  task('Garage door seal update', inboxId(alex), 'todo', 1, { assignee: alex, createdBy: alex });
   task('Self-enclosed plinth concept', plinths, 'in_progress', 2);
   const range = task('Plinth range rebuild', plinths, 'waiting', 6);
   nodes.find((n) => n.id === range).waiting = { note: '', since: ago(6), prevStatus: 'in_progress', blockedBy: [boom] };
 
-  const hob = task('Lifter concept: 48 ft catamaran transom', lifters, 'fix', 2, { fixNote: 'Hob curve does not follow the transom scan. Re-check it against the measured profile, then resubmit.' });
+  const hob = task('Lifter concept: 48 ft catamaran transom', lifters, 'fix', 2, { assignee: alex, statusAt: ago(2), due: dayOf(new Date(Date.now() + 1 * DAY)), fixNote: 'Hob curve does not follow the transom scan. Re-check it against the measured profile, then resubmit.' });
+  step('Concept', hob, 'done'); step('Approval', hob, 'todo'); step('3D model', hob, 'todo'); step('Drawings', hob, 'todo');
   say(hob, 'sendback', 'Hob curve does not follow the transom scan. Re-check it against the measured profile, then resubmit.', 2, { from: 'check', to: 'fix' });
   task('Lifter weights and dimensions list', lifters, 'todo', 15);
   task('Platform bracket standard sizes', lifters, 'todo', 44);
@@ -84,6 +99,11 @@ export async function loadSample() {
   task('Premium chair recline mechanism', chairs, 'in_progress', 3);
   task('Armrest profile', chairs, 'waiting', 8, { waiting: { note: 'Supplier sample of the new profile', since: ago(8), prevStatus: 'todo', blockedBy: [] } });
   task('600LPH boxed frame', water, 'in_progress', 8);
+  const plate = task('600LPH manifold plate', water, 'in_progress', 8, { assignee: sam, statusAt: ago(9), lastBy: sam });
+  step('3D model', plate, 'done'); step('Drawings', plate, 'todo'); step('Laser files', plate, 'todo');
+  task('Watertight door hinge update', fixes, 'check', 8, { assignee: sam, submittedBy: sam, submittedAt: ago(8), statusAt: ago(8), lastBy: sam,
+    lastNote: { text: 'Hinge plate increased to 10 mm; laser files regenerated.', by: sam, at: ago(8) } });
+  task('Tie bar machining drawing', rotary, 'waiting', 9, { assignee: sam, lastBy: sam, waiting: { note: 'Flange spec from the supplier', since: ago(9), prevStatus: 'in_progress', blockedBy: [] } });
   task('Membrane bracket revision', water, 'done', 3);
   const gone = task('Twin-membrane frame for a custom build', water, 'cancelled', 9, { cancelled: { by: me, at: ago(9), reason: 'Customer cancelled (verbal)', prevStatus: 'in_progress' } });
   say(gone, 'cancel', 'Customer cancelled (verbal)', 9, { from: 'in_progress', to: 'cancelled' });

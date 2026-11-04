@@ -24,6 +24,7 @@
 // being edited, and Phase 2 uses it for "Updated by Alex just now").
 
 import { getFirebase, failureReason, isConfigured, localForced } from './firebase.js';
+import { LOCAL_ACCESS, LOCAL_PEOPLE } from './team.js';
 
 export const COL = {
   settings: 'settings',     // settings/access: who is what (the rules read it)
@@ -240,7 +241,8 @@ export const Store = {
 
   /** settings/access. Unreadable fails closed: empty lists promote nobody. */
   async loadAccess() {
-    if (this.mode === 'local') return { leads: ['local'], designers: [], contributors: [], managers: [], masters: [] };
+    // Local mode's invented team (team.js), so "View as" has people to be.
+    if (this.mode === 'local') return structuredClone(LOCAL_ACCESS);
     try {
       const { doc, getDoc } = this._fs;
       const snap = await getDoc(doc(this._db, COL.settings, 'access'));
@@ -263,6 +265,40 @@ export const Store = {
       leads: a.leads ?? [], designers: a.designers ?? [], contributors: a.contributors ?? [],
       managers: a.managers ?? [], masters: a.masters ?? [],
     });
+  },
+
+  // ---- people: display names ----------------------------------------------
+
+  /**
+   * people/{email}: {name}, live. Local mode has its invented team, with any
+   * names changed in this browser on top.
+   * @returns {() => void} stop watching
+   */
+  watchPeople(cb) {
+    if (this.mode === 'local') {
+      const send = () => cb({ ...structuredClone(LOCAL_PEOPLE), ...lsGet('people', {}) });
+      this._peopleWatchers = (this._peopleWatchers ?? new Set()).add(send);
+      queueMicrotask(send);
+      return () => this._peopleWatchers.delete(send);
+    }
+    const { collection, onSnapshot } = this._fs;
+    return onSnapshot(collection(this._db, COL.people),
+      (snap) => cb(Object.fromEntries(snap.docs.map((d) => [d.id, d.data()]))),
+      (e) => console.warn('[people]', e.message));
+  },
+
+  /** A person's display name. Their own, or (the lead, a master) anyone's. */
+  async savePerson(email, { name }) {
+    const doc = { name: String(name ?? '').trim().slice(0, 60) };
+    if (this.mode === 'local') {
+      const all = lsGet('people', {});
+      all[email] = doc;
+      lsSet('people', all);
+      for (const w of this._peopleWatchers ?? []) w();
+      return;
+    }
+    const { doc: ref, setDoc } = this._fs;
+    await setDoc(ref(this._db, COL.people, email), doc, { merge: true });
   },
 
   // ---- local mode housekeeping --------------------------------------------

@@ -14,6 +14,7 @@
 // sees nothing rather than the run of the app. Fail closed.
 
 import { normaliseAccess, roleOf, isMaster } from './access.js';
+import { LOCAL_AS } from './team.js';
 
 // Plain {} rather than normaliseAccess({}) at load: access.js imports
 // tidyEmail from here, and calling into it while the two modules are still
@@ -31,6 +32,19 @@ export const ROLE = { LEAD: 'lead', DESIGNER: 'designer', CONTRIBUTOR: 'contribu
 
 /** Who a signed-in account is. In local mode there is one person, the lead. */
 export const LOCAL_ME = 'local';
+
+// LOCAL MODE, VIEWED AS ANOTHER ROLE (Phase 2). Local mode cannot show a
+// designer's, contributor's or manager's screens with real accounts, so this
+// browser can be switched to view as one of a small invented team
+// (team.js LOCAL_AS). Local mode only: with Firebase the role is the access
+// document's and nothing here applies. Changing it reloads the page.
+const LOCAL_ROLE_KEY = 'stella.design.localRole';
+export function localRole() {
+  try { const r = localStorage.getItem(LOCAL_ROLE_KEY); return Object.values(ROLE).includes(r) && r !== ROLE.NONE ? r : ROLE.LEAD; } catch { return ROLE.LEAD; }
+}
+export function setLocalRole(role) {
+  try { if (role === ROLE.LEAD) localStorage.removeItem(LOCAL_ROLE_KEY); else localStorage.setItem(LOCAL_ROLE_KEY, role); } catch { /* this session only */ }
+}
 
 export const Auth = {
   mode: 'local',        // 'firebase' | 'local'
@@ -50,7 +64,7 @@ export const Auth = {
       // protect against, so the single person on this machine is the lead.
       // The UI says so plainly rather than implying a login happened.
       this.mode = 'local';
-      this.role = ROLE.LEAD;
+      this.role = localRole();
       this.user = null;
       onChange({ role: this.role, email: null, mode: 'local' });
       return 'local';
@@ -78,7 +92,7 @@ export const Auth = {
   },
 
   /** The address that goes in createdBy, assignee and an update's `by`. */
-  get me() { return this.mode === 'local' ? LOCAL_ME : tidyEmail(this.user?.email); },
+  get me() { return this.mode === 'local' ? (LOCAL_AS[this.role] ?? LOCAL_ME) : tidyEmail(this.user?.email); },
 
   async signIn(email, password) {
     if (this.mode === 'local') throw new Error('Local mode — no sign-in required.');

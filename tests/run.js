@@ -9,6 +9,7 @@ import * as TD from '../js/import/tiledo.js';
 import * as XL from '../js/import/excel.js';
 import * as BL from '../js/backlog.js';
 import * as C from '../js/convert.js';
+import * as TM from '../js/team.js';
 import { sampleNodes, tiledoData, tiledoArchive, excelRows } from './samples.js';
 
 const results = [];
@@ -819,6 +820,141 @@ export async function run() {
     const pool = BL.backlogPool(idx, { me: BY, days: 14, now: NOW });
     ok(BL.canHideFromBacklog(idx, 't2', pool), 't2 doubles up with its job j1');
     ok(!BL.canHideFromBacklog(idx, 'j2', pool), 'a job with nothing above it in the pool');
+  });
+
+  // -------------------------------------------------------------------------
+  group = 'team';
+  const DA = 'alex@example.test';
+  const DB = 'sam@example.test';
+  const T0 = Date.parse('2026-11-04T02:00:00.000Z');
+  const ago = (d) => new Date(T0 - d * 86400000).toISOString();
+  const teamNodes = () => apply(sampleNodes(), [
+    { id: 'j1', assignee: DA, status: 'in_progress', statusAt: ago(3), lastActivityAt: ago(1), lastBy: DA },
+    { id: 'j2', assignee: DA, status: 'check', submittedBy: DA, submittedAt: ago(2), lastActivityAt: ago(2) },
+    { id: 'j3', assignee: DA, status: 'fix', fixNote: 'Wrong hole size', statusAt: ago(1), lastActivityAt: ago(1) },
+    { id: 'j4', assignee: DB, status: 'done', doneAt: ago(1) },
+    { id: 't1', assignee: DA, status: 'in_progress' },
+    { id: 't2', assignee: DB, status: 'todo' },
+  ]);
+  test('ownerTask: the task a step or section sits in, through sub-steps', () => {
+    const idx = index();
+    expect(T.ownerTask(idx, 's2b').id, 'j1', 'a sub-step belongs to its job');
+    expect(T.ownerTask(idx, 'sec').id, 'j1', 'a section too');
+    expect(T.ownerTask(idx, 't1').id, 't1', 'a task is its own');
+    expect(T.ownerTask(idx, 'g-alpha'), null, 'a category belongs to no task');
+  });
+  test('a designer\'s own group id is fixed by the address, whatever its case', () => {
+    expect(TM.inboxId('Alex@Example.test'), TM.inboxId('alex@example.test'));
+    ok(TM.isInboxId(TM.inboxId(DA)), 'it looks like one');
+    ok(TM.inboxId(DA) !== TM.inboxId(DB), 'two designers, two groups');
+    ok(!TM.isInboxId('g-alpha'), 'an ordinary group is not one');
+  });
+  test('From designers: made only when a designer\'s task names a group that is not there, once', () => {
+    const at = AT;
+    const idx0 = T.buildIndex(sampleNodes());
+    expect(TM.inboxFixes(idx0, { designers: [DA], people: {}, by: BY, at }), [], 'no designer task: nothing made');
+    const own = { id: 'own1', kind: 'task', parentId: TM.inboxId(DA), order: 1024, title: 'Seal detail', status: 'todo', assignee: DA, createdBy: DA };
+    const idx1 = T.buildIndex([...sampleNodes(), own]);
+    ok(T.childrenOf(idx1, null).some((n) => n.id === 'own1'), 'until then it sits at the top, not lost');
+    const made = TM.inboxFixes(idx1, { designers: [DA], people: { [DA]: { name: 'Alex' } }, by: BY, at });
+    expect(made.map((n) => [n.id, n.parentId, n.name]), [[TM.FROM_DESIGNERS, null, 'From designers'], [TM.inboxId(DA), TM.FROM_DESIGNERS, 'Alex']]);
+    const idx2 = T.buildIndex([...sampleNodes(), own, ...made]);
+    expect(T.ancestorChain(idx2, 'own1').map((n) => n.id), [TM.FROM_DESIGNERS, TM.inboxId(DA)], 'now inside, nothing moved');
+    expect(TM.inboxFixes(idx2, { designers: [DA], people: {}, by: BY, at }), [], 'idempotent');
+  });
+  test('Ready for checking: every task in check, the longest waiting first', () => {
+    const idx = T.buildIndex(apply(teamNodes(), [{ id: 't2', status: 'check', submittedAt: ago(5) }]));
+    expect(TM.checkQueue(idx).map((t) => t.id), ['t2', 'j2']);
+  });
+  test('time in a status: statusAt, else the stamp the status kept', () => {
+    expect(TM.statusSince({ status: 'in_progress', statusAt: ago(3), lastActivityAt: ago(1) }), ago(3));
+    expect(TM.statusSince({ status: 'check', submittedAt: ago(2), lastActivityAt: ago(1) }), ago(2));
+    expect(TM.statusSince({ status: 'waiting', waiting: { since: ago(6) }, lastActivityAt: ago(1) }), ago(6));
+    expect(TM.statusSince({ status: 'todo', lastActivityAt: ago(4) }), ago(4));
+    expect(TM.sinceShare({ statusAt: ago(7) }, T0), 0.5, 'a week is half the bar');
+    expect(TM.sinceShare({ statusAt: ago(40) }, T0), 1, 'never over');
+  });
+  test('a Crew lane: active work, sent back first, counts and when they were heard from', () => {
+    const lane = TM.crewLane(T.buildIndex(teamNodes()), DA, { now: T0 });
+    expect(lane.rows.map((t) => t.id), ['j3', 'j2', 't1', 'j1'], 'by status, then the longest sitting (t1 since October) first');
+    expect(lane.counts, { active: 4, check: 1, fix: 1, waiting: 0, todo: 0 });
+    expect(lane.seen, ago(1), 'their own last activity (lastBy)');
+    ok(!lane.quiet, 'not quiet');
+    const quiet = TM.crewLane(T.buildIndex(apply(teamNodes(), [{ id: 'j1', lastActivityAt: ago(9) }, { id: 'j3', lastActivityAt: ago(9) }, { id: 'j2', lastActivityAt: ago(9) }])), DA, { now: T0 });
+    ok(quiet.quiet && quiet.quietFor === 9, `quiet for 9 days (${quiet.quietFor})`);
+  });
+  test('done this week and month: approved work only, never cancelled', () => {
+    const idx = T.buildIndex(apply(teamNodes(), [
+      { id: 't2', status: 'cancelled', doneAt: ago(1) },
+      { id: 'j2', assignee: DB, status: 'done', doneAt: ago(20) },
+    ]));
+    const c = TM.doneCounts(idx, DB, T0);
+    expect(c.week, 1, 'this week');
+    expect(c.month, 1, 'last month\'s does not count this month');
+  });
+  test('assigning takes the open tasks inside that were following it, and no others', () => {
+    const idx = T.buildIndex(apply(sampleNodes(), [
+      { id: 'j1', assignee: BY }, { id: 't1', assignee: BY, status: 'in_progress' }, { id: 't2', assignee: DB, status: 'todo' },
+    ]));
+    const p = TM.reassignPatches(idx, 'j1', DA, { at: AT });
+    expect(p.map((x) => [x.id, x.assignee]), [['j1', DA], ['t1', DA]]);
+    expect(TM.reassignPatches(idx, 's1', DA, { at: AT }), [], 'a step has nobody to assign');
+  });
+  test('a designer\'s list: theirs only, grouped by what to do next, done only this month', () => {
+    const idx = T.buildIndex(apply(teamNodes(), [{ id: 'j4', assignee: DA, doneAt: ago(1) }]));
+    const g = TM.myTaskGroups(idx, DA, { now: T0 });
+    const ids = Object.fromEntries(g.map((x) => [x.key, x.rows.map((t) => t.id)]));
+    expect(ids.fix, ['j3']);
+    expect(ids.progress.sort(), ['j1', 'j2', 't1'], 'Ready for check sits under In progress');
+    expect(ids.done, ['j4']);
+    const old = T.buildIndex(apply(teamNodes(), [{ id: 'j4', assignee: DA, doneAt: ago(60) }]));
+    expect(TM.myTaskGroups(old, DA, { now: T0 }).find((x) => x.key === 'done').rows, [], 'done long ago drops off');
+    const q = TM.myTaskGroups(idx, DA, { now: T0, query: 'bracket' });
+    expect(q.flatMap((x) => x.rows.map((t) => t.id)), ['j1']);
+  });
+  test('a designer\'s list sorts by due date first, undated last', () => {
+    const idx = T.buildIndex(apply(teamNodes(), [
+      { id: 'j1', due: '2026-11-20' }, { id: 't1', due: '2026-11-10' },
+    ]));
+    const rows = TM.myTaskGroups(idx, DA, { now: T0, sort: 'due' }).find((x) => x.key === 'progress').rows.map((t) => t.id);
+    expect(rows, ['t1', 'j1', 'j2']);
+  });
+  test('the next line: send-back, wait, latest update, brief, or not filed yet', () => {
+    const idx = T.buildIndex(teamNodes());
+    expect(TM.nextLine(idx, idx.byId.get('j3'), { now: T0 }).text, 'Sent back: Wrong hole size');
+    expect(TM.nextLine(idx, { ...idx.byId.get('j1'), lastNote: { text: 'Half way', by: DA } }, { now: T0, who: () => 'You' }).text, 'You: Half way');
+    expect(TM.nextLine(idx, { id: 'x', status: 'todo', brief: '- **Check** the pins\n- then the plate' }, { now: T0 }).text, 'Brief: Check the pins');
+    expect(TM.nextLine(idx, { id: 'x', status: 'todo', brief: '', parentId: TM.inboxId(DA) }, { now: T0 }).text, 'Added by you · not filed yet');
+    const w = TM.nextLine(idx, { id: 'x', status: 'waiting', waiting: { since: ago(6) } }, { now: T0, waitingLine: () => 'Waiting: supplier sample' });
+    expect(w.text, 'Waiting on: supplier sample · 6d');
+  });
+  test('the steps strip: a segment per top-level step or subtask, sections looked into', () => {
+    expect(TM.stepStrip(index(), 'j1'), ['done', 'doing', 'na', 'todo']);
+  });
+  test('one action per row: Start, Post update, Submit once every step is done, else Open', () => {
+    const idx = index();
+    expect(TM.rowAction(idx, { ...idx.byId.get('j2'), status: 'todo' }), 'start');
+    expect(TM.rowAction(idx, idx.byId.get('j1')), 'update', 'steps still open');
+    const allDone = T.buildIndex(apply(sampleNodes(), [{ id: 's2b', state: 'done' }, { id: 't1', status: 'done' }, { id: 't2', status: 'done' }]));
+    expect(TM.rowAction(allDone, allDone.byId.get('j1')), 'submit');
+    expect(TM.rowAction(idx, { ...idx.byId.get('j2'), status: 'fix' }), 'open');
+  });
+  test('statusAt: set by a status change, kept while a wait is edited', () => {
+    const idx = index();
+    const r = S.changeStatus(idx, 'j2', 'in_progress', { by: BY, at: AT });
+    expect(r.patches[0].statusAt, AT);
+    const waiting = T.buildIndex(apply(sampleNodes(), S.changeStatus(idx, 'j2', 'waiting', { by: BY, at: AT, note: 'Sample' }).patches));
+    const later = '2026-11-05T01:00:00.000Z';
+    ok(!('statusAt' in S.changeStatus(waiting, 'j2', 'waiting', { by: BY, at: later, note: 'Sample, again' }).patches[0]), 'editing a wait keeps its clock');
+  });
+  test('posting an update: the task carries it; someone who cannot write it posts it alone', () => {
+    const idx = index();
+    const r = S.postUpdate(idx, 'j2', 'Model done, drawings next', { by: DA, at: AT });
+    expect(r.patches[0].lastNote, { text: 'Model done, drawings next', by: DA, at: AT });
+    expect(r.patches[0].statusAt, AT, 'it started, and says when');
+    const ro = S.postUpdate(idx, 'j2', 'A question', { by: DA, at: AT, canWrite: false });
+    expect([ro.patches.length, ro.updates.length, ro.updates[0].from], [0, 1, undefined], 'no patch, no auto-start');
+    expect(S.postUpdate(idx, 'j1', 'x'.repeat(400), { by: DA, at: AT }).patches[0].lastNote.text.length, S.LAST_NOTE_MAX);
   });
 
   group = 'writes';
