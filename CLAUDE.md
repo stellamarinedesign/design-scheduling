@@ -88,6 +88,9 @@ parent. Starting here is what loads this file, the project skills and the Impecc
   blocked by other tasks (`waiting.blockedBy`). When the last blocker is done or cancelled,
   the task unblocks itself in the same batch, and a reconcile runs on load to catch the rest.
   Cycles are refused.
+- **Cancelled** is finished like Done but recorded apart: `cancelled: {by, at, reason, prevStatus}`
+  plus a `cancel` event. It unblocks dependents, cancels the open work inside a job, has its own
+  "Cancelled (N)" strip, and Reopen restores the previous status (`js/status.js`).
 - **Folder links** are stored relative to `Stella Systems`, using `/` separators. Pasted paths
   are normalised (`js/folders.js`). The full Windows path is rebuilt per PC from a per-device
   prefix.
