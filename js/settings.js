@@ -22,16 +22,19 @@ import { state } from './state.js';
 
 const THEME_KEY = 'stella.design.theme';
 
+// Settings is a guarded dialog (dialog.js): a click outside it does nothing,
+// and Close or Esc asks before throwing away a path or an address typed and
+// not yet saved.
 export function openSettings() {
-  openDialog((box, close) => {
+  openDialog((box, close, { dismiss, markClean }) => {
     box.classList.add('settings');
     box.append(el('h3', {}, 'Settings'));
-    box.append(account(close), appearance(), thisPc(), backlog(), data(close));
+    box.append(account(close), appearance(), thisPc(markClean), backlog(markClean), data(close));
     const acc = el('div', { class: 'settings-section', hidden: true });
     box.append(acc);
-    if (Auth.mode === 'firebase' && Auth.isMaster) { acc.hidden = false; accounts(acc); }
-    box.append(el('div', { class: 'actions' }, btn('Close', () => close(null)), el('span', { class: 'sp' }), el('span', { class: 'meta' }, `Build ${VERSION}`)));
-  }, { label: 'Settings', wide: true });
+    if (Auth.mode === 'firebase' && Auth.isMaster) { acc.hidden = false; accounts(acc, markClean); }
+    box.append(el('div', { class: 'actions' }, btn('Close', dismiss), el('span', { class: 'sp' }), el('span', { class: 'meta' }, `Build ${VERSION}`)));
+  }, { label: 'Settings', wide: true, guard: true });
 }
 
 const section = (label, ...kids) => el('div', { class: 'settings-section' }, el('div', { class: 'lbl' }, label), el('div', { class: 'settings-card' }, ...kids));
@@ -65,7 +68,7 @@ function appearance() {
   return section('Theme', el('div', { class: 'settings-row' }, el('div', { class: 'settings-row-sub' }, 'Workshop is for bright offices and the workshop floor. Per device.'), seg));
 }
 
-function thisPc() {
+function thisPc(markClean) {
   const input = el('input', { class: 'input mono', type: 'text', value: getPrefix(), placeholder: 'C:\\Users\\you\\OneDrive - …\\Stella Systems', 'aria-label': 'This PC\'s Stella Systems folder', spellcheck: 'false' });
   const err = el('div', { class: 'form-err', role: 'alert' });
   const save = () => {
@@ -73,6 +76,7 @@ function thisPc() {
     if (r.error) { err.textContent = r.error; return; }
     err.textContent = '';
     input.value = r.prefix;
+    markClean();
     toast(r.prefix ? 'Saved: Copy path now gives full paths on this PC' : 'Cleared');
   };
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } });
@@ -95,13 +99,14 @@ function thisPc() {
     el('div', { class: 'settings-row' }, status, connect));
 }
 
-function backlog() {
+function backlog(markClean) {
   const days = prefs.get('backlogDays', 14);
   const input = el('input', { class: 'input', type: 'number', min: '1', max: '365', value: String(days), style: { width: '96px' }, 'aria-label': 'Days untouched before a job joins the Backlog' });
   input.addEventListener('change', () => {
     const v = Math.max(1, Math.min(365, Math.round(Number(input.value) || 14)));
     input.value = String(v);
     prefs.set('backlogDays', v);
+    markClean();
     toast(`Backlog: jobs untouched ${v} days or more`);
   });
   return section('Backlog', el('div', { class: 'settings-row' },
@@ -142,7 +147,7 @@ function data(close) {
 // accounts (a master, signed in to Firebase)
 // ---------------------------------------------------------------------------
 
-async function accounts(host) {
+async function accounts(host, markClean) {
   host.textContent = '';
   host.append(el('div', { class: 'lbl' }, 'Accounts'));
   const card = el('div', { class: 'settings-card' }, 'Loading…');
@@ -158,6 +163,7 @@ async function accounts(host) {
       setAccess(next);
       toast(note);
       draw();
+      markClean();
       return true;
     } catch (e) { toast(`Could not save: ${e.message}`, { warn: true }); return false; }
   };

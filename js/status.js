@@ -69,6 +69,96 @@ export function changeProblem(from, to, role = 'lead') {
 /** May this person take this task back from Ready for check? Whoever submitted it. */
 export const canTakeBack = (t, me) => t?.status === 'check' && Boolean(me) && t.submittedBy === me;
 
+// ---------------------------------------------------------------------------
+// the checkbox on steps and subtasks (decided 2026-11-04, live test run)
+// ---------------------------------------------------------------------------
+
+/** A step's checkbox, right-click: backwards. Doing → To do, Done → Doing, N/a → Done. */
+export const stepBack = (s) => ({ doing: 'todo', done: 'doing', na: 'done' }[s ?? 'todo'] ?? null);
+
+/**
+ * A subtask's checkbox, click: To do → In progress → Done for the lead; →
+ * Ready for check for everyone else, who never reach Done. Fix restarts.
+ * Waiting, Done and Cancelled are changed from the task itself, so null.
+ */
+export function taskForward(t, role) {
+  switch (t?.status ?? 'todo') {
+    case 'todo': case 'fix': return 'in_progress';
+    case 'in_progress': return role === 'lead' ? 'done' : 'check';
+    case 'check': return role === 'lead' ? 'done' : null;
+    default: return null;
+  }
+}
+
+/**
+ * A subtask's checkbox, right-click or long-press: backwards. In progress →
+ * To do; Ready for check → In progress is a Take back, so only whoever
+ * submitted it; Done → In progress only for the lead, since nobody else could
+ * put it back to Done.
+ */
+export function taskBack(t, role, me) {
+  switch (t?.status ?? 'todo') {
+    case 'done': return role === 'lead' ? 'in_progress' : null;
+    case 'in_progress': return 'todo';
+    case 'check': return canTakeBack(t, me) ? 'in_progress' : null;
+    default: return null;
+  }
+}
+
+// A step with steps or subtasks inside is a container: its own tick is
+// derived (tree.stepFinished), the same rule tree.progress uses.
+const stepKids = (idx, id) => childrenOf(idx, id).filter((k) => k.kind === KIND.step || k.kind === KIND.task);
+
+/**
+ * AUTO-ADVANCE for steps: ticking a step Done moves the next To-do step at
+ * the same level to Doing - into a step's sub-steps when it has them. Finished
+ * steps (Done, N/a) are passed over; a step already Doing ends the search.
+ * @returns {string|null} the step to start
+ */
+export function nextStepToStart(idx, stepId) {
+  const s = idx.byId.get(stepId);
+  if (!s) return null;
+  const firstOpen = (list) => {
+    for (const c of list) {
+      if (c.kind !== KIND.step) continue;
+      const kids = stepKids(idx, c.id);
+      if (kids.length) {
+        const inner = firstOpen(kids);
+        if (inner !== undefined) return inner;
+        continue;
+      }
+      const st = c.state ?? 'todo';
+      if (st === 'done' || st === 'na') continue;
+      return st === 'todo' ? c.id : null;
+    }
+    return undefined;
+  };
+  const siblings = childrenOf(idx, s.parentId);
+  return firstOpen(siblings.slice(siblings.findIndex((c) => c.id === stepId) + 1)) ?? null;
+}
+
+/**
+ * AUTO-ADVANCE for subtasks: ticking one Done (or Ready for check) starts the
+ * next To-do sibling subtask - only if it is nobody's yet or has the same
+ * assignee, so nobody's work is started for them. Finished and submitted
+ * siblings are passed over; one already under way (or waiting) ends the
+ * search, as for steps.
+ * @returns {string|null} the subtask to start
+ */
+export function nextTaskToStart(idx, taskId) {
+  const t = idx.byId.get(taskId);
+  if (!t) return null;
+  const siblings = childrenOf(idx, t.parentId);
+  for (const c of siblings.slice(siblings.findIndex((x) => x.id === taskId) + 1)) {
+    if (c.kind !== KIND.task) continue;
+    const st = c.status ?? 'todo';
+    if (st === 'done' || st === 'cancelled' || st === 'check') continue;
+    if (st !== 'todo') return null;
+    return !c.assignee || c.assignee === t.assignee ? c.id : null;
+  }
+  return null;
+}
+
 /** The kind of timeline entry a change posts. */
 function eventKind(from, to) {
   if (from === 'check' && to === 'done') return 'approve';

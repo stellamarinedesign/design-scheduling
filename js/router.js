@@ -2,14 +2,19 @@
 // shared or bookmarked.
 //
 //   #/home                 Home
-//   #/tasks                Tasks overview
-//   #/tasks/<id>           a category page, or a job opened as a page
+//   #/tasks                Tasks: the full list (?c=<id> reveals a category)
+//   #/tasks/<id>           Focus: one category alone
 //   #/tasks/top            jobs not in any category
 //   #/archive, #/import    the archive, the staged import
-//   …?t=<id>               with the task panel open on <id>
+//   …?t=<id>               with the task panel open on <id>: a task, a step
+//                          or a section inside a job
 //
-// Opening the panel pushes a history entry, so Back closes it — which is what
-// a phone user expects of a full-screen sheet.
+// THE PANEL IS ONE NAVIGABLE PAGE (decided 2026-11-04, live test run).
+// Opening a node pushes a history entry that remembers where it came from,
+// so Back walks the drill path (and closes the panel from a job, which is
+// what a phone user expects of a full-screen sheet). ← and Esc go UP one
+// level: by Back when the entry before is the parent, by replacing the entry
+// when the node was opened directly (a search, a link).
 
 import { state } from './state.js';
 
@@ -44,11 +49,34 @@ export function go(path, { keepTask = false } = {}) {
   else location.hash = next;
 }
 
-/** Open the task panel on a task, wherever you are. */
-export function openTask(id) {
+const withTask = (id) => {
   const q = new URLSearchParams(route.query);
   q.set('t', id);
-  location.hash = `${route.path}?${q}`;
+  return `#${route.path}?${q}`;
+};
+
+/** Open the panel on a node, wherever you are. Pushes, noting where from. */
+export function openTask(id) {
+  if (!id || id === state.openId) return;
+  history.pushState({ from: state.openId ?? null }, '', withTask(id));
+  parse();
+  listener();
+}
+
+/** Show `id` in the panel in place of what it shows now (no new history entry). */
+export function replaceTask(id) {
+  history.replaceState({ from: null }, '', withTask(id));
+  parse();
+  listener();
+}
+
+/**
+ * Up one level to `parentId`: Back, when the entry before this one is the
+ * parent (the drill path), else in place.
+ */
+export function upTo(parentId) {
+  if (history.state?.from === parentId) history.back();
+  else replaceTask(parentId);
 }
 
 /** Close the panel. Replaces rather than pushes, so Back does not reopen it. */

@@ -1,7 +1,7 @@
 // views/signin.js — the sign-in screen (Firebase mode only), and the screen
 // for an account nobody has listed yet. Local mode never shows either.
 
-import { el, btn } from '../ui.js';
+import { el, btn, withReveal } from '../ui.js';
 import { Auth, friendlyAuthError } from '../auth.js';
 
 export function renderSignIn(app) {
@@ -22,7 +22,7 @@ export function renderSignIn(app) {
     el('main', { class: 'view' }, el('div', { class: 'box', style: { margin: '10vh auto 0' } },
       el('h3', {}, 'Sign in'),
       el('div', { class: 'field' }, el('label', { for: 'siEmail' }, 'Email'), email),
-      el('div', { class: 'field' }, el('label', { for: 'siPw' }, 'Password'), pw),
+      el('div', { class: 'field' }, el('label', { for: 'siPw' }, 'Password'), withReveal(pw)),
       err,
       el('div', { class: 'actions' }, go),
       el('p', { class: 'hint' }, 'Accounts are made by the Design lead, with a temporary password you change under the cog.'))));

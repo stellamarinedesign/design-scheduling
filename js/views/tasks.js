@@ -18,7 +18,9 @@
 //
 // The sidebar is navigation: #/tasks?c=<id> scrolls to the category, expands
 // it and its ancestors, and briefly highlights it. A category's ⋯ keeps
-// Focus (#/tasks/<id>, the category alone); a job keeps Open as page.
+// Focus (#/tasks/<id>, the category alone). A job opens in the task panel,
+// which is a navigable page of its own (panel.js); the old "Open as page"
+// links (#/tasks/<job>) land there.
 //
 // Everything with a ⋯ also opens that menu on right-click, long-press and
 // Shift+F10 (ui.js withMenu). Categories drag like tiles: reorder among
@@ -30,8 +32,8 @@ import * as T from '../tree.js';
 import * as S from '../status.js';
 import * as A from '../actions.js';
 import { ageDays } from '../dates.js';
-import { tile, row, band, enableDrag, statusMenu, taskMenu, backlogDays } from './tile.js';
-import { go, route, routeHref, openTask } from '../router.js';
+import { tile, row, band, enableDrag, backlogDays } from './tile.js';
+import { go, route, routeHref } from '../router.js';
 import { promptDialog } from '../dialog.js';
 import { welcome, errorState } from './home.js';
 import { newMasterCategory } from './sidebar.js';
@@ -143,8 +145,13 @@ export function renderTasks(root, id) {
       el('div', { class: 'row' }, btn('All tasks', () => go('/tasks')), btn('Open the archive', () => go('/archive'), { cls: 'ghost' }))));
     return;
   }
-  if (n.kind === T.KIND.task) return jobPage(inner, n);
-  if (n.kind === T.KIND.step) { openTask(T.jobOf(state.idx, n.id)?.id ?? n.parentId); return; }
+  // A job, a task, a step or a section: the panel shows it, over the list
+  // with its category revealed.
+  if (!T.isGroupLike(n) || T.isSection(state.idx, n)) {
+    const cat = T.ancestorChain(state.idx, n.id).filter((a) => T.isGroupLike(a) && !T.isSection(state.idx, a)).pop();
+    location.replace(routeHref('/tasks', cat ? { c: cat.id, t: n.id } : { t: n.id }));
+    return;
+  }
   return focusPage(inner, n);
 }
 
@@ -345,7 +352,7 @@ function crumbs(n) {
   return el('nav', { class: 'crumbs', 'aria-label': 'Breadcrumb' },
     el('a', { href: routeHref('/tasks') }, 'Tasks'),
     chain.flatMap((a) => [el('span', { 'aria-hidden': 'true' }, '›'),
-      el('a', { href: a.kind === T.KIND.task ? routeHref(`/tasks/${a.id}`) : routeHref('/tasks', { c: a.id }) }, T.nameOf(a))]));
+      el('a', { href: routeHref('/tasks', { c: a.id }) }, T.nameOf(a))]));
 }
 
 function focusPage(inner, g) {
@@ -502,120 +509,6 @@ function wireListDrag(list) {
     onDrop: (dragId, targetId, where) => A.moveNextTo(dragId, targetId, where),
     onDropInto: (dragId, groupId) => { A.moveInto(dragId, groupId); setExpanded([groupId], true); },
   });
-}
-
-// ---------------------------------------------------------------------------
-// a job, opened as a page: its steps, its sections, its tasks
-// ---------------------------------------------------------------------------
-
-function jobPage(inner, j) {
-  const { idx } = state;
-  const prog = T.progress(idx, j.id);
-  inner.append(el('div', { class: 'sec', style: { gap: '10px' } },
-    crumbs(j),
-    el('div', { class: 'view-head' },
-      pill(j.status, { onClick: (e) => statusMenu(e.currentTarget, j) }),
-      el('h1', { class: 'h1 plain' }, j.title),
-      prog.total ? el('span', { class: 'meta' }, `${prog.done}/${prog.total}`) : null,
-      el('span', { class: 'sp' }),
-      btn('Details', () => openTask(j.id), { cls: 'sm', ic: 'open', title: 'Brief, steps, folders and updates' }),
-      btn('Task', () => addJob(j.id), { cls: 'sm', ic: 'plus' }),
-      btn('Section', () => addGroup(j.id), { cls: 'sm', ic: 'folderPlus' }),
-      ...switches(j),
-      iconBtn('more', `${j.title} actions`, (e) => taskMenu(e.currentTarget, j)))));
-  const body = el('div', { class: 'sec' });
-  const kids = children(j.id, 0, j);
-  const hasSteps = T.childrenOf(idx, j.id).some((c) => c.kind === T.KIND.step);
-  if (hasSteps) {
-    body.append(el('div', { class: 'empty' }, el('span', {}, `${prog.done} of ${prog.total} steps and tasks done. `), btn('Open the steps', () => openTask(j.id), { cls: 'sm' })));
-  }
-  body.append(...kids);
-  inner.append(body);
-  if (sortOf(j) === 'manual') {
-    enableDrag(body, {
-      onDrop: (dragId, targetId, where) => A.moveNextTo(dragId, targetId, where),
-      onDropInto: (dragId, groupId) => A.moveInto(dragId, groupId),
-    });
-  }
-}
-
-/** Inside a job: runs of tasks, its sections, Done and Cancelled at the end. */
-function children(parentId, depth, page) {
-  const { idx } = state;
-  const sort = sortOf(page);
-  const kids = T.childrenOf(idx, parentId).filter((k) => k.kind !== T.KIND.step);
-  const out = [];
-  const done = [];
-  let run = [];
-  const flush = () => { if (run.length) out.push(renderRun(run, page)); run = []; };
-  if (sort !== 'manual') {
-    const tasks = kids.filter((k) => k.kind === T.KIND.task);
-    const live = tasks.filter((t) => S.isOpen(t.status)).sort(SORTS[sort].cmp);
-    done.push(...tasks.filter((t) => !S.isOpen(t.status)));
-    if (live.length) out.push(renderRun(live, page, { flat: true }));
-    for (const k of kids) if (T.isGroupLike(k)) out.push(section(k, depth, page));
-  } else {
-    for (const k of kids) {
-      if (k.kind === T.KIND.task) { if (S.isOpen(k.status)) run.push(k); else done.push(k); }
-      else if (T.isGroupLike(k)) { flush(); out.push(section(k, depth, page)); }
-    }
-    flush();
-  }
-  const doneOnly = done.filter((t) => t.status === 'done');
-  const cancelled = done.filter((t) => t.status === 'cancelled');
-  if (doneOnly.length) out.push(doneFold(parentId, doneOnly, page, 'done'));
-  if (cancelled.length) out.push(doneFold(parentId, cancelled, page, 'cancelled'));
-  if (!out.length) {
-    out.push(el('div', { class: 'empty' }, el('span', {}, 'No tasks here.'), btn('Task', () => addJob(parentId), { cls: 'sm', ic: 'plus' })));
-  }
-  return out;
-}
-
-function renderRun(list, page, { flat = false } = {}) {
-  const mode = viewMode(page);
-  const bands = !flat && bandsOn(page);
-  const ordered = flat ? list : S.BAND_ORDER.flatMap((s) => list.filter((t) => t.status === s));
-  const opts = { assignee: true, drag: sortOf(page) === 'manual' };
-  if (mode === 'list') {
-    const rows = el('div', { class: 'rows' });
-    let last = null;
-    for (const t of ordered) {
-      if (bands && t.status !== last) {
-        rows.append(el('div', { class: 'trow band-row' }, el('span', { class: 'lbl' }, S.LABEL[t.status]), el('span', {}), el('span', { class: 'meta' }, String(ordered.filter((x) => x.status === t.status).length))));
-        last = t.status;
-      }
-      rows.append(row(t, opts));
-    }
-    return rows;
-  }
-  const grid = el('div', { class: 'grid' });
-  let last = null;
-  for (const t of ordered) {
-    if (bands && t.status !== last) { grid.append(band(t.status, ordered.filter((x) => x.status === t.status).length)); last = t.status; }
-    grid.append(tile(t, opts));
-  }
-  return grid;
-}
-
-/** A section inside a job. */
-function section(g, depth, page) {
-  const { idx } = state;
-  const key = `col.${g.id}`;
-  const empty = !T.childrenOf(idx, g.id).some((c) => c.kind !== T.KIND.step);
-  const closed = prefs.get(key, empty);
-  const open = T.childrenOf(idx, g.id).filter((t) => t.kind === T.KIND.task && S.isOpen(t.status)).length;
-  const s = el('section', { class: `grp${closed ? ' closed' : ''}`, 'aria-label': T.nameOf(g), dataset: { id: g.id } },
-    el('div', { class: 'grp-head', dataset: { dropInto: g.id } },
-      el('button', {
-        class: 'ib', type: 'button', 'aria-expanded': String(!closed), 'aria-label': `${closed ? 'Expand' : 'Collapse'} ${T.nameOf(g)}`,
-        onclick: () => { prefs.set(key, !closed); rerender(); },
-      }, icon(closed ? 'chevRight' : 'chevDown', 16)),
-      el('h2', { class: 'h2' }, T.nameOf(g)),
-      el('span', { class: 'meta' }, `${open} open`),
-      el('span', { class: 'sp' }),
-      btn('Task', () => addJob(g.id), { cls: 'sm ghost', ic: 'plus' })));
-  if (!closed) s.append(...children(g.id, depth + 1, page));
-  return s;
 }
 
 /** A collapsed strip of finished work: `kind` is 'done' or 'cancelled', each with its own count and archive-all. */

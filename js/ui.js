@@ -51,6 +51,8 @@ const P = {
   open: '<path d="M14 4h6v6M20 4l-8 8M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/>',
   archive: '<rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4"/>',
   trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
+  expand: '<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>',
+  collapse: '<path d="M4 14h6v6M20 10h-6V4M14 10l7-7M10 14l-7 7"/>',
   move: '<path d="M5 9 2 12l3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/>',
   upload: '<path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/>',
   grid: '<rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/>',
@@ -80,6 +82,23 @@ export function icon(name, size = 18) {
   s.setAttribute('focusable', 'false');
   s.innerHTML = P[name] ?? '';
   return s;
+}
+
+/**
+ * A password field with its own Show / Hide button. Edge's built-in eye goes
+ * once the field loses focus and does not come back while it holds text (a
+ * browser security choice), so the app draws one that stays; css hides
+ * Edge's own.
+ */
+export function withReveal(input) {
+  const b = el('button', { class: 'reveal', type: 'button', 'aria-controls': input.id || null }, 'Show');
+  b.addEventListener('click', () => {
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    b.textContent = show ? 'Hide' : 'Show';
+    input.focus();
+  });
+  return el('div', { class: 'reveal-wrap' }, input, b);
 }
 
 /** A labelled icon button. */

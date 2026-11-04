@@ -40,7 +40,7 @@ function listKeys(input, list) {
 export function waitingDialog(id) {
   const t = node(id);
   const chosen = new Set(t?.status === 'waiting' ? (t.waiting?.blockedBy ?? []) : []);
-  return openDialog((box, close) => {
+  return openDialog((box, close, { dismiss }) => {
     box.append(el('h3', {}, t?.status === 'waiting' ? 'What it is waiting on' : `Waiting: ${t?.title ?? ''}`));
     const note = el('textarea', { class: 'textarea', rows: '2', id: 'wNote', placeholder: 'e.g. Supplier sample, customer sign-off', 'data-autofocus': '' });
     note.value = t?.status === 'waiting' ? (t.waiting?.note ?? '') : '';
@@ -86,9 +86,9 @@ export function waitingDialog(id) {
         if (!v && !chosen.size) { err.textContent = 'Give a reason, or pick the task holding it up.'; return; }
         close({ note: v, blockedBy: [...chosen] });
       }, { cls: 'primary' }),
-      btn('Cancel', () => close(null))));
+      btn('Cancel', dismiss)));
     note.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); box.querySelector('.btn.primary').click(); } });
-  }, { label: 'Waiting', wide: true });
+  }, { label: 'Waiting', wide: true, guard: true });
 }
 
 /**

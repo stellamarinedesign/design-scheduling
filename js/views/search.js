@@ -28,8 +28,9 @@ export function openSearch() {
       el('span', { class: 'hint' }, 'Enter opens the first · arrows move · Esc closes'));
     const choose = (n) => {
       close(true);
-      if (n.kind === T.KIND.task) openTask(n.id);
-      else if (n.kind === T.KIND.step) openTask(T.jobOf(state.idx, n.id)?.id ?? n.parentId);
+      // The panel shows a task, a section, or a step where it sits (in what holds it).
+      if (n.kind === T.KIND.task || T.isSection(state.idx, n)) openTask(n.id);
+      else if (n.kind === T.KIND.step) openTask(n.parentId);
       else go(`/tasks/${n.id}`);
     };
     const draw = () => {

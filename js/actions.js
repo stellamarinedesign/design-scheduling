@@ -167,7 +167,7 @@ const STATUS_WORD = {
  * Change a task's status. Waiting asks what it waits on; a send-back asks
  * why; Done on a job with open work inside asks whether to close it too.
  */
-export async function setStatus(id, to, { comment, note, blockedBy, reason } = {}) {
+export async function setStatus(id, to, { comment, note, blockedBy, reason, advance = false } = {}) {
   const t = node(id);
   if (!t || t.kind !== T.KIND.task) return;
   const from = t.status ?? 'todo';
@@ -224,6 +224,16 @@ export async function setStatus(id, to, { comment, note, blockedBy, reason } = {
   const r = S.changeStatus(state.idx, id, to, { ...c, comment, note, blockedBy, reason });
   if (r.error) { toast(r.error, { warn: true }); return; }
   if (!r.patches.length) return;
+  // The checkbox's auto-advance: the next To-do subtask starts in the same
+  // write, so the one Undo puts both back.
+  let started = null;
+  if (advance && (to === 'done' || to === 'check')) {
+    const next = node(S.nextTaskToStart(state.idx, id));
+    if (next && canWrite(next)) {
+      const r2 = S.changeStatus(state.idx, next.id, 'in_progress', c);
+      if (!r2.error && r2.patches.length) { extra.patches.push(...r2.patches); extra.updates.push(...r2.updates); started = next; }
+    }
+  }
   const patches = mergePatches([...r.patches, ...extra.patches]);
   const inverse = inverseOf(patches);
   write({ patch: patches, updates: [...r.updates, ...extra.updates] });
@@ -233,9 +243,12 @@ export async function setStatus(id, to, { comment, note, blockedBy, reason } = {
     : from === 'check' && to === 'in_progress' ? 'Taken back from check'
     : from === 'cancelled' ? `Reopened · ${S.LABEL[to]}`
       : from === 'waiting' && to !== 'waiting' ? `Stopped waiting · ${S.LABEL[to]}` : STATUS_WORD[to];
-  toast(`${word}${withIt ? ` · ${plural(withIt, 'task')} with it` : ''}${unblocked ? ` · ${plural(unblocked, 'task')} unblocked` : ''}`, {
+  toast(`${word}${started ? ` · started ${started.title}` : ''}${withIt ? ` · ${plural(withIt, 'task')} with it` : ''}${unblocked ? ` · ${plural(unblocked, 'task')} unblocked` : ''}`, {
     action: 'Undo',
-    onAction: () => write({ patch: inverse, updates: [{ taskId: id, at: nowISO(), by: state.me, kind: 'status', from: to, to: from, text: 'Undone' }] }),
+    onAction: () => write({ patch: inverse, updates: [
+      { taskId: id, at: nowISO(), by: state.me, kind: 'status', from: to, to: from, text: 'Undone' },
+      ...(started ? [{ taskId: started.id, at: nowISO(), by: state.me, kind: 'status', from: 'in_progress', to: started.status ?? 'todo', text: 'Undone' }] : []),
+    ] }),
   });
 }
 
@@ -292,6 +305,48 @@ export function cycleStep(id) {
   const s = node(id);
   if (!s) return;
   setStepState(id, S.nextStepState(s.state ?? 'todo'));
+}
+
+/** May this person tick this step? The rules' test: its parent is theirs. */
+const canWriteStep = (s) => state.role === 'lead' || canWrite(node(s?.parentId));
+
+/**
+ * THE CHECKBOX on a step or subtask (decided 2026-11-04). A click goes
+ * forward, a right-click or long-press backwards (status.js says where to).
+ * Ticking a step Done starts the next To-do step at its level; ticking a
+ * subtask Done or Ready for check starts the next To-do subtask if it is
+ * nobody's or the same person's. One write, one Undo for both.
+ * @param {1|-1} dir
+ */
+export function tick(id, dir = 1) {
+  const n = node(id);
+  if (!n) return;
+  if (n.kind === T.KIND.step) {
+    const from = n.state ?? 'todo';
+    const to = dir > 0 ? S.nextStepState(from) : S.stepBack(from);
+    if (!to) return;
+    const at = nowISO();
+    const changed = [{ id, state: to, updatedAt: at }];
+    const next = dir > 0 && to === 'done' ? node(S.nextStepToStart(state.idx, id)) : null;
+    if (next && canWriteStep(next)) changed.push({ id: next.id, state: 'doing', updatedAt: at });
+    const inverse = inverseOf(changed);
+    write({ patch: mergePatches([...changed, ...touchJob(id, at)]) });
+    if (changed.length > 1) toast(`Done · next: ${T.nameOf(next)}`, { action: 'Undo', onAction: () => write({ patch: inverse }) });
+    return;
+  }
+  if (n.kind !== T.KIND.task) return;
+  if (!canWrite(n)) { toast('Only whoever it is assigned to, or the Design lead, changes it.', { warn: true }); return; }
+  const to = dir > 0 ? S.taskForward(n, state.role) : S.taskBack(n, state.role, state.me);
+  if (to) { setStatus(id, to, { advance: dir > 0 }); return; }
+  if (dir < 0) return;
+  // Forward goes nowhere from here: say what does.
+  const why = {
+    check: S.canTakeBack(n, state.me) ? 'It is with the Design lead for check. Right-click the box to take it back.' : 'It is with the Design lead for check.',
+    waiting: 'It is waiting. Open it to stop waiting.',
+    done: state.role === 'lead' ? 'Done. Right-click the box to reopen it.' : 'Done.',
+    cancelled: 'Cancelled. Open it to reopen it.',
+  }[n.status];
+  if (why) toast(why);
 }
 
 export function setStepState(id, value) {

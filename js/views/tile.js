@@ -8,6 +8,11 @@
 // task panel; the pill opens the status menu in one tap; To-do tiles carry a
 // one-tap Start. Every action in the ⋯ menu is also reachable without hover,
 // and Move to… is the touch path for everything drag does.
+//
+// THE CHECK CONTROL (decided 2026-11-04, live test run): steps and subtasks
+// (any task that is not a job) carry the same box. A click goes forward, a
+// right-click, long-press or Shift+F10 goes back, and ticking one done starts
+// the next (actions.js tick).
 
 import { el, icon, iconBtn, btn, pill, dot, avatar, bar, menu, canDrag, withMenu } from '../ui.js';
 import { state, node, personName } from '../state.js';
@@ -15,7 +20,7 @@ import * as T from '../tree.js';
 import * as S from '../status.js';
 import * as A from '../actions.js';
 import { ageLabel, ageDays, dayLabel, dayOf } from '../dates.js';
-import { go, openTask, routeHref } from '../router.js';
+import { openTask } from '../router.js';
 
 export const backlogDays = () => {
   try { return Number(JSON.parse(localStorage.getItem('stella.design.pref.backlogDays'))) || 14; } catch { return 14; }
@@ -49,6 +54,37 @@ export function subtext(t) {
     if (n) return { text: `Next: ${T.nameOf(n)}`, cls: '' };
   }
   return null;
+}
+
+/** What the check control shows for a subtask's status. */
+const BOX = { todo: 'todo', in_progress: 'doing', fix: 'fix', waiting: 'wait', check: 'check', done: 'done', cancelled: 'na' };
+
+/**
+ * The check control on a step or subtask. A step that holds steps or tasks
+ * shows how they stand and is not ticked itself (tree.stepFinished).
+ */
+export function checkBox(n) {
+  const { idx } = state;
+  const name = T.nameOf(n);
+  const step = n.kind === T.KIND.step;
+  if (step && T.childrenOf(idx, n.id).some((k) => k.kind === T.KIND.step || k.kind === T.KIND.task)) {
+    const p = T.progress(idx, n.id);
+    const st = T.stepFinished(idx, n) ? 'done' : p.done ? 'doing' : 'todo';
+    return el('button', { class: `tick ${st}`, type: 'button', disabled: true, 'aria-label': `${name}: ${p.done} of ${p.total} done` }, el('i', {}, st === 'done' ? icon('check', 14) : null));
+  }
+  const now = step ? S.STEP_LABEL[n.state ?? 'todo'] : S.LABEL[n.status ?? 'todo'];
+  const fwd = step ? S.STEP_LABEL[S.nextStepState(n.state ?? 'todo')] : S.LABEL[S.taskForward(n, state.role)];
+  const back = step ? S.STEP_LABEL[S.stepBack(n.state ?? 'todo')] : S.LABEL[S.taskBack(n, state.role, state.me)];
+  const st = step ? (n.state ?? 'todo') : (BOX[n.status] ?? 'todo');
+  const b = el('button', {
+    class: `tick ${st}`, type: 'button',
+    'aria-label': `${name}: ${now}${fwd ? `. Click for ${fwd}` : ''}`,
+    title: [now, fwd && `click: ${fwd}`, back && `right-click: back to ${back}`].filter(Boolean).join(' · '),
+    onclick: (e) => { e.stopPropagation(); A.tick(n.id, 1); },
+  }, el('i', {}, st === 'done' || st === 'check' ? icon('check', 14) : null));
+  // Right-click, long-press and Shift+F10 on the box go back a state; on the
+  // rest of the row they still open its menu (the nearest wins).
+  return withMenu(b, () => A.tick(n.id, -1));
 }
 
 /** Status changes offered from a pill. Approve/send back only for the lead. */
@@ -87,7 +123,6 @@ export function taskMenu(anchor, t, { extra = [], at = null } = {}) {
     ...extra,
     ...(extra.length ? ['sep'] : []),
     { label: 'Open', icon: 'open', onSelect: () => openTask(t.id) },
-    { label: 'Open as page', icon: 'page', onSelect: () => go(`/tasks/${t.id}`) },
     'sep',
     t.status === 'todo' || t.status === 'fix' ? { label: 'Start', icon: 'play', onSelect: () => A.start(t.id) } : null,
     state.role === 'lead' && S.isOpen(t.status) && t.status !== 'check' ? { label: 'Mark done', icon: 'check', onSelect: () => A.setStatus(t.id, 'done') } : null,
@@ -119,10 +154,11 @@ export function tile(t, { path = false, assignee = false, variant = 'normal', me
   const days = ageDays(t.lastActivityAt);
   const stale = t.status === 'todo' && days >= backlogDays();
   const prog = T.progress(state.idx, t.id);
-  const sub = variant === 'backlog' ? null : subtext(t);
+  const line = variant === 'backlog' ? null : subtext(t);
   const colour = T.colourOf(state.idx, t.id);
   const pathText = T.pathText(state.idx, t.id);
   const titleCls = `tile-title${t.status === 'done' ? ' done' : ''}${t.status === 'cancelled' ? ' cancelled' : ''}`;
+  const sub = !T.isJob(state.idx, t);   // a subtask: the check control, in place of Start
 
   const a = el('article', {
     class: `tile${t.status === 'cancelled' ? ' muted' : ''}`, dataset: { id: t.id }, 'aria-current': open ? 'true' : null,
@@ -133,6 +169,7 @@ export function tile(t, { path = false, assignee = false, variant = 'normal', me
     'aria-label': `Open ${t.title}, ${S.LABEL[t.status]}`, onclick: () => openTask(t.id),
   }),
   el('div', { class: 'tile-top' },
+    sub ? checkBox(t) : null,
     pill(t.status, { onClick: (e) => { e.stopPropagation(); statusMenu(e.currentTarget, t); } }),
     el('span', { class: 'sp' }),
     el('span', { class: `meta${stale || variant === 'backlog' ? ' warn' : ''}`, title: 'Since the last activity' },
@@ -140,9 +177,9 @@ export function tile(t, { path = false, assignee = false, variant = 'normal', me
     iconBtn('more', `More actions for ${t.title}`, (e) => { e.stopPropagation(); taskMenu(e.currentTarget, t, { extra: menuExtra }); })),
   el('div', { class: titleCls }, t.title),
   path && pathText ? el('div', { class: 'tile-path' }, dot(colour), el('span', {}, pathText)) : null,
-  sub ? el('div', { class: `tile-sub ${sub.cls}`.trim() }, sub.text) : null,
+  line ? el('div', { class: `tile-sub ${line.cls}`.trim() }, line.text) : null,
   el('div', { class: 'tile-foot' },
-    t.status === 'todo' ? btn('Start', (e) => { e.stopPropagation(); A.start(t.id); }, { cls: 'sm', ic: 'play', title: 'Start: one tap to In progress' }) : null,
+    t.status === 'todo' && !sub ? btn('Start', (e) => { e.stopPropagation(); A.start(t.id); }, { cls: 'sm', ic: 'play', title: 'Start: one tap to In progress' }) : null,
     variant !== 'backlog' && prog.total ? bar(prog.done, prog.total) : el('span', { class: 'sp' }),
     variant !== 'backlog' && prog.total ? el('span', { class: 'meta' }, `${prog.done}/${prog.total}`) : null,
     assignee ? whoBadge(t.assignee) : null));
@@ -157,9 +194,10 @@ export function row(t, { path = false, assignee = false, drag = true } = {}) {
   const sub = subtext(t);
   const pathText = path ? T.pathText(state.idx, t.id) : '';
   const subLine = [pathText, sub?.text].filter(Boolean).join(' · ');
+  const isSub = !T.isJob(state.idx, t);   // a subtask: the check control, in place of Start
   const r = el('div', { class: `trow${t.status === 'cancelled' ? ' muted' : ''}`, dataset: { id: t.id }, 'aria-current': open ? 'true' : null, draggable: drag && canDrag() ? 'true' : null },
     el('button', { class: 'open-link', type: 'button', dataset: { fk: `open-${t.id}` }, 'aria-label': `Open ${t.title}, ${S.LABEL[t.status]}`, onclick: () => openTask(t.id) }),
-    pill(t.status, { onClick: (e) => { e.stopPropagation(); statusMenu(e.currentTarget, t); } }),
+    el('span', { class: 'trow-lead' }, isSub ? checkBox(t) : null, pill(t.status, { onClick: (e) => { e.stopPropagation(); statusMenu(e.currentTarget, t); } })),
     el('div', { class: 'trow-main' },
       el('div', { class: 'trow-title' }, t.title),
       subLine ? el('div', { class: `trow-sub` }, subLine) : null),
@@ -167,7 +205,7 @@ export function row(t, { path = false, assignee = false, drag = true } = {}) {
       prog.total ? el('span', { class: 'meta' }, `${prog.done}/${prog.total}`) : null,
       assignee ? whoBadge(t.assignee) : null,
       el('span', { class: 'meta' }, ageLabel(t.lastActivityAt)),
-      t.status === 'todo' ? iconBtn('play', `Start ${t.title}`, (e) => { e.stopPropagation(); A.start(t.id); }, 'sm') : null,
+      t.status === 'todo' && !isSub ? iconBtn('play', `Start ${t.title}`, (e) => { e.stopPropagation(); A.start(t.id); }, 'sm') : null,
       iconBtn('more', `More actions for ${t.title}`, (e) => { e.stopPropagation(); taskMenu(e.currentTarget, t); }, 'sm')));
   return withMenu(r, (at) => taskMenu(r.querySelector('.trow-end .ib:last-child') ?? r, t, { at }));
 }
@@ -197,7 +235,7 @@ export function enableDrag(root, { onDrop, onDropInto = null, validate = true })
   let dragEl = null;
   let plan = null;
   const gap = el('div', { class: 'drop-gap', 'aria-hidden': 'true' });
-  const across = (n) => n.classList.contains('tile') || n.classList.contains('cat-tile');
+  const across = (n) => n.classList.contains('tile') || n.classList.contains('cat-tile') || n.classList.contains('ktile');
   const reset = () => {
     gap.remove();
     root.querySelectorAll('.drop-into').forEach((n) => n.classList.remove('drop-into'));

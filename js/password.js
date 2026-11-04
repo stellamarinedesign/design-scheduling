@@ -10,7 +10,7 @@
 
 import { Auth, friendlyAuthError } from './auth.js';
 import { openDialog } from './dialog.js';
-import { toast } from './ui.js';
+import { toast, withReveal } from './ui.js';
 
 const MIN_LENGTH = 8;
 
@@ -24,7 +24,7 @@ const el = (tag, cls, text) => {
 /** Open the dialog - from the Settings cog. Nothing to do in local mode. */
 export function openPasswordDialog() {
   if (Auth.mode !== 'firebase') return;
-  openDialog((box, close) => {
+  openDialog((box, close, { dismiss }) => {
     box.append(el('h3', null, 'Change password'));
     const email = Auth.user?.email ?? '';
     if (email) box.append(el('p', 'lede', `For ${email}.`));
@@ -37,7 +37,7 @@ export function openPasswordDialog() {
       i.id = id;
       i.className = 'input';
       i.autocomplete = auto;
-      f.append(l, i);
+      f.append(l, withReveal(i));
       if (hint) f.append(el('div', 'hint', hint));
       return f;
     };
@@ -74,9 +74,9 @@ export function openPasswordDialog() {
       }
     };
     save.addEventListener('click', submit);
-    cancel.addEventListener('click', () => close(null));
+    cancel.addEventListener('click', dismiss);
     for (const id of ['pwCurrent', 'pwNew', 'pwAgain']) {
       box.querySelector(`#${id}`).addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
     }
-  }, { label: 'Change password' });
+  }, { label: 'Change password', guard: true });
 }

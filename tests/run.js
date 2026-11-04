@@ -477,6 +477,69 @@ export async function run() {
   test('step states cycle To do → Doing → Done → N/a', () => {
     expect(['todo', 'doing', 'done', 'na'].map(S.nextStepState), ['doing', 'done', 'na', 'todo']);
   });
+  test('a step checkbox goes backwards: Doing → To do, Done → Doing, N/a → Done', () => {
+    expect(['doing', 'done', 'na', 'todo'].map(S.stepBack), ['todo', 'doing', 'done', null]);
+  });
+  test('a subtask checkbox: the lead goes To do → In progress → Done', () => {
+    const f = (status) => S.taskForward({ status }, 'lead');
+    expect(['todo', 'in_progress', 'check', 'fix'].map(f), ['in_progress', 'done', 'done', 'in_progress']);
+    expect(['waiting', 'done', 'cancelled'].map(f), [null, null, null], 'those change from the task itself');
+  });
+  test('a subtask checkbox: a designer goes To do → In progress → Ready for check, never Done', () => {
+    const f = (status) => S.taskForward({ status }, 'designer');
+    expect(['todo', 'in_progress', 'check', 'fix'].map(f), ['in_progress', 'check', null, 'in_progress']);
+  });
+  test('a subtask checkbox backwards: Done → In progress (lead only), In progress → To do, check → Take back', () => {
+    const me = 'designer@example.test';
+    expect(S.taskBack({ status: 'done' }, 'lead', BY), 'in_progress');
+    expect(S.taskBack({ status: 'done' }, 'designer', me), null, 'nobody else could put it back to Done');
+    expect(S.taskBack({ status: 'in_progress' }, 'designer', me), 'todo');
+    expect(S.taskBack({ status: 'check', submittedBy: me }, 'designer', me), 'in_progress', 'the submitter takes it back');
+    expect(S.taskBack({ status: 'check', submittedBy: 'other@example.test' }, 'designer', me), null, 'only the submitter');
+    expect(S.taskBack({ status: 'check', submittedBy: 'other@example.test' }, 'lead', BY), null, 'the lead sends back instead');
+    expect(['todo', 'waiting', 'fix', 'cancelled'].map((status) => S.taskBack({ status }, 'lead', BY)), [null, null, null, null]);
+  });
+  test('auto-advance: a step ticked Done starts the next To-do step at its level', () => {
+    const nodes = [
+      { id: 'j', kind: 'task', parentId: 'g-alpha', order: 1, title: 'J', status: 'in_progress' },
+      { id: 'a', kind: 'step', parentId: 'j', order: 1, label: 'A', state: 'done' },
+      { id: 'b', kind: 'step', parentId: 'j', order: 2, label: 'B', state: 'na' },
+      { id: 'c', kind: 'step', parentId: 'j', order: 3, label: 'C', state: 'todo' },
+      { id: 'd', kind: 'step', parentId: 'j', order: 4, label: 'D', state: 'todo' },
+    ];
+    const idx = T.buildIndex(nodes);
+    expect(S.nextStepToStart(idx, 'a'), 'c', 'N/a and Done steps are passed over');
+    expect(S.nextStepToStart(idx, 'c'), 'd');
+    expect(S.nextStepToStart(idx, 'd'), null, 'the last step starts nothing');
+    const busy = T.buildIndex(apply(nodes, [{ id: 'c', state: 'doing' }]));
+    expect(S.nextStepToStart(busy, 'a'), null, 'a step already Doing ends the search');
+  });
+  test("auto-advance: into the next step's sub-steps, and never out of its own level", () => {
+    const idx = T.buildIndex(apply(sampleNodes(), [{ id: 's2a', state: 'todo' }]));
+    expect(S.nextStepToStart(idx, 's1'), 's2a', 'the next step has sub-steps: its first To-do one');
+    const idx2 = T.buildIndex(sampleNodes());
+    expect(S.nextStepToStart(idx2, 's1'), 's2b', 'Body is done, so Head');
+    expect(S.nextStepToStart(idx2, 's2b'), null, 'the subtask after it is not a step, and the level ends there');
+  });
+  test("auto-advance: a subtask ticked Done starts the next To-do subtask, only if nobody else's", () => {
+    const me = 'designer@example.test';
+    const nodes = [
+      { id: 'j', kind: 'task', parentId: 'g-alpha', order: 1, title: 'J', status: 'in_progress', assignee: me },
+      { id: 'a', kind: 'task', parentId: 'j', order: 1, title: 'A', status: 'done', assignee: me },
+      { id: 'x', kind: 'step', parentId: 'j', order: 2, label: 'X', state: 'todo' },
+      { id: 'b', kind: 'task', parentId: 'j', order: 3, title: 'B', status: 'check', assignee: me },
+      { id: 'c', kind: 'task', parentId: 'j', order: 4, title: 'C', status: 'todo', assignee: me },
+      { id: 'd', kind: 'task', parentId: 'j', order: 5, title: 'D', status: 'todo', assignee: 'other@example.test' },
+      { id: 'e', kind: 'task', parentId: 'j', order: 6, title: 'E', status: 'todo', assignee: null },
+    ];
+    const idx = T.buildIndex(nodes);
+    expect(S.nextTaskToStart(idx, 'a'), 'c', 'steps and submitted subtasks are passed over');
+    expect(S.nextTaskToStart(idx, 'c'), null, "the next one is someone else's: left alone");
+    expect(S.nextTaskToStart(idx, 'd'), 'e', "nobody's yet: started");
+    expect(S.nextTaskToStart(idx, 'e'), null);
+    const busy = T.buildIndex(apply(nodes, [{ id: 'c', status: 'in_progress' }]));
+    expect(S.nextTaskToStart(busy, 'a'), null, 'one already under way ends the search');
+  });
 
   // -------------------------------------------------------------------------
   group = 'folders';

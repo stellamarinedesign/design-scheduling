@@ -5,13 +5,13 @@ import { VERSION } from './version.js';
 import { Auth, setAccess, ROLE } from './auth.js';
 import { Store } from './store.js';
 import { state, subscribe, setNodes, setError } from './state.js';
-import { initRouter, route, go, currentTab, closePanel } from './router.js';
+import { initRouter, route, go, currentTab } from './router.js';
 import { el, icon, isWide, closeMenu, installContextMenus } from './ui.js';
 import * as A from './actions.js';
 import { renderSidebar } from './views/sidebar.js';
 import { renderHome } from './views/home.js';
 import { renderTasks, viewTitle } from './views/tasks.js';
-import { renderPanel, panelEditing } from './views/panel.js';
+import { renderPanel, panelEditing, panelUp } from './views/panel.js';
 // Loaded up front, not on demand: N (or the capture hotkey) is followed at
 // once by typing, and keystrokes made while a module loads are lost.
 import { openSearch as searchNow } from './views/search.js';
@@ -73,7 +73,8 @@ document.addEventListener('keydown', (e) => {
   if (document.querySelector('.overlay.show, .menu')) return;
   if (e.key === 'Escape') {
     if (sideOpen) { setSide(false); return; }
-    if (state.openId && !typing(e.target)) { closePanel(); return; }
+    // The panel is a page you drill into: Esc goes up one level, and closes it from a job.
+    if (state.openId && !typing(e.target)) { panelUp(); return; }
   }
   if (typing(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === 'n' || e.key === 'N') { e.preventDefault(); quickAdd(); }

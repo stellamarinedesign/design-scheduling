@@ -21,7 +21,7 @@ function defaultPlace() {
 
 export function openQuickAdd({ parentId, capture = false } = {}) {
   let place = parentId !== undefined ? parentId : defaultPlace();
-  return openDialog((box, close) => {
+  return openDialog((box, close, { dismiss }) => {
     const heading = el('h3', {});
     box.append(heading);
     const title = el('input', { class: 'input', id: 'qaTitle', type: 'text', placeholder: 'What needs doing?', autocomplete: 'off', maxlength: '300', 'data-autofocus': '' });
@@ -79,8 +79,8 @@ export function openQuickAdd({ parentId, capture = false } = {}) {
     box.append(el('div', { class: 'actions' },
       btn('Add', () => add(), { cls: 'primary' }),
       btn('Add and open', () => add({ andOpen: true })),
-      btn('Cancel', () => close(null), { cls: 'ghost' })),
+      btn('Cancel', dismiss, { cls: 'ghost' })),
     el('div', { class: 'hint' }, capture ? 'Captured from the hotkey. Enter adds; Shift+Enter adds and keeps this open.' : 'Enter adds · Shift+Enter adds another · Esc cancels'));
     drawPlace();
-  }, { label: 'New job' });
+  }, { label: 'New job', guard: true });
 }

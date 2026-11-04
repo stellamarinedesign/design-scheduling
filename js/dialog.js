@@ -4,6 +4,12 @@
 // The house rules for every dialog: Enter saves, Esc cancels, and a
 // destructive action defaults to Cancel (focus starts there, so a reflexive
 // Enter never deletes anything).
+//
+// A GUARDED dialog - any that holds typed input (decided 2026-11-04, after
+// the owner lost a half-typed Settings change to a stray click) - closes only
+// on purpose: its Close or Cancel button, or Esc, never a click outside it.
+// And when something has been typed and not saved, those ask "Discard
+// changes?" first, with Cancel as the default.
 
 /**
  * Close a dialog when its backdrop is CLICKED: pressed and released there.
@@ -43,12 +49,18 @@ const el = (tag, cls, text) => {
  */
 const stack = [];
 
+/** A field whose typing counts as a change: text of any kind, not ticks or files, nor a search that only filters (data-noguard). */
+const TYPED = 'textarea, input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=button]):not([type=submit]):not([type=search])';
+
 /**
- * A modal box on a scrim. `build(box, close)` fills the box; `close(value)`
- * resolves the returned promise. Esc resolves with null.
+ * A modal box on a scrim. `build(box, close, {dismiss, markClean})` fills the
+ * box. `close(value)` resolves the returned promise; `dismiss()` is what a
+ * Close or Cancel button calls, and Esc too: it resolves with null, asking
+ * first in a guarded dialog with unsaved typing. `markClean()` says what is
+ * typed now is saved (a field that saves in place).
  * @returns {Promise<any>}
  */
-export function openDialog(build, { label = '', wide = false, className = '' } = {}) {
+export function openDialog(build, { label = '', wide = false, className = '', guard = false } = {}) {
   return new Promise((resolve) => {
     // Which element had focus before, so closing gives it back.
     const lastFocus = document.activeElement;
@@ -70,14 +82,35 @@ export function openDialog(build, { label = '', wide = false, className = '' } =
       if (lastFocus?.isConnected) lastFocus.focus?.();
       resolve(value);
     };
+    // What each typed field held when the dialog opened: a field is changed
+    // when it holds something else now. Fields drawn later (a list redrawn
+    // after a save) are noted on their first focus or keystroke.
+    const typed = new Map();
+    const note = (f) => { if (f.matches?.(TYPED) && !f.closest('[data-noguard]') && !typed.has(f)) typed.set(f, f.value); };
+    box.addEventListener('focusin', (e) => note(e.target));
+    box.addEventListener('beforeinput', (e) => note(e.target));
+    const dirty = () => [...typed].some(([f, v]) => f.isConnected && f.value !== v);
+    const markClean = () => { for (const f of [...typed.keys()]) { if (f.isConnected) typed.set(f, f.value); else typed.delete(f); } };
+    let asking = false;
+    const dismiss = async () => {
+      if (done || asking) return;
+      if (guard && dirty()) {
+        asking = true;
+        const discard = await confirmDialog({ title: 'Discard changes?', body: 'What you typed here has not been saved.', ok: 'Discard', destructive: true });
+        asking = false;
+        if (!discard) return;
+      }
+      close(null);
+    };
     const onKey = (e) => {
       if (stack[stack.length - 1] !== me) return;
-      if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(null); }
+      if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); dismiss(); }
       if (e.key === 'Tab') trapTab(e, box);
     };
     document.addEventListener('keydown', onKey, true);
-    closeOnBackdrop(overlay, () => close(null));
-    build(box, close);
+    if (!guard) closeOnBackdrop(overlay, () => close(null));
+    build(box, close, { dismiss, markClean });
+    box.querySelectorAll(TYPED).forEach(note);
     document.body.append(overlay);
     const first = box.querySelector('[data-autofocus]') ?? box.querySelector('input, textarea, select, button');
     first?.focus();
@@ -128,7 +161,7 @@ export async function confirmDialog({ title, body = '', ok = 'OK', cancel = 'Can
  * @returns {Promise<string|null>}
  */
 export function promptDialog({ title, label = '', value = '', placeholder = '', ok = 'Save', dismiss = 'Cancel', multiline = false, required = true, validate = null, body = '' }) {
-  return openDialog((box, close) => {
+  return openDialog((box, close, guard) => {
     box.append(el('h3', null, title));
     if (body) box.append(el('p', 'lede', body));
     const field = el('div', 'field');
@@ -159,10 +192,10 @@ export function promptDialog({ title, label = '', value = '', placeholder = '', 
       close(v);
     };
     yes.addEventListener('click', submit);
-    no.addEventListener('click', () => close(null));
+    no.addEventListener('click', () => guard.dismiss());
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && (!multiline || e.ctrlKey || e.metaKey)) { e.preventDefault(); submit(); }
     });
     queueMicrotask(() => { input.select?.(); });
-  }, { label: title });
+  }, { label: title, guard: true });
 }
