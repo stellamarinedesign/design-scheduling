@@ -96,7 +96,10 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
 .h1 { font-family: var(--font-head); font-weight: 700; font-size: var(--fs-lg); line-height: 1.25; }
 .h2 { font-family: var(--font-head); font-weight: 700; font-size: var(--fs-md); line-height: 1.3; }
 /* A job title as a page heading: the body face, never Friz (the Friz-for-Places Rule). */
-.h1.plain { font-family: var(--font); font-weight: 600; overflow-wrap: anywhere; }
+/* Names and titles wrap between words, and hyphenate a long word properly (lang="en-AU"),
+   never mid-word at any letter. Free text - briefs, updates, pasted paths - keeps
+   overflow-wrap: anywhere, which a long path or URL needs. */
+.h1.plain { font-family: var(--font); font-weight: 600; overflow-wrap: break-word; -webkit-hyphens: auto; hyphens: auto; }
 .meta { font-size: var(--fs-sm); color: var(--text3); white-space: nowrap; }
 .meta.warn, .warn-text { color: var(--amber-text); }
 .lbl { font-size: var(--fs-micro); font-weight: 700; letter-spacing: var(--label-spacing); text-transform: uppercase; color: var(--text3); }
@@ -150,7 +153,7 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
 .si:hover { background: var(--surface); color: var(--text); }
 .si[aria-current="page"] { background: var(--surface); color: var(--text); font-weight: 600; }
 .si .n { margin-left: auto; font-size: var(--fs-sm); color: var(--text3); font-weight: 400; padding-left: var(--sp-2); }
-.si .nm { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.si .nm { overflow-wrap: break-word; -webkit-hyphens: auto; hyphens: auto; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .si.sub { padding-left: calc(10px + var(--depth, 1) * 16px); min-height: 30px; font-size: 13.5px; }
 .si.master-link { font-size: var(--fs-micro); font-weight: 700; letter-spacing: var(--label-spacing); text-transform: uppercase; color: var(--text3); min-height: 28px; margin-top: 10px; }
 .side-foot { margin-top: var(--sp-4); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
@@ -161,7 +164,7 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
 .sec { display: flex; flex-direction: column; gap: var(--sp-3); }
 .sec-head { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; min-height: 36px; }
 .view-head { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
-.view-head .h1 { margin-right: var(--sp-1); min-width: 0; overflow-wrap: anywhere; }
+.view-head .h1 { margin-right: var(--sp-1); min-width: 0; overflow-wrap: break-word; -webkit-hyphens: auto; hyphens: auto; }
 .h1.with-dot .dot { margin: 0 10px 0.15em 0; vertical-align: middle; }
 .filters { display: flex; gap: 6px; flex-wrap: wrap; }
 .fp {
@@ -193,7 +196,7 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
 .tile, .card, .si, .tree .grp-head { -webkit-user-select: none; user-select: none; }
 .tile-top { display: flex; align-items: center; gap: 6px; min-height: 28px; }
 .tile-top .ib { width: 28px; height: 28px; margin-right: -4px; }
-.tile-title { font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.tile-title { font-weight: 600; line-height: 1.3; overflow-wrap: break-word; -webkit-hyphens: auto; hyphens: auto; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .tile-title.done { color: var(--text3); }
 .tile-title.cancelled { color: var(--text3); text-decoration: line-through; }
 /* Cancelled: finished, on record, quiet. Muted ground, struck title, the reason as subtext. */
@@ -256,7 +259,7 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
 .cat-tile .open-link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .cat-top { display: flex; align-items: flex-start; gap: var(--sp-2); min-width: 0; }
 .cat-top .dot, .cat-top > svg { margin-top: 6px; flex: none; }
-.cat-top .nm { flex: 1; min-width: 0; overflow-wrap: break-word; line-height: 1.3; padding-top: 1px; }
+.cat-top .nm { flex: 1; min-width: 0; overflow-wrap: break-word; -webkit-hyphens: auto; hyphens: auto; line-height: 1.3; padding-top: 1px; }
 .cat-top .ib { margin: -6px -6px -6px 0; }
 .cat-tile .pills { align-items: center; }
 .jobs-tile { border-style: dashed; }
@@ -268,7 +271,7 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
 .tree .grp:not(.master) { container-type: inline-size; }
 @container (max-width: 345px) { .tree .grid { grid-template-columns: 1fr; } }
 .grp-head { display: flex; align-items: center; gap: 6px; min-height: 40px; }
-.grp-head .h2 { overflow-wrap: anywhere; }
+.grp-head .h2 { min-width: 0; overflow-wrap: break-word; -webkit-hyphens: auto; hyphens: auto; }
 .grp-kind { font-size: var(--fs-micro); font-weight: 700; letter-spacing: var(--label-spacing); text-transform: uppercase; color: var(--text3); }
 .run { display: flex; flex-direction: column; gap: 10px; }
 .done-fold { display: flex; flex-direction: column; gap: var(--sp-2); }
@@ -288,7 +291,7 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
   transition: border-color var(--dur-fast) ease;
 }
 .card:hover { border-color: var(--border2); }
-.card .nm { font-weight: 600; overflow-wrap: anywhere; }
+.card .nm { font-weight: 600; overflow-wrap: break-word; -webkit-hyphens: auto; hyphens: auto; }
 .card .pills { display: flex; flex-wrap: wrap; gap: 6px; }
 .card .foot { margin-top: auto; }
 .master-head { display: flex; align-items: center; gap: var(--sp-2); min-height: 36px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
@@ -389,7 +392,7 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
 .tick.done i { background: var(--text2); border-color: var(--text2); color: var(--surface); }
 .tick.na i { border-style: dashed; }
 .tick:hover i { border-color: var(--text2); }
-.srow-label { overflow-wrap: anywhere; line-height: 1.3; padding: 4px 0; text-align: left; background: none; border: 0; color: var(--text); font-size: 14.5px; }
+.srow-label { overflow-wrap: break-word; -webkit-hyphens: auto; hyphens: auto; line-height: 1.3; padding: 4px 0; text-align: left; background: none; border: 0; color: var(--text); font-size: 14.5px; }
 .srow-label.parent { font-weight: 600; }
 .srow-label.na { color: var(--text3); text-decoration: line-through; }
 .srow-label.done { color: var(--text2); }
@@ -503,7 +506,7 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
 .imp-row + .imp-row { border-top: 1px solid var(--bg2); }
 .imp-row.child { color: var(--text2); }
 .imp-row.skip .imp-title { color: var(--text3); text-decoration: line-through; }
-.imp-title { overflow-wrap: anywhere; display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.imp-title { overflow-wrap: break-word; -webkit-hyphens: auto; hyphens: auto; display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
 .imp-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sel {
   height: 32px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text); padding: 0 8px; font-size: var(--fs-sm); max-width: 220px;
@@ -583,6 +586,12 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
   .fp { height: 36px; }
   .ib { width: 44px; height: 44px; }
   .tile-top .ib { width: 44px; height: 44px; margin: -8px -10px -8px 0; }
+  /* A category tile on a phone gives its name the width: tighter padding, and
+     its 44px menu target sits in the corner instead of beside the name. */
+  .card { padding: 12px; }
+  .cat-top { padding-right: 24px; }
+  .cat-top .ib { position: absolute; top: -10px; right: -12px; margin: 0; }
+  .cat-top .ib, .tree .grp-head .ib { width: 44px; height: 44px; }   /* 44px targets, over the small-button size */
   .pill:is(button) { min-height: 30px; padding: 0 12px; }
   .srow-end .ib, .fold .ib { width: 44px; height: 44px; }
   .seg button { height: 34px; }
