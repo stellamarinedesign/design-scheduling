@@ -5,6 +5,7 @@
 
 import { buildIndex } from './tree.js';
 import { nameFor } from './team.js';
+import { mergeNotes } from './notes.js';
 
 export const state = {
   nodes: [],
@@ -16,6 +17,11 @@ export const state = {
   mode: 'local',      // 'local' | 'firestore'
   people: {},         // email → {name}: people/{email}, live
   access: { leads: [], designers: [], contributors: [], managers: [], masters: [] },
+  noteId: null,       // the note open in the panel (?n=)
+  // The Log: the newest page of notes, and every open or actioned note (the
+  // triage queue, never paged away). `limit` grows with "Show older".
+  // `solo` is a note opened from a link that is older than the page.
+  log: { feed: [], triage: [], more: false, limit: 40, loaded: false, error: null, solo: null },
 };
 
 const subs = new Set();
@@ -35,6 +41,19 @@ export function setError(e) {
 }
 
 export const node = (id) => state.idx.byId.get(id) ?? null;
+
+/** A change to the Log's live windows; everything redraws, as for the tree. */
+export function setLog(fields) {
+  Object.assign(state.log, fields);
+  for (const fn of subs) fn({ log: true });
+}
+
+/** Every note in hand, newest first, each once. */
+export const allNotes = () => mergeNotes(state.log.triage, state.log.feed);
+
+/** A note, if it is in one of the live windows. */
+export const noteOf = (id) => state.log.feed.find((n) => n.id === id) ?? state.log.triage.find((n) => n.id === id)
+  ?? (state.log.solo?.id === id ? state.log.solo : null);
 
 /** How a person is named on screen. You are "You". */
 export function personName(email) {

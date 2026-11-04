@@ -8,6 +8,7 @@ import * as T from '../tree.js';
 import * as S from '../status.js';
 import * as A from '../actions.js';
 import { openDialog } from '../dialog.js';
+import * as NT from '../notes.js';
 
 const norm = (s) => String(s ?? '').toLowerCase();
 
@@ -132,6 +133,80 @@ export function placeDialog({ title, allow, includeJobs = false, current = undef
     box.append(q, list, el('div', { class: 'actions' }, btn('Cancel', () => close(null))));
     draw();
   }, { label: title, wide: true }).then((r) => (r ? r.id : undefined));
+}
+
+/**
+ * A job (or any task) to link a Log note to: open work first, most recently
+ * active first, searchable by title and category.
+ * @returns {Promise<string|null>} the task's id
+ */
+export function jobDialog({ title = 'Link to a job', exclude = [] } = {}) {
+  return openDialog((box, close) => {
+    box.append(el('h3', {}, title));
+    const q = el('input', { class: 'input', type: 'search', placeholder: 'Find the job', autocomplete: 'off', 'data-autofocus': '', 'aria-label': 'Find the job' });
+    const list = el('div', { class: 'picker-list', role: 'listbox', 'aria-label': 'Jobs' });
+    const draw = () => {
+      list.textContent = '';
+      const query = q.value.trim();
+      const tasks = state.idx.nodes.filter((n) => n.kind === T.KIND.task && !exclude.includes(n.id)
+        && (!query || norm(n.title).includes(norm(query)) || norm(T.pathText(state.idx, n.id)).includes(norm(query))));
+      const rank = (n) => (S.isOpen(n.status) ? 0 : 1) * 2 + (T.isJob(state.idx, n) ? 0 : 1);
+      tasks.sort((a, b) => rank(a) - rank(b) || String(b.lastActivityAt).localeCompare(String(a.lastActivityAt)));
+      for (const n of tasks.slice(0, 50)) {
+        list.append(el('button', {
+          class: 'pick', type: 'button', role: 'option', onclick: () => close(n.id),
+          'aria-label': `${n.title}, ${S.LABEL[n.status]}`,
+        }, pill(n.status), el('span', {}, ...marked(n.title, query)), el('span', { class: 'sub' }, T.pathText(state.idx, n.id))));
+      }
+      if (!list.childNodes.length) list.append(el('div', { class: 'pick', 'aria-disabled': 'true' }, query ? 'No job matches.' : 'No jobs yet.'));
+    };
+    q.addEventListener('input', draw);
+    listKeys(q, list);
+    box.append(q, list, el('div', { class: 'actions' }, btn('Cancel', () => close(null))));
+    draw();
+  }, { label: title, wide: true });
+}
+
+/**
+ * A category for a Log note: this person's recent ones first, then the
+ * whole tree. Only categories (never a section inside a job, nor "From
+ * designers").
+ * @returns {Promise<{id: string|null}|null>} null when cancelled; {id: null} for "No category"
+ */
+export function categoryDialog({ title = 'Category', current = null, recent = [], noneLabel = 'No category' } = {}) {
+  return openDialog((box, close) => {
+    box.append(el('h3', {}, title));
+    const q = el('input', { class: 'input', type: 'search', placeholder: 'Find a category', autocomplete: 'off', 'data-autofocus': '', 'aria-label': 'Find a category' });
+    const list = el('div', { class: 'picker-list', role: 'listbox', 'aria-label': 'Categories' });
+    const { recent: fresh, all } = NT.categoryList(state.idx, { recent });
+    const pick = ({ node: n, depth }, query, sub = '') => el('button', {
+      class: 'pick', type: 'button', role: 'option', 'aria-selected': n.id === current ? 'true' : null,
+      style: { '--depth': query ? 0 : depth }, onclick: () => close({ id: n.id }),
+    }, dot(T.colourOf(state.idx, n.id)), el('span', {}, ...marked(T.nameOf(n), query)), el('span', { class: 'sub' }, sub));
+    const draw = () => {
+      list.textContent = '';
+      const query = q.value.trim();
+      if (!query) {
+        list.append(el('button', { class: 'pick', type: 'button', role: 'option', 'aria-selected': current === null ? 'true' : null, onclick: () => close({ id: null }) },
+          dot(null), el('span', {}, noneLabel)));
+        if (fresh.length) {
+          list.append(el('div', { class: 'pick-head' }, 'Recent'));
+          for (const x of fresh) list.append(pick({ ...x, depth: 0 }, '', NT.placeText(state.idx, x.node.id)));
+          list.append(el('div', { class: 'pick-head' }, 'All categories'));
+        }
+      }
+      for (const x of all) {
+        if (query && !norm(T.nameOf(x.node)).includes(norm(query))) continue;
+        list.append(pick(x, query, query ? NT.placeText(state.idx, x.node.id) : ''));
+      }
+      if (!all.length && !query) list.append(el('div', { class: 'pick', 'aria-disabled': 'true' }, 'No categories yet. The Design lead makes them.'));
+      else if (query && list.querySelectorAll('.pick').length === 0) list.append(el('div', { class: 'pick', 'aria-disabled': 'true' }, 'Nothing matches.'));
+    };
+    q.addEventListener('input', draw);
+    listKeys(q, list);
+    box.append(q, list, el('div', { class: 'actions' }, btn('Cancel', () => close(null))));
+    draw();
+  }, { label: title, wide: true });
 }
 
 /** Move to…: a group, product or job picker that works on a phone. */

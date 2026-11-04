@@ -8,8 +8,11 @@
 //   #/tasks/<id>           Focus: one category alone
 //   #/tasks/top            jobs not in any category
 //   #/archive, #/import    the archive, the staged import
+//   #/log                  the Log (?c=<id> filters it to a category)
 //   …?t=<id>               with the task panel open on <id>: a task, a step
 //                          or a section inside a job
+//   …?n=<id>               with the panel open on a Log note (one or the
+//                          other: opening a note closes a task, and back)
 //
 // THE PANEL IS ONE NAVIGABLE PAGE (decided 2026-11-04, live test run).
 // Opening a node pushes a history entry that remembers where it came from,
@@ -30,6 +33,7 @@ function parse() {
   route.parts = route.path.split('/').filter(Boolean);
   route.query = Object.fromEntries(new URLSearchParams(q ?? ''));
   state.openId = route.query.t ?? null;
+  state.noteId = state.openId ? null : route.query.n ?? null;
 }
 
 export function initRouter(onChange) {
@@ -37,6 +41,9 @@ export function initRouter(onChange) {
   window.addEventListener('hashchange', () => { parse(); listener(); });
   parse();
 }
+
+/** Draw again where you are (a filter changed that lives outside the URL). */
+export const redraw = () => listener();
 
 export const routeHref = (path, query = null) => {
   const q = query ? new URLSearchParams(query).toString() : '';
@@ -53,9 +60,21 @@ export function go(path, { keepTask = false } = {}) {
 
 const withTask = (id) => {
   const q = new URLSearchParams(route.query);
+  q.delete('n');
   q.set('t', id);
   return `#${route.path}?${q}`;
 };
+
+/** Open the panel on a Log note, wherever you are. Pushes, so Back returns. */
+export function openNote(id) {
+  if (!id || id === state.noteId) return;
+  const q = new URLSearchParams(route.query);
+  q.delete('t');
+  q.set('n', id);
+  history.pushState({ from: null }, '', `#${route.path}?${q}`);
+  parse();
+  listener();
+}
 
 /** Open the panel on a node, wherever you are. Pushes, noting where from. */
 export function openTask(id) {
@@ -85,6 +104,7 @@ export function upTo(parentId) {
 export function closeTask() {
   const q = new URLSearchParams(route.query);
   q.delete('t');
+  q.delete('n');
   const next = `#${route.path}${q.toString() ? `?${q}` : ''}`;
   history.replaceState(null, '', next);
   parse();
@@ -97,7 +117,7 @@ export function closeTask() {
  * the system is responding, not the person deciding.
  */
 export function closePanel() {
-  if (!state.openId) return;
+  if (!state.openId && !state.noteId) return;
   const panel = document.getElementById('panel');
   const animated = window.matchMedia('(max-width: 1279px)').matches && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (!animated || !panel) { closeTask(); return; }
@@ -111,10 +131,10 @@ export function closePanel() {
  * a contributor the Log only; a manager contributor Jobs · Log.
  */
 export const ROLE_TABS = {
-  lead: ['home', 'tasks', 'team'],
-  designer: ['tasks'],
-  contributor: [],
-  manager: [],
+  lead: ['home', 'tasks', 'team', 'log'],
+  designer: ['tasks', 'log'],
+  contributor: ['log'],
+  manager: ['log'],
 };
 export const roleTabs = (role = state.role) => ROLE_TABS[role] ?? [];
 

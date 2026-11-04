@@ -10,6 +10,8 @@ import * as XL from '../js/import/excel.js';
 import * as BL from '../js/backlog.js';
 import * as C from '../js/convert.js';
 import * as TM from '../js/team.js';
+import * as NT from '../js/notes.js';
+import * as PH from '../js/photos.js';
 import { sampleNodes, tiledoData, tiledoArchive, excelRows } from './samples.js';
 
 const results = [];
@@ -955,6 +957,116 @@ export async function run() {
     const ro = S.postUpdate(idx, 'j2', 'A question', { by: DA, at: AT, canWrite: false });
     expect([ro.patches.length, ro.updates.length, ro.updates[0].from], [0, 1, undefined], 'no patch, no auto-start');
     expect(S.postUpdate(idx, 'j1', 'x'.repeat(400), { by: DA, at: AT }).patches[0].lastNote.text.length, S.LAST_NOTE_MAX);
+  });
+
+  // -------------------------------------------------------------------------
+  group = 'log';
+  const RY = 'riley@example.test';
+  const mk = (o) => NT.noteNode({ id: 'n1', text: 'Hinge binds\nPaint in the knuckle', kind: 'issue', by: RY, at: AT, ...o });
+  test('a note\'s first line is its title; the rest is its body', () => {
+    expect(NT.titleOf({ text: '\n  - **Hinge** binds after paint  \nMore here\n\nAnd here' }), 'Hinge binds after paint');
+    expect(NT.bodyOf({ text: '\nHinge binds\nMore here\n\nAnd here' }), 'More here\n\nAnd here');
+    expect(NT.excerptOf({ text: 'T\n- one\n- **two**' }), 'one · two');
+    expect(NT.titleOf({ text: 'x'.repeat(300) }).length, NT.TITLE_MAX, 'a long first line is cut');
+    expect(NT.titleOf({ text: '' }), '');
+  });
+  test('a new note starts open, or filed for reference, or actioned with a job', () => {
+    const n = mk();
+    expect([n.state, n.jobIds, n.dismissed, n.archivedAt], ['open', [], null, null]);
+    expect(mk({ kind: 'reference' }).state, 'filed');
+    const j = mk({ jobs: [{ id: 'j1', title: 'Bracket redesign' }] });
+    expect([j.state, j.jobIds, j.links], ['actioned', ['j1'], [{ id: 'j1', title: 'Bracket redesign' }]]);
+    expect(mk({ kind: 'nonsense' }).kind, 'issue', 'an unknown kind is an issue');
+    ok(!('id' in NT.noteNode({ text: 'x', by: RY, at: AT })) || NT.noteNode({ text: 'x', by: RY, at: AT }).id === undefined, 'an id only when given');
+  });
+  test('editing the kind moves an untriaged note between open and filed, and nothing else', () => {
+    expect(NT.stateForKind(mk(), 'reference'), 'filed');
+    expect(NT.stateForKind(mk({ kind: 'reference' }), 'idea'), 'open');
+    expect(NT.stateForKind({ ...mk(), state: 'actioned' }, 'reference'), 'actioned');
+    expect(NT.stateForKind({ ...mk(), state: 'dismissed' }, 'idea'), 'dismissed');
+  });
+  test('linking a job actions an open issue; linking twice changes nothing; unlinking the last reopens it', () => {
+    const n = mk();
+    const p = NT.linkPatch(n, { id: 'j1', title: 'Bracket redesign' }, { by: BY, at: AT });
+    expect([p.state, p.jobIds, p.actioned], ['actioned', ['j1'], { by: BY, at: AT }]);
+    const linked = { ...n, ...p };
+    expect(NT.linkPatch(linked, { id: 'j1', title: 'x' }, { by: BY, at: AT }), null);
+    const p2 = NT.linkPatch(linked, { id: 'j2', title: 'Hinge plate update' }, { by: BY, at: AT });
+    ok(!('state' in p2), 'a second job leaves the state alone');
+    const u = NT.unlinkPatch(linked, 'j1', { by: BY, at: AT });
+    expect([u.state, u.jobIds, u.links], ['open', [], []]);
+    expect(NT.unlinkPatch(linked, 'nope', { by: BY, at: AT }), null);
+    const ref = NT.linkPatch(mk({ kind: 'reference' }), { id: 'j1', title: 'x' }, { by: BY, at: AT });
+    ok(!('state' in ref), 'a reference note stays filed when linked');
+  });
+  test('dismiss keeps the reason; reopen goes back to open, or actioned with a job', () => {
+    const d = NT.dismissPatch(mk(), '  Already fixed  ', { by: BY, at: AT });
+    expect([d.state, d.dismissed.reason], ['dismissed', 'Already fixed']);
+    expect(NT.dismissPatch(mk({ kind: 'reference' }), 'x', { by: BY, at: AT }), null, 'reference notes are not dismissed');
+    expect(NT.reopenPatch({ ...mk(), ...d }, { by: BY, at: AT }).state, 'open');
+    expect(NT.reopenPatch({ ...mk({ jobs: [{ id: 'j1' }] }), state: 'dismissed' }, { by: BY, at: AT }).state, 'actioned');
+    expect(NT.reopenPatch(mk(), { by: BY, at: AT }), null, 'only a dismissed note reopens');
+  });
+  test('resolved: every linked job finished and one done; a job out of sight decides nothing', () => {
+    const idx = index();
+    const on = (ids) => ({ ...mk({ jobs: ids.map((id) => ({ id })) }), id: `n-${ids.join('-')}` });
+    expect(NT.resolveFixes([on(['j4'])], idx, { at: AT }).map((p) => [p.id, p.state]), [['n-j4', 'resolved']]);
+    expect(NT.resolveFixes([on(['j4', 'j2'])], idx, { at: AT }), [], 'one still to do');
+    expect(NT.resolveFixes([on(['j4', 'gone'])], idx, { at: AT }), [], 'one it cannot see');
+    const cancelled = T.buildIndex(apply(sampleNodes(), [{ id: 'j2', status: 'cancelled' }]));
+    expect(NT.resolveFixes([on(['j2'])], cancelled, { at: AT }), [], 'cancelled alone is not resolved');
+    expect(NT.resolveFixes([on(['j2', 'j4'])], cancelled, { at: AT }).length, 1, 'cancelled and done is');
+  });
+  test('the Log\'s categories: groups outside jobs and outside From designers, recent first', () => {
+    const fd = { id: TM.FROM_DESIGNERS, kind: 'group', parentId: null, order: 9000, name: 'From designers', archivedAt: null };
+    const inbox = { id: TM.inboxId(RY), kind: 'group', parentId: TM.FROM_DESIGNERS, order: 1024, name: 'Riley', archivedAt: null };
+    const idx = T.buildIndex([...sampleNodes(), fd, inbox]);
+    ok(!NT.isNoteCategory(idx, idx.byId.get('sec')), 'a section inside a job is not');
+    ok(!NT.isNoteCategory(idx, idx.byId.get(inbox.id)) && !NT.isNoteCategory(idx, fd), 'From designers is not');
+    const { recent, all } = NT.categoryList(idx, { recent: ['g-beta', 'missing'] });
+    expect(all.map((x) => [x.node.id, x.depth]), [['g-prod', 0], ['g-alpha', 1], ['g-alpha-sub', 2], ['g-beta', 1], ['g-prog', 0]]);
+    expect(recent.map((x) => x.node.id), ['g-beta'], 'a recent one that is gone is skipped');
+    expect(NT.pushRecent(['a', 'b', 'c'], 'b'), ['b', 'a', 'c']);
+    expect(NT.placeText(idx, 'g-alpha-sub'), 'Alpha Units › Small range');
+  });
+  test('the feed: pills, a category with what is inside it, who posted, and search', () => {
+    const idx = index();
+    const notes = [
+      { ...mk(), id: 'a', groupId: 'g-alpha-sub', at: '2026-11-04T03:00:00.000Z' },
+      { ...mk({ kind: 'reference' }), id: 'b', groupId: 'g-beta', text: 'Weld prep\nBevel both sides', by: BY, at: '2026-11-04T02:00:00.000Z' },
+      { ...mk(), id: 'c', state: 'dismissed', groupId: null, at: '2026-11-04T01:00:00.000Z' },
+      { ...mk({ kind: 'reference' }), id: 'd', state: 'archived', at: '2026-11-03T01:00:00.000Z' },
+    ];
+    const ids = (f) => NT.filterNotes(notes, { idx, ...f }).map((n) => n.id);
+    expect(ids({}), ['a', 'b', 'c'], 'All leaves archived out');
+    expect(ids({ pill: 'open' }), ['a']);
+    expect(ids({ pill: 'reference' }), ['b', 'd'], 'Reference keeps archived, shown apart');
+    expect(ids({ groupId: 'g-alpha' }), ['a'], 'a category takes in its sub-categories');
+    expect(ids({ author: BY }), ['b']);
+    expect(ids({ query: 'small range' }), ['a'], 'search reaches the category');
+    expect(ids({ query: 'bevel', who: () => 'Lead' }), ['b']);
+    expect(ids({ query: 'lead', who: (e) => (e === BY ? 'Lead' : 'Riley') }), ['b'], 'and the author');
+    expect(NT.mergeNotes([notes[1]], [notes[0], { ...notes[1], text: 'newer copy' }]).map((n) => [n.id, n.text.slice(0, 5)]), [['a', 'Hinge'], ['b', 'newer']]);
+    expect(NT.authorsOf(notes), [RY, BY]);
+  });
+  test('photos: HEIC is known by its header; sizes fit within the long edge and never grow', () => {
+    const head = (brand) => new Uint8Array([0, 0, 0, 24, ...[...'ftyp'].map((c) => c.charCodeAt(0)), ...[...brand].map((c) => c.charCodeAt(0))]);
+    ok(PH.isHeic(head('heic')) && PH.isHeic(head('mif1')), 'heic and mif1');
+    ok(!PH.isHeic(head('isom')) && !PH.isHeic(new Uint8Array([255, 216, 255, 224, 0, 16, 74, 70, 73, 70, 0, 1])), 'mp4 and jpeg are not');
+    expect(PH.fitWithin(4032, 3024, 1280), { w: 1280, h: 960 });
+    expect(PH.fitWithin(3024, 4032, 1280), { w: 960, h: 1280 });
+    expect(PH.fitWithin(800, 600, 1280), { w: 800, h: 600 }, 'never enlarged');
+    expect(PH.dataUrlBytes('data:image/jpeg;base64,QUJD'), 3);
+    expect(PH.dataUrlBytes('data:image/jpeg;base64,QUI='), 2);
+    ok(PH.looksLikePhoto({ name: 'IMG_0001.HEIC', type: '' }) && !PH.looksLikePhoto({ name: 'notes.pdf', type: 'application/pdf' }), 'by name or type');
+  });
+  test('an update can be photos alone; the task carries a line saying so', () => {
+    const idx = index();
+    const ph = [{ id: 'p1', w: 1280, h: 960, thumb: 'data:,' }, { id: 'p2', w: 960, h: 1280, thumb: 'data:,' }];
+    const r = S.postUpdate(idx, 'j1', '  ', { by: BY, at: AT, photos: ph });
+    expect([r.updates[0].text, r.updates[0].photos.length, r.patches[0].lastNote.text], ['', 2, 'Added 2 photos']);
+    ok(S.postUpdate(idx, 'j1', '', { by: BY, at: AT }).error, 'nothing at all is refused');
+    ok(!('photos' in S.postUpdate(idx, 'j1', 'Words only', { by: BY, at: AT }).updates[0]), 'no empty photo list');
   });
 
   group = 'writes';

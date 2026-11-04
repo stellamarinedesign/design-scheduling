@@ -546,19 +546,22 @@ export function changeStatus(idx, id, to, { by, at, note = '', blockedBy = [], c
 export const LAST_NOTE_MAX = 280;
 
 /** Posting an update: activity now, and a To-do task starts. */
-export function postUpdate(idx, id, text, { by, at, canWrite = true } = {}) {
+export function postUpdate(idx, id, text, { by, at, canWrite = true, photos = [] } = {}) {
   const t = idx.byId.get(id);
   const body = String(text ?? '').trim();
   if (!t) return { error: 'That task has gone.' };
-  if (!body) return { error: 'Write the update first.' };
+  // A photo can be the whole update ("as built"), with or without words.
+  if (!body && !photos.length) return { error: 'Write the update first, or add a photo.' };
   const update = { taskId: id, at, by, kind: 'comment', text: body };
+  if (photos.length) update.photos = photos;
   // Someone who may not write the task (a designer on the lead's job) still
   // posts: the update goes in, the task itself is left alone.
   if (!canWrite) return { patches: [], updates: [update] };
   // The latest update rides on the task too, so a row (a designer's list,
   // Ready for checking, a manager's Jobs) can show it without reading the
   // timeline.
-  const patch = { id, updatedAt: at, lastActivityAt: at, lastNote: { text: body.slice(0, LAST_NOTE_MAX), by, at } };
+  const said = body || (photos.length === 1 ? 'Added a photo' : `Added ${photos.length} photos`);
+  const patch = { id, updatedAt: at, lastActivityAt: at, lastNote: { text: said.slice(0, LAST_NOTE_MAX), by, at } };
   if (t.kind === KIND.task && (t.status ?? 'todo') === 'todo') {
     patch.status = 'in_progress';
     patch.statusAt = at;

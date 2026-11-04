@@ -32,7 +32,7 @@ export function openSettings() {
     box.append(el('h3', {}, 'Settings'));
     const lead = state.role === 'lead';
     const designs = lead || state.role === 'designer';
-    box.append(...[account(close), yourName(markClean), appearance(), designs ? thisPc(markClean) : null, lead ? backlog(markClean) : null, lead || Store.mode === 'local' ? data(close) : null].filter(Boolean));
+    box.append(...[account(close), yourName(markClean), appearance(), designs ? thisPc(markClean) : null, lead ? backlog(markClean) : null, lead ? storage() : null, lead || Store.mode === 'local' ? data(close) : null].filter(Boolean));
     const acc = el('div', { class: 'settings-section', hidden: true });
     box.append(acc);
     if (Auth.mode === 'firebase' && Auth.isMaster) { acc.hidden = false; accounts(acc, markClean); }
@@ -129,6 +129,27 @@ function backlog(markClean) {
   });
   return section('Backlog', el('div', { class: 'settings-row' },
     el('div', { class: 'settings-row-sub' }, 'Days untouched before a To-do job joins Home\'s Backlog rotation.'), input));
+}
+
+/**
+ * Photos live in Firestore (no Storage on the free plan), whose free tier
+ * holds 1 GiB for everything: the lead sees roughly how much is used (PLAN,
+ * "Photo storage"). Counted by the server, not read; local mode counts this
+ * browser's own.
+ */
+const GIB = 1024 ** 3;
+const mb = (b) => (b >= 1024 ** 3 ? `${(b / GIB).toFixed(2)} GB` : `${Math.max(0.1, b / 1024 ** 2).toFixed(1)} MB`);
+function storage() {
+  const line = el('div', { class: 'settings-row-sub', role: 'status' }, 'Counting…');
+  const barEl = el('span', { class: 'bar', role: 'progressbar', 'aria-label': 'Photo storage used', 'aria-valuemin': '0', 'aria-valuemax': '100' }, el('i', { style: { width: '0%' } }));
+  Store.storageEstimate().then(({ photos, bytes, notes }) => {
+    const pct = Math.min(100, (bytes / GIB) * 100);
+    barEl.setAttribute('aria-valuenow', pct.toFixed(1));
+    barEl.firstChild.style.width = `${Math.max(pct, photos ? 1 : 0)}%`;
+    line.textContent = `${photos} photo${photos === 1 ? '' : 's'}, about ${mb(bytes)}, across ${notes} Log note${notes === 1 ? '' : 's'} and task updates. `
+      + (Store.mode === 'local' ? 'In this browser only.' : `The free plan holds ${mb(GIB)} for everything; photos use about ${pct < 0.1 ? 'under 0.1' : pct.toFixed(1)}% of it.`);
+  }).catch((e) => { line.textContent = `Could not count: ${e.message}`; });
+  return section('Photo storage', el('div', { class: 'storage' }, line, barEl));
 }
 
 function data(close) {

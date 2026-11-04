@@ -8,6 +8,8 @@ import { ORDER_GAP } from './tree.js';
 import { toast } from './ui.js';
 import { dayOf } from './dates.js';
 import { LOCAL_AS, inboxId } from './team.js';
+import * as NT from './notes.js';
+import * as PH from './photos.js';
 
 const DAY = 86400000;
 const ago = (d, h = 0) => new Date(Date.now() - d * DAY - h * 3600000).toISOString();
@@ -101,10 +103,10 @@ export async function loadSample() {
   task('600LPH boxed frame', water, 'in_progress', 8);
   const plate = task('600LPH manifold plate', water, 'in_progress', 8, { assignee: sam, statusAt: ago(9), lastBy: sam });
   step('3D model', plate, 'done'); step('Drawings', plate, 'todo'); step('Laser files', plate, 'todo');
-  task('Watertight door hinge update', fixes, 'check', 8, { assignee: sam, submittedBy: sam, submittedAt: ago(8), statusAt: ago(8), lastBy: sam,
+  const hinge = task('Watertight door hinge update', fixes, 'check', 8, { assignee: sam, submittedBy: sam, submittedAt: ago(8), statusAt: ago(8), lastBy: sam,
     lastNote: { text: 'Hinge plate increased to 10 mm; laser files regenerated.', by: sam, at: ago(8) } });
   task('Tie bar machining drawing', rotary, 'waiting', 9, { assignee: sam, lastBy: sam, waiting: { note: 'Flange spec from the supplier', since: ago(9), prevStatus: 'in_progress', blockedBy: [] } });
-  task('Membrane bracket revision', water, 'done', 3);
+  const membrane = task('Membrane bracket revision', water, 'done', 3);
   const gone = task('Twin-membrane frame for a custom build', water, 'cancelled', 9, { cancelled: { by: me, at: ago(9), reason: 'Customer cancelled (verbal)', prevStatus: 'in_progress' } });
   say(gone, 'cancel', 'Customer cancelled (verbal)', 9, { from: 'in_progress', to: 'cancelled' });
   task('Aircon unit drawings', fixes, 'todo', 24);
@@ -116,5 +118,71 @@ export async function loadSample() {
   task('Part spacing by thickness', big, 'todo', 40);
 
   await Store.commit({ set: nodes, updates });
-  toast('Sample data loaded: invented jobs, in this browser only');
+
+  // The Log: invented notes from the invented team, with drawn sample photos.
+  const riley = LOCAL_AS.contributor;
+  const casey = LOCAL_AS.manager;
+  const titleOf = (id) => nodes.find((n) => n.id === id)?.title;
+  const notes = [];
+  const images = [];
+  let k = 0;
+  const note = async ({ text, kind, groupId = null, by, days, jobs = [], photos = 0, hue = 210, extra = {} }) => {
+    const at = ago(days);
+    const refs = [];
+    for (let i = 0; i < photos; i++) {
+      const p = await samplePhoto(++k, hue + i * 25);
+      images.push({ ...p, by, at });
+      refs.push({ ...PH.refOf(p), by });
+    }
+    notes.push({ ...NT.noteNode({ id: newId(), text, kind, groupId, by, at, photos: refs, jobs: jobs.map((id) => ({ id, title: titleOf(id) })) }), ...extra });
+  };
+  await note({ kind: 'issue', groupId: fixes, by: riley, days: 0.1, photos: 1, hue: 200,
+    text: 'Access hatch hinge binds after painting\nPaint builds up in the knuckle and the pin seizes. Seen on the last two units.\n- More clearance in the knuckle, or\n- mask it before paint' });
+  await note({ kind: 'idea', groupId: chairs, by: casey, days: 0.8,
+    text: 'Fold-down footrest on the helm chair\nTwo customers asked about it this month. Could it share the armrest pivot so it stays one bracket?' });
+  await note({ kind: 'reference', groupId: davits, by: alex, days: 2, photos: 3, hue: 30,
+    text: 'As built: 550kg davit base plate weld prep\nBevel on both sides, 3 mm root gap. Photos from the second unit, before and after the root pass.' });
+  await note({ kind: 'issue', groupId: fixes, by: riley, days: 6, photos: 1, hue: 120, jobs: [hinge],
+    text: 'Door hinge plate flexes when the door is slammed\nVisible gap at the top hinge after a few cycles.' });
+  await note({ kind: 'issue', groupId: laser, by: riley, days: 9,
+    text: 'Laser parts arrive with sharp edges\nEspecially the small tabs.',
+    extra: { state: 'dismissed', dismissed: { by: me, at: ago(8), reason: 'Deburring is a workshop step, not a drawing change.' } } });
+  await note({ kind: 'idea', groupId: water, by: me, days: 12, jobs: [membrane],
+    text: 'One hole pattern for every membrane bracket\nThree patterns today; one would let us stock a single plate.', extra: { state: 'resolved' } });
+  await note({ kind: 'reference', by: me, days: 20,
+    text: 'How revision PDFs are named\n- **Job name**, then the revision: R1, R2…\n- One PDF per drawing set, never per sheet\n- Superseded sets go in the Old folder, not deleted' });
+  await Store.commit({ noteSet: notes, images });
+  toast('Sample data loaded: invented jobs and notes, in this browser only');
+}
+
+/**
+ * An invented "photo": a drawn plate with holes, nothing real. Run through
+ * photos.js like any photo, so the sample exercises resizing and thumbnails.
+ */
+async function samplePhoto(n, hue) {
+  const W = 1600;
+  const H = 1200;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const g = c.getContext('2d');
+  const grad = g.createLinearGradient(0, 0, W, H);
+  grad.addColorStop(0, `hsl(${hue} 18% 34%)`);
+  grad.addColorStop(1, `hsl(${hue + 30} 14% 12%)`);
+  g.fillStyle = grad;
+  g.fillRect(0, 0, W, H);
+  g.fillStyle = `hsl(${hue} 6% 68%)`;
+  g.fillRect(340, 290, 920, 560);
+  g.fillStyle = `hsl(${hue} 10% 20%)`;
+  for (const [x, y] of [[450, 400], [1150, 400], [450, 740], [1150, 740]]) { g.beginPath(); g.arc(x, y, 44, 0, Math.PI * 2); g.fill(); }
+  g.strokeStyle = '#f2b84b';
+  g.lineWidth = 10;
+  g.beginPath();
+  g.arc(700 + ((n * 70) % 240), 570, 120, 0, Math.PI * 2);
+  g.stroke();
+  g.fillStyle = 'rgba(255, 255, 255, .85)';
+  g.font = '600 52px system-ui, sans-serif';
+  g.fillText(`Sample photo ${n}`, 56, H - 64);
+  const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.85));
+  return PH.prepare(new File([blob], `sample-${n}.jpg`, { type: 'image/jpeg' }));
 }

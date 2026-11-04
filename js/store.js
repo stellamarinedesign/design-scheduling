@@ -22,16 +22,24 @@
 // callback passes that on as `fromSelf`, so a view can tell "I just did this"
 // from "someone else did" (the panel uses it to avoid clobbering a field
 // being edited, and Phase 2 uses it for "Updated by Alex just now").
+//
+// THE LOG (Phase 2) is its own collection, `notes`, read in two live
+// windows: the newest page (more on "Show older"), and every note still open
+// or actioned (the triage queue is never paged away). Photos are `images`
+// documents (photos.js says why); local mode keeps them in IndexedDB, since
+// localStorage holds 5 MB in all.
 
 import { getFirebase, failureReason, isConfigured, localForced } from './firebase.js';
 import { LOCAL_ACCESS, LOCAL_PEOPLE } from './team.js';
+import { idb } from './idb.js';
 
 export const COL = {
   settings: 'settings',     // settings/access: who is what (the rules read it)
   people: 'people',         // people/{email}: display name, initials
   tasks: 'tasks',           // every node: group | product | task | step
   updates: 'updates',       // tasks/{id}/updates/{id}: the timeline
-  images: 'images',         // Phase 2: photos as Bytes, one per document
+  images: 'images',         // photos as Bytes, one per document (photos.js)
+  notes: 'notes',           // the Log
 };
 
 const LS = 'stella.design.';
@@ -60,6 +68,11 @@ export function newId() {
 
 const strip = ({ id, ...rest }) => rest;
 
+/** Local mode's photos (IndexedDB: localStorage is far too small). */
+const localImages = idb('images');
+
+const byNewest = (a, b) => String(b.at).localeCompare(String(a.at));
+
 export const Store = {
   mode: 'local',          // 'firestore' | 'local'
   reason: '',             // why local, when local
@@ -83,6 +96,7 @@ export const Store = {
       window.addEventListener('storage', (e) => {
         if (e.key === `${LS}tasks`) { this._local = lsGet('tasks', []); this._notify(false); }
         if (e.key === `${LS}updates`) this._notifyUpdates();
+        if (e.key === `${LS}notes`) this._notifyNotes();
       });
       return this.mode;
     }
@@ -134,13 +148,20 @@ export const Store = {
   /**
    * One change, written together: whole nodes (`set`), field changes
    * (`patch`, each {id, ...fields}), deletions (`remove`, ids), and timeline
-   * entries (`updates`, each {taskId, ...}). Local mode applies it at once;
+   * entries (`updates`, each {taskId, ...}); and for the Log, whole notes
+   * (`noteSet`), note changes (`notes`, each {id, ...fields}), deleted notes
+   * (`noteRemove`), photos (`images`, each a prepared photo from photos.js)
+   * and deleted photos (`imageRemove`). Local mode applies it at once;
    * Firestore applies it to its cache at once and to the server in batches
-   * of BATCH_SIZE (one atomic batch for any ordinary change).
+   * of BATCH_SIZE (one atomic batch for any ordinary change), so a note and
+   * its photos arrive together or not at all.
    */
-  async commit({ set = [], patch = [], remove = [], updates = [] } = {}) {
-    if (!set.length && !patch.length && !remove.length && !updates.length) return;
+  async commit({ set = [], patch = [], remove = [], updates = [], noteSet = [], notes = [], noteRemove = [], images = [], imageRemove = [] } = {}) {
+    const log = noteSet.length || notes.length || noteRemove.length || images.length || imageRemove.length;
+    if (!set.length && !patch.length && !remove.length && !updates.length && !log) return;
     if (this.mode === 'local') {
+      if (log) await this._commitLocalLog({ noteSet, notes, noteRemove, images, imageRemove });
+      if (!set.length && !patch.length && !remove.length && !updates.length) return;
       const byId = new Map((this._local ?? []).map((n) => [n.id, n]));
       for (const n of set) byId.set(n.id, { ...n });
       for (const p of patch) { const cur = byId.get(p.id); if (cur) byId.set(p.id, { ...cur, ...p }); }
@@ -154,20 +175,32 @@ export const Store = {
           const list = all[u.taskId] ?? (all[u.taskId] = []);
           list.push({ ...u, id: newId() });
         }
-        // A deleted task takes its timeline with it.
+        // A deleted task takes its timeline with it, and the photos on it.
+        const gone = remove.flatMap((id) => (all[id] ?? []).flatMap((u) => (u.photos ?? []).map((ph) => ph.id)));
         for (const id of remove) delete all[id];
         lsSet('updates', all);
+        if (gone.length) await Promise.all(gone.map((id) => localImages.del(id).catch(() => {})));
       }
       this._notify(true);
       if (updates.length) this._notifyUpdates();
       return;
     }
-    const { doc, collection, writeBatch } = this._fs;
+    const { doc, collection, writeBatch, Bytes } = this._fs;
+    // A photo's bytes are read before the batch is made (a local read, quick).
+    const imageDocs = await Promise.all(images.map(async (p) => ({
+      id: p.id,
+      data: { data: Bytes.fromUint8Array(new Uint8Array(await p.blob.arrayBuffer())), type: p.type, w: p.w, h: p.h, size: p.size, by: p.by, at: p.at },
+    })));
     const ops = [
+      ...imageDocs.map((d) => (b) => b.set(doc(this._db, COL.images, d.id), d.data)),
       ...set.map((n) => (b) => b.set(doc(this._db, COL.tasks, n.id), strip(n))),
       ...patch.map((p) => (b) => b.update(doc(this._db, COL.tasks, p.id), strip(p))),
       ...remove.map((id) => (b) => b.delete(doc(this._db, COL.tasks, id))),
       ...updates.map((u) => (b) => b.set(doc(collection(this._db, COL.tasks, u.taskId, COL.updates)), u)),
+      ...noteSet.map((n) => (b) => b.set(doc(this._db, COL.notes, n.id), strip(n))),
+      ...notes.map((p) => (b) => b.update(doc(this._db, COL.notes, p.id), strip(p))),
+      ...noteRemove.map((id) => (b) => b.delete(doc(this._db, COL.notes, id))),
+      ...imageRemove.map((id) => (b) => b.delete(doc(this._db, COL.images, id))),
     ];
     // Every batch is handed to Firestore at once and only then awaited.
     // Awaiting each in turn waited for the SERVER between batches, so an
@@ -184,13 +217,16 @@ export const Store = {
     await Promise.all(commits);
   },
 
-  /** Delete every update under these tasks, in batches. */
+  /** Delete every update under these tasks, and the photos they carried, in batches. */
   async _deleteTimelines(taskIds) {
-    const { collection, getDocs, writeBatch } = this._fs;
+    const { collection, getDocs, writeBatch, doc } = this._fs;
     const refs = [];
     for (const id of taskIds) {
       const snap = await getDocs(collection(this._db, COL.tasks, id, COL.updates));
-      snap.forEach((d) => refs.push(d.ref));
+      snap.forEach((d) => {
+        refs.push(d.ref);
+        for (const ph of d.data().photos ?? []) if (ph?.id) refs.push(doc(this._db, COL.images, ph.id));
+      });
     }
     await Promise.all(chunk(refs, BATCH_SIZE).map((part) => {
       const b = writeBatch(this._db);
@@ -235,6 +271,141 @@ export const Store = {
     const { collection, query, limit, getDocs } = this._fs;
     const snap = await getDocs(query(collection(this._db, COL.tasks, taskId, COL.updates), limit(1)));
     return !snap.empty;
+  },
+
+  // ---- the Log --------------------------------------------------------------
+
+  _noteWatchers: new Set(),
+  _notifyNotes() { for (const w of this._noteWatchers) w(); },
+
+  /** Local mode: every note in this browser. */
+  _localNotes() { return lsGet('notes', []); },
+
+  async _commitLocalLog({ noteSet, notes, noteRemove, images, imageRemove }) {
+    // Photos first: a note must never point at a photo that was not kept.
+    for (const p of images) {
+      await localImages.put(p.id, { blob: p.blob, type: p.type, w: p.w, h: p.h, size: p.size, by: p.by, at: p.at });
+    }
+    const byId = new Map(this._localNotes().map((n) => [n.id, n]));
+    for (const n of noteSet) byId.set(n.id, { ...n });
+    for (const p of notes) { const cur = byId.get(p.id); if (cur) byId.set(p.id, { ...cur, ...p }); }
+    for (const id of noteRemove) byId.delete(id);
+    if (noteSet.length || notes.length || noteRemove.length) {
+      if (!lsSet('notes', [...byId.values()])) throw new Error('This browser would not save it: its local storage is full or switched off.');
+    }
+    for (const id of imageRemove) await localImages.del(id).catch(() => {});
+    this._notifyNotes();
+  },
+
+  /**
+   * A live query on notes, the same shape in both modes: `cb(list, {more})`,
+   * each note with `pending` true while it waits to reach the server (the
+   * offline queue: Firestore keeps the write and sends it when it can).
+   */
+  _watchNoteQuery(build, localFilter, limitTo, cb) {
+    if (this.mode === 'local') {
+      const send = () => {
+        const list = this._localNotes().filter(localFilter).sort(byNewest);
+        cb(limitTo ? list.slice(0, limitTo) : list, { more: Boolean(limitTo) && list.length > limitTo });
+      };
+      this._noteWatchers.add(send);
+      queueMicrotask(send);
+      return () => this._noteWatchers.delete(send);
+    }
+    const { onSnapshot } = this._fs;
+    return onSnapshot(build(), { includeMetadataChanges: true }, (snap) => {
+      const list = snap.docs.map((d) => ({ ...d.data(), id: d.id, pending: d.metadata.hasPendingWrites })).sort(byNewest);
+      cb(limitTo ? list.slice(0, limitTo) : list, { more: Boolean(limitTo) && list.length > limitTo });
+    }, (e) => { console.warn('[notes]', e.message); cb(null, { error: e }); });
+  },
+
+  /** The newest `limitTo` notes, live. */
+  watchNotes(limitTo, cb) {
+    return this._watchNoteQuery(() => {
+      const { collection, query, orderBy, limit } = this._fs;
+      return query(collection(this._db, COL.notes), orderBy('at', 'desc'), limit(limitTo + 1));
+    }, () => true, limitTo, cb);
+  },
+
+  /** Every note still to be dealt with (open) or in hand (actioned), live: never paged. */
+  watchTriage(cb) {
+    return this._watchNoteQuery(() => {
+      const { collection, query, where } = this._fs;
+      return query(collection(this._db, COL.notes), where('state', 'in', ['open', 'actioned']));
+    }, (n) => n.state === 'open' || n.state === 'actioned', 0, cb);
+  },
+
+  /** The notes linked to one job, live: the job's side of the link. */
+  watchJobNotes(jobId, cb) {
+    return this._watchNoteQuery(() => {
+      const { collection, query, where } = this._fs;
+      return query(collection(this._db, COL.notes), where('jobIds', 'array-contains', jobId));
+    }, (n) => (n.jobIds ?? []).includes(jobId), 0, cb);
+  },
+
+  /** One note, live (a link to a note older than the loaded page). */
+  watchNote(id, cb) {
+    if (this.mode === 'local') {
+      const send = () => cb(this._localNotes().find((n) => n.id === id) ?? null);
+      this._noteWatchers.add(send);
+      queueMicrotask(send);
+      return () => this._noteWatchers.delete(send);
+    }
+    const { doc, onSnapshot } = this._fs;
+    return onSnapshot(doc(this._db, COL.notes, id), { includeMetadataChanges: true },
+      (d) => cb(d.exists() ? { ...d.data(), id: d.id, pending: d.metadata.hasPendingWrites } : null),
+      (e) => { console.warn('[note]', e.message); cb(null); });
+  },
+
+  /**
+   * The categories alone, for someone who reads no tasks (a contributor, a
+   * manager): groups, live. The rules let them read groups and nothing else
+   * in `tasks`; the query has to ask for exactly that or it is refused.
+   */
+  watchGroups(cb, onError) {
+    if (this.mode === 'local') {
+      const w = { cb: (nodes, meta) => cb(nodes.filter((n) => n.kind === 'group'), meta) };
+      this._watchers.add(w);
+      queueMicrotask(() => w.cb(this._live(), { fromSelf: false }));
+      return () => this._watchers.delete(w);
+    }
+    const { collection, query, where, onSnapshot } = this._fs;
+    return onSnapshot(
+      query(collection(this._db, COL.tasks), where('kind', '==', 'group'), where('archivedAt', '==', null)),
+      (snap) => cb(snap.docs.map((d) => ({ ...d.data(), id: d.id })), { fromSelf: snap.metadata.hasPendingWrites }),
+      (e) => onError?.(e),
+    );
+  },
+
+  /** A photo's full image, as a Blob; null when it is not there. */
+  async getImage(id) {
+    if (this.mode === 'local') {
+      const v = await localImages.get(id).catch(() => null);
+      return v?.blob ?? null;
+    }
+    const { doc, getDoc } = this._fs;
+    const d = await getDoc(doc(this._db, COL.images, id));
+    if (!d.exists()) return null;
+    const { data, type } = d.data();
+    return new Blob([data.toUint8Array()], { type: type || 'image/jpeg' });
+  },
+
+  /**
+   * Roughly how much the photos take up (Settings): their count and bytes,
+   * worked out by the server without reading them (aggregate queries).
+   * @returns {Promise<{photos: number, bytes: number, notes: number}>}
+   */
+  async storageEstimate() {
+    if (this.mode === 'local') {
+      const all = await localImages.all().catch(() => []);
+      return { photos: all.length, bytes: all.reduce((s, v) => s + (v?.size ?? v?.blob?.size ?? 0), 0), notes: this._localNotes().length };
+    }
+    const { collection, getAggregateFromServer, count, sum } = this._fs;
+    const [img, notes] = await Promise.all([
+      getAggregateFromServer(collection(this._db, COL.images), { n: count(), bytes: sum('size') }),
+      getAggregateFromServer(collection(this._db, COL.notes), { n: count() }),
+    ]);
+    return { photos: img.data().n, bytes: img.data().bytes ?? 0, notes: notes.data().n };
   },
 
   // ---- access --------------------------------------------------------------
@@ -303,18 +474,20 @@ export const Store = {
 
   // ---- local mode housekeeping --------------------------------------------
 
-  /** Everything this device holds, as one JSON object (Settings → Back up). */
+  /** Everything this device holds, as one JSON object (Settings → Back up). Photos stay behind: thumbnails only. */
   exportLocal() {
-    return { exportedAt: new Date().toISOString(), tasks: lsGet('tasks', []), updates: lsGet('updates', {}) };
+    return { exportedAt: new Date().toISOString(), tasks: lsGet('tasks', []), updates: lsGet('updates', {}), notes: lsGet('notes', []) };
   },
 
   /** Replace this device's local data. */
-  replaceLocal({ tasks = [], updates = {} }) {
+  replaceLocal({ tasks = [], updates = {}, notes = [] }) {
     if (this.mode !== 'local') throw new Error('Only in local mode.');
     lsSet('tasks', tasks);
     lsSet('updates', updates);
+    lsSet('notes', notes);
     this._local = tasks;
     this._notify(true);
     this._notifyUpdates();
+    this._notifyNotes();
   },
 };

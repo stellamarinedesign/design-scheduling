@@ -13,8 +13,8 @@ import { VERSION } from './version.js';
 import { Auth, setAccess, currentAccess, ROLE, setLocalRole } from './auth.js';
 import { ROLE_LABEL } from './access.js';
 import { Store } from './store.js';
-import { state, subscribe, setNodes, setError } from './state.js';
-import { initRouter, route, go, currentTab, roleTabs, isSpecial } from './router.js';
+import { state, subscribe, setNodes, setError, allNotes } from './state.js';
+import { initRouter, route, go, currentTab, roleTabs, isSpecial, closePanel } from './router.js';
 import { el, icon, isWide, closeMenu, installContextMenus } from './ui.js';
 import * as A from './actions.js';
 import * as TM from './team.js';
@@ -24,6 +24,9 @@ import { renderTasks, viewTitle } from './views/tasks.js';
 import { renderMyTasks } from './views/mytasks.js';
 import { renderTeam } from './views/team.js';
 import { renderPanel, panelEditing, panelUp } from './views/panel.js';
+import { renderLog } from './views/log.js';
+import { renderNotePanel } from './views/note-panel.js';
+import { openComposer } from './views/composer.js';
 // Loaded up front, not on demand: N (or the capture hotkey) is followed at
 // once by typing, and keystrokes made while a module loads are lost.
 import { openSearch as searchNow } from './views/search.js';
@@ -42,6 +45,7 @@ const TABS = {
   home: { label: 'Home', icon: 'home' },
   tasks: { label: 'Tasks', icon: 'tasks' },
   team: { label: 'Team', icon: 'team' },
+  log: { label: 'Log', icon: 'log' },
 };
 
 $('menuBtn').append(icon('menu', 20));
@@ -72,9 +76,13 @@ installContextMenus();
 const lead = () => state.role === ROLE.LEAD;
 const designer = () => state.role === ROLE.DESIGNER;
 const openSearch = () => { if (lead() || designer()) searchNow(); };
-/** The one way to add: a job for the lead, a task of their own for a designer. */
+/**
+ * The one way to add, by where you are: on the Log a note (anyone); else a
+ * job for the lead, a task of their own for a designer.
+ */
 const quickAdd = (opts) => {
-  if (lead()) openQuickAdd(opts ?? {});
+  if (currentTab() === 'log' && !(lead() && isSpecial())) openComposer();
+  else if (lead()) openQuickAdd(opts ?? {});
   else if (designer()) openQuickAdd({ ...(opts ?? {}), own: true });
 };
 $('searchField').addEventListener('click', openSearch);
@@ -107,9 +115,10 @@ window.matchMedia('(min-width: 1100px)').addEventListener('change', () => setSid
 const typing = (t) => t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
 document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); closeMenu(); openSearch(); return; }
-  if (document.querySelector('.overlay.show, .menu')) return;
+  if (document.querySelector('.overlay.show, .menu, .lightbox')) return;
   if (e.key === 'Escape') {
     if (sideOpen) { setSide(false); return; }
+    if (state.noteId && !typing(e.target)) { closePanel(); return; }
     // The panel is a page you drill into: Esc goes up one level, and closes it from a job.
     if (state.openId && !typing(e.target)) { panelUp(); return; }
   }
@@ -126,13 +135,11 @@ let lastOpen = null;
 let drawn = 0;
 let lastPath = null;
 
-/** A role whose own view arrives with a later milestone. */
+/** A role with no page here (every role has the Log, so this is a fallback only). */
 function comingSoon(root) {
   root.append(el('div', { class: 'view-inner' }, el('div', { class: 'state-msg' },
     el('h1', { class: 'h1' }, `Signed in as ${ROLE_LABEL[state.role] ?? state.role}`),
-    el('p', {}, state.role === ROLE.CONTRIBUTOR
-      ? 'The Log, where you post photo notes, is on its way. Nothing else here is for your account.'
-      : 'Your Jobs list and the Log are on their way.'))));
+    el('p', {}, 'Nothing here is for your account. The Log is under Log.'))));
 }
 
 function drawView() {
@@ -156,6 +163,7 @@ function drawView() {
   else if (tab === 'home') renderHome(view);
   else if (tab === 'team') renderTeam(view);
   else if (tab === 'tasks') { if (lead()) renderTasks(view, p[0] === 'tasks' ? (p[1] ?? null) : null); else renderMyTasks(view); }
+  else if (tab === 'log') renderLog(view);
   else comingSoon(view);
   // A redraw of the same page keeps its place; another page starts at the top.
   view.scrollTop = lastPath === route.path ? top : 0;
@@ -167,10 +175,14 @@ function drawView() {
   }
 }
 
-/** What needs this person, as a count on a tab: checks for the lead, send-backs for a designer. */
+/**
+ * What needs this person, as a count on a tab: for the lead, checks and the
+ * Log's open issues and ideas; for a designer, send-backs.
+ */
+const COUNT_WORDS = { team: 'ready for check', tasks: 'sent back', log: 'open in the Log' };
 function tabCounts() {
   if (!state.ready) return {};
-  if (lead()) return { team: TM.checkQueue(state.idx).length };
+  if (lead()) return { team: TM.checkQueue(state.idx).length, log: state.log.triage.filter((n) => n.state === 'open').length };
   if (designer()) return { tasks: state.idx.nodes.filter((n) => n.kind === 'task' && n.assignee === state.me && n.status === 'fix').length };
   return {};
 }
@@ -186,10 +198,15 @@ function drawChrome() {
     const c = a.querySelector('.count');
     const n = counts[a.dataset.tab] ?? 0;
     if (c) { c.hidden = !n; c.textContent = String(n); }
-    a.setAttribute('aria-label', n ? `${TABS[a.dataset.tab]?.label}, ${n} ${a.dataset.tab === 'team' ? 'ready for check' : 'sent back'}` : TABS[a.dataset.tab]?.label ?? '');
+    a.setAttribute('aria-label', n ? `${TABS[a.dataset.tab]?.label}, ${n} ${COUNT_WORDS[a.dataset.tab] ?? ''}` : TABS[a.dataset.tab]?.label ?? '');
   }
   const title = special ? (route.parts[0] === 'archive' ? 'Archive' : 'Import')
-    : tab === 'home' ? 'Home' : tab === 'team' ? 'Team' : tab === 'tasks' ? (lead() ? viewTitle(route.parts[0] === 'tasks' ? route.parts[1] : null) : 'Tasks') : 'Design Scheduling';
+    : tab === 'home' ? 'Home' : tab === 'team' ? 'Team' : tab === 'log' ? 'Log'
+      : tab === 'tasks' ? (lead() ? viewTitle(route.parts[0] === 'tasks' ? route.parts[1] : null) : 'Tasks') : 'Design Scheduling';
+  // The + button adds what this page holds: a note on the Log; a job or a task elsewhere.
+  const onLog = tab === 'log' && !special;
+  $('fab').hidden = !(onLog || lead() || designer());
+  $('fab').setAttribute('aria-label', onLog ? 'New note' : lead() ? 'New job' : 'Add a task of your own');
   $('hdView').textContent = title;
   document.title = title === 'Design Scheduling' ? title : `${title} · Design Scheduling`;
 }
@@ -199,9 +216,21 @@ function setBehindInert(on) {
   for (const n of [view, side, $('tabbar'), $('fab'), document.querySelector('.hd')]) if (n) n.inert = on;
 }
 
+let lastNote = null;
 function drawPanel(meta = {}) {
   const id = state.openId;
-  setBehindInert(Boolean(id) && window.matchMedia('(max-width: 699px)').matches);
+  setBehindInert(Boolean(id || state.noteId) && window.matchMedia('(max-width: 699px)').matches);
+  // A Log note: anyone listed may read one.
+  if (state.noteId) {
+    if (lastNote === state.noteId && panel.contains(document.activeElement) && document.activeElement.matches('textarea, input')) return;
+    panel.hidden = false;
+    renderNotePanel(panel, state.noteId, { fresh: lastNote !== state.noteId });
+    lastNote = state.noteId;
+    lastOpen = null;
+    return;
+  }
+  lastNote = null;
+  panel.setAttribute('aria-label', 'Task details');
   if (!id || !(lead() || designer())) { panel.hidden = true; panel.textContent = ''; lastOpen = null; return; }
   // A field being edited is never clobbered by the echo of a write (yours or
   // another device's); the panel redraws once the field lets go.
@@ -219,7 +248,7 @@ function drawAll(meta = {}) {
     return;
   }
   drawChrome();
-  if (lead()) renderSidebar(side);
+  if (lead()) renderSidebar(side, { notes: allNotes() });
   drawView();
   drawPanel(meta);
 }
@@ -268,10 +297,8 @@ async function start() {
   const app = document.getElementById('app');
   app.dataset.role = state.role;
   drawTabs();
-  // Adding and searching are for those who read and write tasks.
+  // Searching is for those who read tasks; the + button follows the page (drawChrome).
   const works = lead() || designer();
-  $('fab').hidden = !works;
-  $('fab').setAttribute('aria-label', lead() ? 'New job' : 'Add a task of your own');
   $('searchField').hidden = !works;
   $('searchBtn').hidden = !works;
   const note = $('modeNote');
@@ -297,14 +324,16 @@ async function start() {
     drawAll(meta);
     if (!state.reconciled && state.ready) { state.reconciled = true; A.reconcileOnLoad(); }
     A.ensureInboxes();
+    A.reconcileNotes();
   });
   Store.watchPeople((people) => { state.people = people; if (state.ready) drawAll(); });
   drawAll();
-  // A contributor reads no tasks at all (the rules refuse them): no live tree.
-  if (lead() || designer() || state.role === ROLE.MANAGER) {
-    if (state.role === ROLE.MANAGER) setNodes([]);
-    else Store.watchTasks((nodes, meta) => setNodes(nodes, meta), (e) => setError(e));
-  } else setNodes([]);
+  // A contributor or a manager reads no tasks, only the categories (the
+  // rules refuse the rest): the Log's category picker and paths need them.
+  if (works) Store.watchTasks((nodes, meta) => setNodes(nodes, meta), (e) => setError(e));
+  else Store.watchGroups((nodes, meta) => setNodes(nodes, meta), (e) => setError(e));
+  // Everyone listed has the Log.
+  A.startLog();
 
   // ?capture=1 (the AutoHotkey hotkey, Phase 4): straight into quick add.
   if (new URLSearchParams(location.search).get('capture') === '1') {

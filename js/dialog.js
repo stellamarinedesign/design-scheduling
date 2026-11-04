@@ -53,11 +53,13 @@ const stack = [];
 const TYPED = 'textarea, input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=button]):not([type=submit]):not([type=search])';
 
 /**
- * A modal box on a scrim. `build(box, close, {dismiss, markClean})` fills the
- * box. `close(value)` resolves the returned promise; `dismiss()` is what a
- * Close or Cancel button calls, and Esc too: it resolves with null, asking
- * first in a guarded dialog with unsaved typing. `markClean()` says what is
- * typed now is saved (a field that saves in place).
+ * A modal box on a scrim. `build(box, close, {dismiss, markClean, onEscape})`
+ * fills the box. `close(value)` resolves the returned promise; `dismiss()` is
+ * what a Close or Cancel button calls, and Esc too: it resolves with null,
+ * asking first in a guarded dialog with unsaved typing. `markClean()` says
+ * what is typed now is saved (a field that saves in place). `onEscape(fn)`
+ * gives Esc to `fn` instead (the Log's composer keeps its draft on Esc,
+ * exactly as its Close button does).
  * @returns {Promise<any>}
  */
 export function openDialog(build, { label = '', wide = false, className = '', guard = false } = {}) {
@@ -102,14 +104,15 @@ export function openDialog(build, { label = '', wide = false, className = '', gu
       }
       close(null);
     };
+    let escape = null;
     const onKey = (e) => {
       if (stack[stack.length - 1] !== me) return;
-      if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); dismiss(); }
+      if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); if (escape) escape(); else dismiss(); }
       if (e.key === 'Tab') trapTab(e, box);
     };
     document.addEventListener('keydown', onKey, true);
     if (!guard) closeOnBackdrop(overlay, () => close(null));
-    build(box, close, { dismiss, markClean });
+    build(box, close, { dismiss, markClean, onEscape: (fn) => { escape = fn; } });
     box.querySelectorAll(TYPED).forEach(note);
     document.body.append(overlay);
     const first = box.querySelector('[data-autofocus]') ?? box.querySelector('input, textarea, select, button');

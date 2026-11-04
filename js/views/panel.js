@@ -35,6 +35,8 @@ import { revealCategory } from './tasks.js';
 import { go, route, openTask, closePanel, routeHref, upTo } from '../router.js';
 import { promptDialog } from '../dialog.js';
 import { shortPath } from '../paths.js';
+import { photoTray, acceptPhotos, thumbRow } from './photo-ui.js';
+import { jobNotesList } from './note-panel.js';
 
 let rootEl = null;
 let openId = null;
@@ -102,8 +104,9 @@ export function renderPanel(root, id, { fresh = false } = {}) {
   const body = el('div', { class: 'panel-body' });
   if (n.kind === T.KIND.task) {
     watchTimeline(id);
+    watchJobNotes(id);
     const review = contextAction(n);
-    body.append(top(n), childrenSection(n), review ? el('div', { class: 'panel-review' }, review) : null, briefSection(n), foldersSection(n), updatesSection(n), footer(n));
+    body.append(top(n), childrenSection(n), review ? el('div', { class: 'panel-review' }, review) : null, briefSection(n), fromLogSection(), foldersSection(n), updatesSection(n), footer(n));
   } else {
     stopTimeline();
     body.append(nodeTop(n), childrenSection(n));
@@ -786,6 +789,39 @@ async function copyPath(rel) {
 function stopTimeline() {
   timeline.unsub?.();
   Object.assign(timeline, { id: null, list: [], more: false, limit: 20, unsub: null, loaded: false });
+  jobNotes.unsub?.();
+  Object.assign(jobNotes, { id: null, list: [], unsub: null });
+}
+
+// ---------------------------------------------------------------------------
+// from the Log: the notes linked to this job (their side of the link)
+// ---------------------------------------------------------------------------
+
+const jobNotes = { id: null, list: [], unsub: null };
+
+function watchJobNotes(id) {
+  if (jobNotes.id === id && jobNotes.unsub) return;
+  jobNotes.unsub?.();
+  Object.assign(jobNotes, { id, list: [] });
+  jobNotes.unsub = Store.watchJobNotes(id, (list) => {
+    jobNotes.list = list ?? [];
+    drawJobNotes();
+  });
+}
+
+function drawJobNotes() {
+  const host = rootEl?.querySelector('.from-log');
+  if (!host) return;
+  host.textContent = '';
+  host.hidden = !jobNotes.list.length;
+  if (!jobNotes.list.length) return;
+  host.append(el('div', { class: 'psec-head' }, el('h2', { class: 'lbl' }, 'From the Log')), jobNotesList(jobNotes.list));
+}
+
+function fromLogSection() {
+  const sec = el('section', { class: 'psec from-log', 'aria-label': 'From the Log', hidden: true });
+  queueMicrotask(drawJobNotes);
+  return sec;
 }
 
 function watchTimeline(id) {
@@ -811,7 +847,8 @@ function drawTimeline() {
       face(u.by),
       el('div', { style: { 'min-width': '0' } },
         el('div', { class: 'ev-head' }, el('span', { class: 'ev-who' }, personName(u.by)), el('span', { class: 'meta' }, `${S.eventLabel(u)} · ${whenLabel(u.at)}`)),
-        assignText ?? u.text ? el('div', { class: 'ev-text' }, assignText ?? u.text) : null)));
+        assignText ?? u.text ? el('div', { class: 'ev-text' }, assignText ?? u.text) : null,
+        thumbRow(u.photos, { caption: `${personName(u.by)}, ${whenLabel(u.at)}` }))));
   }
   if (timeline.more) {
     host.append(btn('Older', () => {
@@ -823,18 +860,33 @@ function drawTimeline() {
   }
 }
 
+/**
+ * What is being written in the update box, and its photos, kept per task
+ * across redraws: the live query redraws the panel on every write, and a
+ * photo being prepared, or words typed before a tap on Add photos, must not
+ * vanish with it.
+ */
+const compose = { id: null, text: '', tray: null };
+
 function updatesSection(n) {
   const sec = el('section', { class: 'psec', 'aria-label': 'Updates' });
   sec.append(el('div', { class: 'psec-head' }, el('h2', { class: 'lbl' }, 'Updates')));
+  if (compose.id !== n.id) Object.assign(compose, { id: n.id, text: '', tray: photoTray({ max: 8 }) });
+  const tray = compose.tray;
   const ta = el('textarea', { class: 'textarea compose-input', rows: '2', placeholder: n.status === 'todo' && A.canWrite(n) ? 'Post an update (it starts the task)…' : 'Post an update…', 'aria-label': 'Post an update' });
+  ta.value = compose.text;
+  ta.addEventListener('input', () => { compose.text = ta.value; });
   const post = () => {
-    if (A.postUpdate(n.id, ta.value)) { ta.value = ''; ta.blur(); }
+    if (tray.busy()) { toast('A photo is still being prepared. A moment.', { warn: true }); return; }
+    if (A.postUpdate(n.id, ta.value, tray.ready())) { ta.value = ''; compose.text = ''; tray.clear(); ta.blur(); }
   };
   ta.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); post(); }
     if (e.key === 'Escape' && !ta.value) { e.preventDefault(); e.stopPropagation(); ta.blur(); }
   });
-  sec.append(el('div', { class: 'compose' }, ta, el('div', { class: 'compose-acts' }, btn('Post', post, { cls: 'sm' }), isPhone() ? null : el('span', { class: 'hint' }, 'Ctrl+Enter posts'))));
+  const box = el('div', { class: 'compose' }, ta, tray.el, el('div', { class: 'compose-acts' }, btn('Post', post, { cls: 'sm' }), tray.controls, isPhone() ? null : el('span', { class: 'hint' }, 'Ctrl+Enter posts')));
+  acceptPhotos(box, tray);
+  sec.append(box);
   const tl = el('div', { class: 'timeline', 'aria-live': 'polite' });
   sec.append(tl);
   queueMicrotask(drawTimeline);

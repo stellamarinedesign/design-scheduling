@@ -12,11 +12,16 @@
 // stays a list at 200–300 nodes. Items drag (the lead): reorder among their
 // siblings, or drop onto a category to move inside it. Right-click,
 // long-press and Shift+F10 open the category's own menu.
+//
+// ON THE LOG the same tree filters the feed instead (Log brief): a category
+// shows its notes and those of the categories inside it, the count is its
+// open issues and ideas, and "All notes" clears it.
 
 import { el, icon, iconBtn, dot, withMenu } from '../ui.js';
 import { state } from '../state.js';
 import * as T from '../tree.js';
 import { route, routeHref } from '../router.js';
+import * as NT from '../notes.js';
 import { promptDialog } from '../dialog.js';
 import * as A from '../actions.js';
 import { enableDrag } from './tile.js';
@@ -29,19 +34,26 @@ export async function newMasterCategory() {
   if (id) revealCategory(id);
 }
 
-/** The category being shown: ?c= in the full list, or the one in Focus. */
+/** The category being shown: ?c= in the full list or the Log, or the one in Focus. */
 function currentCategory() {
+  if (route.parts[0] === 'log') return route.query.c ?? null;
   if (route.parts[0] !== 'tasks') return null;
   if (route.parts[1] && route.parts[1] !== 'top') return route.parts[1];
   return route.query.c ?? null;
 }
 
-export function renderSidebar(root) {
+export function renderSidebar(root, { notes = [] } = {}) {
   root.textContent = '';
   const { idx } = state;
+  const onLog = route.parts[0] === 'log';
   root.append(el('div', { class: 'side-head' },
     el('span', { class: 'lbl' }, 'Categories'), el('span', { class: 'sp' }),
-    state.role === 'lead' ? iconBtn('plus', 'New master category', newMasterCategory, 'sm') : null));
+    state.role === 'lead' && !onLog ? iconBtn('plus', 'New master category', newMasterCategory, 'sm') : null));
+  // The Log's counts: open issues and ideas in a category and those inside it.
+  const openNotes = onLog ? notes.filter((n) => NT.isTriage(n) && n.state === 'open' && n.groupId) : [];
+  const countOf = (g) => (onLog
+    ? openNotes.filter((n) => n.groupId === g.id || T.ancestorChain(idx, n.groupId).some((a) => a.id === g.id)).length
+    : T.openJobCount(idx, g.id));
 
   if (!state.ready) {
     for (let i = 0; i < 6; i++) root.append(el('div', { class: 'si', 'aria-hidden': 'true' }, el('span', { class: 'skel-line', style: { width: `${50 + (i * 17) % 40}%` } })));
@@ -52,6 +64,8 @@ export function renderSidebar(root) {
   const open = new Set(current && idx.byId.has(current) ? [current, ...T.ancestorChain(idx, current).map((a) => a.id)] : []);
   const lead = state.role === 'lead';
   const link = (g, cls, ...kids) => {
+    // On the Log a category is a filter: an ordinary link, no drag, no menu.
+    if (onLog) return el('a', { class: cls, href: routeHref('/log', { c: g.id }), 'aria-current': g.id === current ? 'page' : null }, ...kids);
     const a = el('a', {
       class: cls, href: routeHref('/tasks', { c: g.id }),
       'aria-current': g.id === current ? 'page' : null,
@@ -64,7 +78,7 @@ export function renderSidebar(root) {
   const item = (g, depth = 0) => link(g, `si${depth ? ' sub' : ''}`,
     depth ? null : dot(T.colourOf(idx, g.id)),
     el('span', { class: 'nm' }, T.nameOf(g)),
-    el('span', { class: 'n', 'aria-label': 'open jobs' }, String(T.openJobCount(idx, g.id) || '')));
+    el('span', { class: 'n', 'aria-label': onLog ? 'open notes' : 'open jobs' }, String(countOf(g) || '')));
   const withDepth = (n, depth) => { if (depth) n.style.setProperty('--depth', depth); return n; };
 
   const subs = (g, depth) => {
@@ -78,16 +92,22 @@ export function renderSidebar(root) {
     return out;
   };
 
-  const masters = T.childrenOf(idx, null).filter(T.isGroupLike);
+  if (onLog) {
+    root.append(el('a', { class: 'si', href: routeHref('/log'), 'aria-current': current ? null : 'page' },
+      icon('log', 16), el('span', { class: 'nm' }, 'All notes'),
+      el('span', { class: 'n', 'aria-label': 'open notes' }, String(notes.filter((n) => NT.isTriage(n) && n.state === 'open').length || ''))));
+  }
+  // The Log has no use for "From designers" (a designer's own tasks, not a category).
+  const masters = T.childrenOf(idx, null).filter((n) => T.isGroupLike(n) && (!onLog || NT.isNoteCategory(idx, n)));
   for (const m of masters) {
     const cats = T.childrenOf(idx, m.id).filter(T.isGroupLike);
     // A master category is a heading, whether or not it has categories in
     // it yet; with none, its own open count sits on the heading.
     root.append(link(m, 'si master-link', el('span', { class: 'nm' }, T.nameOf(m)),
-      cats.length ? null : el('span', { class: 'n' }, String(T.openJobCount(idx, m.id) || ''))));
+      cats.length ? null : el('span', { class: 'n' }, String(countOf(m) || ''))));
     for (const c of cats) { root.append(item(c)); root.append(...subs(c, 1)); }
   }
-  const loose = T.childrenOf(idx, null).filter((n) => n.kind === T.KIND.task);
+  const loose = onLog ? [] : T.childrenOf(idx, null).filter((n) => n.kind === T.KIND.task);
   if (loose.length) {
     root.append(el('a', {
       class: 'si', href: routeHref('/tasks', { c: 'top' }), 'aria-current': current === 'top' ? 'page' : null,

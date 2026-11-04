@@ -12,7 +12,7 @@
 // it can; on a phone with no signal that can be minutes, and the toast should
 // not wait for it. A write that fails says so in the warning toast.
 
-import { state, node, isMine, personName, realName } from './state.js';
+import { state, node, isMine, personName, realName, noteOf, setLog } from './state.js';
 import { Store } from './store.js';
 import * as T from './tree.js';
 import * as S from './status.js';
@@ -21,6 +21,9 @@ import { toast, toastError } from './ui.js';
 import * as C from './convert.js';
 import { confirmDialog, promptDialog } from './dialog.js';
 import * as TM from './team.js';
+import * as NT from './notes.js';
+import * as PH from './photos.js';
+import { openNote, openTask } from './router.js';
 
 const ctx = () => ({ by: state.me, at: nowISO(), role: state.role, canWrite });
 
@@ -111,7 +114,10 @@ export function createTask({ title, parentId = null, brief = '', useTemplate = t
   const inJob = parent && (parent.kind === T.KIND.task || parent.kind === T.KIND.step || T.isSection(state.idx, parent));
   // Who it is for: as asked; inside a job, whoever has that job (the work
   // follows it); otherwise whoever adds it.
-  const who = assignee !== undefined ? assignee : inJob ? (T.ownerTask(state.idx, parentId)?.assignee ?? state.me) : state.me;
+  let who = assignee !== undefined ? assignee : inJob ? (T.ownerTask(state.idx, parentId)?.assignee ?? state.me) : state.me;
+  // A designer adds work for themselves or for nobody yet; handing it to
+  // someone else is the lead's (the rules refuse it).
+  if (state.role !== 'lead' && who && who !== state.me) who = state.me;
   // A parent that is not here yet (a designer's own group, before the lead's
   // app has made it): after whatever already names it.
   const order = parentId && !parent
@@ -293,16 +299,24 @@ export const start = (id) => setStatus(id, 'in_progress');
 /** Reopen a cancelled task: back to where it was before. */
 export const reopen = (id) => { const t = node(id); if (t) setStatus(id, S.reopenTo(t)); };
 
-/** Post an update. On a To-do task it starts it. */
-export function postUpdate(id, text) {
+/**
+ * Post an update, with photos if any (prepared by photos.js): the photos and
+ * the update go in one batch. On a To-do task it starts it.
+ */
+export function postUpdate(id, text, photos = []) {
   const c = ctx();
-  const r = S.postUpdate(state.idx, id, text, { ...c, canWrite: canWrite(node(id)) });
+  const refs = photos.map((p) => ({ ...PH.refOf(p), by: state.me }));
+  const r = S.postUpdate(state.idx, id, text, { ...c, canWrite: canWrite(node(id)), photos: refs });
   if (r.error) { toast(r.error, { warn: true }); return false; }
   const patches = [...r.patches, ...touchJob(id, c.at, { self: false })];
-  write({ patch: patches, updates: r.updates });
+  write({ patch: patches, updates: r.updates, images: photos.map((p) => ({ ...p, by: state.me, at: c.at })) }, 'The update did not post');
   if (r.patches[0]?.status === 'in_progress') toast('Posted, and started');
+  else if (photos.length && offline()) toast('Will post when back online');
   return true;
 }
+
+/** Firestore holds writes made with no connection and sends them later. */
+const offline = () => Store.mode === 'firestore' && !navigator.onLine;
 
 // ---------------------------------------------------------------------------
 // fields
@@ -598,6 +612,196 @@ export function ensureInboxes() {
   if (!fixes.length) return;
   for (const n of fixes) inboxPending.add(n.id);
   write({ set: fixes }).finally(() => { for (const n of fixes) inboxPending.delete(n.id); });
+}
+
+// ---------------------------------------------------------------------------
+// the Log
+// ---------------------------------------------------------------------------
+
+/**
+ * The Log's two live windows (store.js): every open or actioned note, and
+ * the newest page. Started once; "Show older" grows the page.
+ */
+const logSeen = { feed: false, triage: false };
+let feedUnsub = null;
+function onLog(which, list, meta) {
+  if (meta?.error || !list) { setLog({ error: meta?.error ?? new Error('The Log did not load.') }); return; }
+  logSeen[which] = true;
+  setLog({ [which]: list, ...(which === 'feed' ? { more: Boolean(meta?.more) } : {}), loaded: logSeen.feed && logSeen.triage, error: null });
+}
+export function startLog() {
+  Store.watchTriage((l, m) => onLog('triage', l, m));
+  feedUnsub = Store.watchNotes(state.log.limit, (l, m) => onLog('feed', l, m));
+}
+export function olderNotes() {
+  state.log.limit += 40;
+  feedUnsub?.();
+  feedUnsub = Store.watchNotes(state.log.limit, (l, m) => onLog('feed', l, m));
+}
+
+/** The lead and designers turn notes into work: make a job, link one, dismiss. */
+export const canTriage = () => state.role === 'lead' || state.role === 'designer';
+
+/** A note is its author's to edit, and the lead's. */
+export const canEditNote = (n) => Boolean(n) && (state.role === 'lead' || n.by === state.me);
+
+/**
+ * The photos a person may delete: the lead any; anyone else those they
+ * added (the rules check the `by` on each image).
+ */
+const deletable = (refs) => (refs ?? []).filter((r) => r?.id && (state.role === 'lead' || r.by === state.me)).map((r) => r.id);
+
+/**
+ * Post a note. Its photos and the note go in one batch, so they arrive
+ * together; offline, Firestore keeps both and sends them when it can.
+ * @param {{text: string, kind: string, groupId: string|null, jobIds?: string[], photos?: object[]}} draft
+ *        `photos` are prepared by photos.js
+ * @returns {Promise<string|null>} the new note's id
+ */
+export async function postNote({ text, kind, groupId = null, jobIds = [], photos = [] }) {
+  if (!String(text ?? '').trim() && !photos.length) { toast('Write the note first.', { warn: true }); return null; }
+  const at = nowISO();
+  const id = Store.newId();
+  const jobs = canTriage() ? jobIds.map(node).filter(Boolean) : [];
+  const note = NT.noteNode({
+    id, text: String(text ?? '').trim() || 'Photo', kind, groupId, jobs,
+    photos: photos.map((p) => ({ ...PH.refOf(p), by: state.me })), by: state.me, at,
+  });
+  // A draft's photos are read off this device's photo store; held in memory
+  // now, so the draft can be cleared while the write is still on its way.
+  const images = await Promise.all(photos.map(async (p) => ({ ...p, blob: new Blob([await p.blob.arrayBuffer()], { type: p.type }), by: state.me, at })));
+  write({ noteSet: [note], images }, 'The note did not post');
+  toast(offline() ? 'Will post when back online' : 'Posted to the Log', { action: 'Open', onAction: () => openNote(id) });
+  return id;
+}
+
+/**
+ * Change a note (its author, or the lead): the text, kind, category and
+ * photos. New photos are prepared ones; photos taken off are deleted.
+ */
+export async function editNote(id, { text, kind, groupId, keep = [], added = [] }) {
+  const n = noteOf(id);
+  if (!n || !canEditNote(n)) return false;
+  const at = nowISO();
+  const gone = (n.photos ?? []).filter((p) => !keep.some((k) => k.id === p.id));
+  const photos = [...keep, ...added.map((p) => ({ ...PH.refOf(p), by: state.me }))].slice(0, NT.PHOTOS_MAX);
+  const patch = {
+    id, text: String(text ?? '').trim().slice(0, NT.TEXT_MAX) || n.text, kind, state: NT.stateForKind(n, kind),
+    groupId: groupId ?? null, photos, editedAt: at, updatedAt: at, lastBy: state.me,
+  };
+  const images = await Promise.all(added.map(async (p) => ({ ...p, blob: new Blob([await p.blob.arrayBuffer()], { type: p.type }), by: state.me, at })));
+  write({ notes: [patch], images, imageRemove: deletable(gone) }, 'The note did not save');
+  toast('Note saved');
+  return true;
+}
+
+/** Delete a note and its photos (its author, or the lead). Behind a confirm. */
+export async function deleteNote(id) {
+  const n = noteOf(id);
+  if (!n || !canEditNote(n)) return false;
+  const ok = await confirmDialog({
+    title: 'Delete this note?',
+    body: `"${NT.titleOf(n)}"${n.photos?.length ? ` and its ${plural(n.photos.length, 'photo')}` : ''} will be gone for everyone. ${n.kind === 'reference' ? 'Archiving keeps it out of the feed instead.' : ''}`.trim(),
+    ok: 'Delete', destructive: true,
+  });
+  if (!ok) return false;
+  write({ noteRemove: [id], imageRemove: deletable(n.photos) }, 'The note was not deleted');
+  toast('Note deleted');
+  return true;
+}
+
+/** Write a note patch from notes.js, with an Undo that puts the fields back. */
+function notePatch(n, patch, message) {
+  if (!patch) return;
+  const inverse = { id: n.id };
+  for (const k of Object.keys(patch)) if (k !== 'id') inverse[k] = n[k] ?? null;
+  write({ notes: [patch] });
+  if (message) toast(message, { action: 'Undo', onAction: () => write({ notes: [inverse] }) });
+}
+
+/**
+ * Make a job from a note: in the chosen category, the note's text as its
+ * brief, linked both ways (the note lists the job; the job's panel finds the
+ * note), and the note marked Actioned.
+ * @returns {string|null} the job's id
+ */
+export function makeJobFromNote(noteId, { title, parentId, assignee, useTemplate = true }) {
+  const n = noteOf(noteId);
+  if (!n || !canTriage()) return null;
+  const at = nowISO();
+  let who = assignee ?? null;
+  if (state.role !== 'lead' && who && who !== state.me) who = state.me;
+  const job = taskNode({
+    parentId: parentId ?? null, order: T.newOrder(state.idx, parentId ?? null, 'beforeGroups'),
+    title: String(title || NT.titleOf(n)).slice(0, 300), brief: NT.bodyOf(n), at, assignee: who,
+  });
+  const set = [job];
+  if (useTemplate && parentId) {
+    const t = T.stepsTemplateOf(state.idx, parentId);
+    if (t) set.push(...stepsFrom(t.template, job.id, at));
+  }
+  const by = state.me;
+  const update = { taskId: job.id, at, by, kind: 'create', text: `From a Log note by ${realName(n.by)}` };
+  write({ set, updates: [update], notes: [NT.linkPatch(n, job, { by, at })] }, 'The job was not made');
+  toast('Job made from the note', { action: 'Open job', onAction: () => openTask(job.id) });
+  return job.id;
+}
+
+/** Link an existing job to a note: an open issue or idea becomes Actioned. */
+export function linkNote(noteId, jobId) {
+  const n = noteOf(noteId);
+  const job = node(jobId);
+  if (!n || !job || !canTriage()) return;
+  const at = nowISO();
+  notePatch(n, NT.linkPatch(n, job, { by: state.me, at }), `Linked to ${job.title}`);
+}
+
+export function unlinkNote(noteId, jobId) {
+  const n = noteOf(noteId);
+  if (!n || !canTriage()) return;
+  notePatch(n, NT.unlinkPatch(n, jobId, { by: state.me, at: nowISO() }), 'Job unlinked');
+}
+
+/** Dismiss an issue or idea, with the reason asked for. */
+export async function dismissNote(noteId) {
+  const n = noteOf(noteId);
+  if (!n || !canTriage()) return;
+  const reason = await promptDialog({
+    title: 'Dismiss this note?', label: 'Why', placeholder: 'e.g. Already fixed on the current design',
+    ok: 'Dismiss', body: `"${NT.titleOf(n)}" stays in the Log, marked Dismissed, with your reason.`, multiline: true,
+  });
+  if (!reason) return;
+  notePatch(n, NT.dismissPatch(n, reason, { by: state.me, at: nowISO() }), 'Dismissed');
+}
+
+export function reopenNote(noteId) {
+  const n = noteOf(noteId);
+  if (!n || !canTriage()) return;
+  notePatch(n, NT.reopenPatch(n, { by: state.me, at: nowISO() }), 'Reopened');
+}
+
+/** Archive a reference note (the lead): out of the feed, kept. And back. */
+export function archiveNote(noteId, on = true) {
+  const n = noteOf(noteId);
+  if (!n || state.role !== 'lead') return;
+  const at = nowISO();
+  notePatch(n, on
+    ? { id: n.id, state: 'archived', archivedAt: at, updatedAt: at }
+    : { id: n.id, state: NT.initialState(n.kind), archivedAt: null, updatedAt: at }, on ? 'Archived' : 'Back in the Log');
+}
+
+/**
+ * The lead's app moves an Actioned note to Resolved once every job it is
+ * linked to is finished (only a lead marks anything done, so the lead's app
+ * is always there when it happens). Idempotent; runs on every change.
+ */
+const resolving = new Set();
+export function reconcileNotes() {
+  if (state.role !== 'lead' || !state.ready || !state.log.loaded) return;
+  const fixes = NT.resolveFixes(state.log.triage, state.idx, { at: nowISO() }).filter((p) => !resolving.has(p.id));
+  if (!fixes.length) return;
+  for (const p of fixes) resolving.add(p.id);
+  write({ notes: fixes }).finally(() => { for (const p of fixes) resolving.delete(p.id); });
 }
 
 export { isMine };

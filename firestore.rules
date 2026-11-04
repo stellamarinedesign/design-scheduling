@@ -17,11 +17,20 @@ rules_version = '2';
 //                walk below reaches; never marks anything done (only a lead
 //                does, by any route: decided 2026-11-04), never sends back,
 //                never sets checkedBy/checkedAt, never reassigns (assignee
-//                and createdBy are the lead's to change); may take their own
+//                and createdBy are the lead's to change), never moves a task
+//                (its parentId is the lead's to change), and creates tasks
+//                only for themselves or for nobody yet; may take their own
 //                submission back
 //   manager      (Phase 2) reads only jobs shared with managers; posts
-//                `request` updates on them
-//   contributor  (Phase 2) the Log only: no tasks at all
+//                `request` updates on them; the categories, and the Log
+//   contributor  the Log, and the categories (groups) its notes are filed
+//                under: no jobs or tasks at all
+//
+// THE LOG (`notes`) and PHOTOS (`images`): everyone listed reads and posts.
+// A note is its author's to edit, and the lead's; the lead and designers
+// triage it (link a job, dismiss); only the lead's app marks one Resolved.
+// A photo is a document of its own (no Firebase Storage on the free plan):
+// written once, never changed, deleted by whoever added it or the lead.
 //
 // Phase 2 brings the team. Every refusal above wants proving with a test
 // account before the team relies on it (PLAN, "Verification: Rules").
@@ -120,17 +129,27 @@ service cloud.firestore {
       // Who has a task, and who made it, are the lead's to change: a designer
       // cannot hand their work on, or claim someone else's.
       function noOwnerChange() { return !data().diff(was()).affectedKeys().hasAny(['assignee', 'createdBy']); }
+      // Where a task sits is the lead's to change too: a designer moving their
+      // own task could put it anywhere in the tree.
+      function noMove() { return !data().diff(was()).affectedKeys().hasAny(['parentId']); }
       // Only a lead approves (check -> done) or sends back (check -> fix).
       function noReview() {
         return !(was().get('status', '') == 'check' && data().get('status', '') in ['done', 'fix'])
           && !data().diff(was()).affectedKeys().hasAny(['checkedBy', 'checkedAt']);
       }
 
+      // Contributors and managers read the categories (groups) and no task:
+      // the Log files notes under them, and its picker and paths need the
+      // names. The app's query asks for groups alone, as a rule on a query
+      // requires.
       allow read: if lead() || designer()
-        || (manager() && resource.data.get('sharedEffective', false) == true);
+        || (manager() && resource.data.get('sharedEffective', false) == true)
+        || ((contributor() || manager()) && resource.data.kind == 'group');
 
+      // A designer's new task is theirs or nobody's: handing work to someone
+      // else is the lead's.
       allow create: if lead() || (designer() && data().get('checkedBy', null) == null && noSharingOnCreate() && noDoneOnCreate() && (
-           (kindIs('task') && data().createdBy == email())
+           (kindIs('task') && data().createdBy == email() && data().get('assignee', null) in [null, email()])
         || ((kindIs('step') || kindIs('group')) && ownsParentOf(data()))));
 
       // A group or step must belong to the designer's work both where it was
@@ -138,7 +157,7 @@ service cloud.firestore {
       // moved to the top or into a lead's category, or a step into someone
       // else's job.
       allow update: if lead() || (designer() && noReview() && noNewDone() && noSharingChange() && data().kind == was().kind && (
-           (was().kind == 'task' && isMine(was()) && noOwnerChange())
+           (was().kind == 'task' && isMine(was()) && noOwnerChange() && noMove())
         || (was().kind in ['step', 'group'] && ownsParentOf(was()) && ownsParentOf(data()))));
 
       allow delete: if lead();
@@ -151,7 +170,10 @@ service cloud.firestore {
         allow read: if lead() || designer()
           || (manager() && task().get('sharedEffective', false) == true);
         // Approve and send-back events are the lead's; nobody else may post one.
+        // Photos ride on an update as small thumbnails (the full photo is an
+        // `images` document): a dozen at most keeps it well under 1 MiB.
         allow create: if request.resource.data.by == email()
+          && request.resource.data.get('photos', []).size() <= 12
           && (lead() || !(request.resource.data.get('kind', '') in ['approve', 'sendback']))
           && (lead() || designer()
           || (manager() && request.resource.data.kind == 'request' && task().get('sharedEffective', false) == true));
@@ -167,7 +189,57 @@ service cloud.firestore {
       allow read: if lead() || designer();
     }
 
-    // Everything else - including images (Phase 2) - is closed until a rule
-    // above names it.
+    // ---- the Log --------------------------------------------------------------
+    match /notes/{nid} {
+      function nd() { return request.resource.data; }
+      function nw() { return resource.data; }
+      // Every note has this shape and no other fields.
+      function noteShape() {
+        return nd().keys().hasOnly(['text', 'kind', 'state', 'groupId', 'jobIds', 'links', 'photos', 'by', 'at',
+                                    'updatedAt', 'editedAt', 'actioned', 'dismissed', 'archivedAt', 'lastBy'])
+          && nd().text is string && nd().text.size() <= 20000
+          && nd().kind in ['issue', 'idea', 'reference']
+          && nd().state in ['open', 'actioned', 'resolved', 'dismissed', 'filed', 'archived']
+          && nd().photos is list && nd().photos.size() <= 12
+          && nd().jobIds is list && nd().jobIds.size() <= 20
+          && nd().links is list && nd().links.size() <= 20;
+      }
+      function changed() { return nd().diff(nw()).affectedKeys(); }
+      // The author edits what they wrote; an untriaged note moves between
+      // open and filed with its kind, and that is all the state they touch.
+      function authorEdit() {
+        return nw().by == email()
+          && changed().hasOnly(['text', 'kind', 'state', 'groupId', 'photos', 'editedAt', 'updatedAt', 'lastBy'])
+          && (nd().state == nw().state || (nw().state in ['open', 'filed'] && nd().state in ['open', 'filed']));
+      }
+      // Designers triage: link and unlink jobs, dismiss and reopen.
+      function triage() {
+        return changed().hasOnly(['state', 'jobIds', 'links', 'actioned', 'dismissed', 'updatedAt', 'lastBy'])
+          && (nd().state == nw().state || (nw().kind != 'reference' && nd().state in ['open', 'actioned', 'dismissed']));
+      }
+
+      allow read: if listed();
+      // Posted as yourself, untriaged - or, by the lead or a designer, with a
+      // job linked from the start.
+      allow create: if listed() && noteShape() && nd().by == email()
+        && nd().get('dismissed', null) == null && nd().get('archivedAt', null) == null
+        && ((((nd().kind == 'reference' && nd().state == 'filed') || (nd().kind != 'reference' && nd().state == 'open')) && nd().jobIds.size() == 0)
+          || ((lead() || designer()) && nd().state in ['actioned', 'filed']));
+      allow update: if listed() && noteShape() && nd().by == nw().by
+        && (lead() || authorEdit() || (designer() && triage()));
+      allow delete: if lead() || (listed() && nw().by == email());
+    }
+
+    // ---- photos: one per document, the JPEG as Bytes ---------------------
+    match /images/{iid} {
+      allow read: if listed();
+      allow create: if listed() && request.resource.data.by == email()
+        && request.resource.data.keys().hasOnly(['data', 'type', 'w', 'h', 'size', 'by', 'at'])
+        && request.resource.data.data is bytes && request.resource.data.data.size() <= 950000
+        && request.resource.data.type in ['image/jpeg', 'image/webp', 'image/png'];
+      allow delete: if lead() || (listed() && resource.data.by == email());
+    }
+
+    // Everything else is closed until a rule above names it.
   }
 }
