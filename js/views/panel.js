@@ -79,16 +79,28 @@ export function renderPanel(root, id, { fresh = false } = {}) {
 // the bar along the top
 // ---------------------------------------------------------------------------
 
-function bar(n) {
+function crumbs(n) {
   const chain = n ? T.ancestorChain(state.idx, n.id) : [];
+  return el('nav', { class: 'crumbs', 'aria-label': 'Where it is' },
+    chain.length ? chain.flatMap((a, i) => [i ? el('span', { 'aria-hidden': 'true' }, '›') : null,
+      el('a', { href: routeHref(`/tasks/${a.id}`) }, T.nameOf(a))]) : el('span', {}, n ? 'Not in a category' : ''));
+}
+
+function bar(n) {
+  // On a phone the sheet's bar keeps the status and title in sight while the
+  // rest scrolls (Task panel brief); the path moves into the body.
+  if (isPhone()) {
+    return el('div', { class: 'panel-bar' },
+      iconBtn('back', 'Close', closePanel),
+      n ? pill(n.status, { onClick: (e) => statusMenu(e.currentTarget, n) }) : null,
+      el('span', { class: 'bar-title', 'aria-hidden': 'true' }, n?.title ?? ''),
+      n ? iconBtn('more', 'More actions', (e) => moreMenu(e.currentTarget, n)) : null);
+  }
   return el('div', { class: 'panel-bar' },
-    isPhone() ? iconBtn('back', 'Close', closePanel) : null,
-    el('nav', { class: 'crumbs', 'aria-label': 'Where it is' },
-      chain.length ? chain.flatMap((a, i) => [i ? el('span', { 'aria-hidden': 'true' }, '›') : null,
-        el('a', { href: routeHref(`/tasks/${a.id}`) }, T.nameOf(a))]) : el('span', {}, n ? 'Not in a category' : '')),
+    crumbs(n),
     n ? btn('Open as page', () => go(`/tasks/${n.id}`), { cls: 'ghost sm', title: 'Its tasks and sections as tiles or a list' }) : null,
     n ? iconBtn('more', 'More actions', (e) => moreMenu(e.currentTarget, n)) : null,
-    isPhone() ? null : iconBtn('close', 'Close (Esc)', closePanel));
+    iconBtn('close', 'Close (Esc)', closePanel));
 }
 
 function moreMenu(anchor, n) {
@@ -111,6 +123,7 @@ function moreMenu(anchor, n) {
 
 function top(n) {
   const wrap = el('div', { class: 'panel-top' });
+  if (isPhone()) wrap.append(el('div', { class: 'row' }, crumbs(n), el('span', { class: 'sp' }), btn('Open as page', () => go(`/tasks/${n.id}`), { cls: 'ghost sm' })));
   const title = el('textarea', { class: 'title-edit', rows: '1', 'aria-label': 'Title', spellcheck: 'true', maxlength: '300' });
   title.value = n.title;
   const fit = () => { title.style.height = 'auto'; title.style.height = `${Math.min(title.scrollHeight, 3 * 1.3 * 19 + 8)}px`; };

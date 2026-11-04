@@ -57,10 +57,11 @@ export function renderSidebar(root) {
   const masters = T.childrenOf(idx, null).filter(T.isGroupLike);
   for (const m of masters) {
     const cats = T.childrenOf(idx, m.id).filter(T.isGroupLike);
-    if (!cats.length) { root.append(item(m)); continue; }
+    // A master category is a heading, whether or not it has categories in
+    // it yet; with none, its own open count sits on the heading.
     root.append(el('a', {
       class: 'si master-link', href: routeHref(`/tasks/${m.id}`), 'aria-current': m.id === current ? 'page' : null,
-    }, el('span', { class: 'nm' }, T.nameOf(m))));
+    }, el('span', { class: 'nm' }, T.nameOf(m)), cats.length ? null : el('span', { class: 'n' }, String(T.openJobCount(idx, m.id) || ''))));
     for (const c of cats) { root.append(item(c)); root.append(...subs(c, 1)); }
   }
   const loose = T.childrenOf(idx, null).filter((n) => n.kind === T.KIND.task);

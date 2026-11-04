@@ -51,7 +51,8 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
 [data-theme="workshop"] .search-field { border-color: rgba(255, 255, 255, .3); }
 .search-field:hover { color: var(--header-text); }
 .search-field kbd { margin-left: auto; font: inherit; opacity: .8; }
-.menu-btn, .search-ib { display: none; }
+/* .hd-scoped so the generic .ib display rule below cannot override it. */
+.hd .menu-btn, .hd .search-ib { display: none; }
 .mode-note {
   flex: none; padding: 4px var(--sp-4); background: var(--bg); color: var(--text3); font-size: var(--fs-sm);
   border-bottom: 1px solid var(--border);
@@ -101,7 +102,7 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
 .lbl { font-size: var(--fs-micro); font-weight: 700; letter-spacing: var(--label-spacing); text-transform: uppercase; color: var(--text3); }
 .row { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
 .crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: var(--fs-sm); color: var(--text3); min-width: 0; }
-.crumbs a { color: var(--text3); text-decoration: none; border-radius: 4px; }
+.crumbs a { color: var(--text3); text-decoration: none; border-radius: var(--radius); }
 .crumbs a:hover { color: var(--text); text-decoration: underline; }
 
 /* ── Pills, dots, avatars, bars ──────────────────────────────────── */
@@ -110,7 +111,7 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
   font-size: var(--fs-sm); white-space: nowrap; flex: none; border: 0; font-weight: 500;
   transition: background-color var(--dur-fast) ease, color var(--dur-fast) ease, transform var(--dur-fast) var(--ease-out);
 }
-.pill:is(button) { cursor: pointer; }
+.pill:is(button) { cursor: pointer; min-height: 24px; }
 .pill:is(button):hover { filter: brightness(1.15); }
 .st-todo { background: var(--st-todo-bg); color: var(--st-todo); }
 .st-in_progress { background: var(--st-progress-bg); color: var(--st-progress-text); }
@@ -160,7 +161,8 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
 .sec { display: flex; flex-direction: column; gap: var(--sp-3); }
 .sec-head { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; min-height: 36px; }
 .view-head { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
-.view-head .h1 { margin-right: var(--sp-1); }
+.view-head .h1 { margin-right: var(--sp-1); min-width: 0; overflow-wrap: anywhere; }
+.h1.with-dot .dot { margin: 0 10px 0.15em 0; vertical-align: middle; }
 .filters { display: flex; gap: 6px; flex-wrap: wrap; }
 .fp {
   height: 30px; padding: 0 12px; border-radius: var(--radius-pill); border: 1px solid var(--border); background: transparent;
@@ -273,6 +275,7 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
 }
 .panel-bar { flex: none; display: flex; align-items: center; gap: 4px; padding: 8px 8px 8px 20px; border-bottom: 1px solid var(--border); min-height: 52px; }
 .panel-bar .crumbs { flex: 1; }
+.bar-title { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .panel-body { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: var(--sp-4) 22px var(--sp-6); display: flex; flex-direction: column; gap: 22px; }
 .panel-top { display: flex; flex-direction: column; gap: var(--sp-3); }
 .title-edit {
@@ -344,7 +347,7 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
 }
 .srow:first-child { border-top: 0; }
 .tick {
-  width: 28px; height: 28px; display: grid; place-items: center; border: 0; background: transparent; padding: 0; border-radius: 6px; color: var(--surface);
+  width: 28px; height: 28px; display: grid; place-items: center; border: 0; background: transparent; padding: 0; border-radius: var(--radius); color: var(--surface);
 }
 .tick i { width: 20px; height: 20px; border-radius: 5px; border: 1.5px solid var(--border2); display: grid; place-items: center; }
 .tick.doing i { border-color: var(--st-progress); background: var(--st-progress-bg); }
@@ -395,7 +398,7 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
 }
 @starting-style { .menu { opacity: 0; transform: scale(.97); } }
 .menu-item {
-  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 36px; padding: 6px 10px; border: 0; border-radius: 6px;
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 36px; padding: 6px 10px; border: 0; border-radius: var(--radius);
   background: transparent; color: var(--text); font-size: 14px; text-align: left;
 }
 .menu-item:hover, .menu-item:focus-visible { background: var(--bg); outline: none; }
@@ -446,7 +449,7 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); transition-duration: var(--dur); }
 .toast.warn { background: var(--toast-warn-bg); }
 .toast-msg { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.toast-act { flex: none; height: 32px; padding: 0 12px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, .5); background: transparent; color: inherit; font-weight: 600; }
+.toast-act { flex: none; height: 32px; padding: 0 12px; border-radius: var(--radius); border: 1px solid rgba(255, 255, 255, .5); background: transparent; color: inherit; font-weight: 600; }
 .toast-act:hover { background: rgba(255, 255, 255, .12); }
 
 /* ── Import ──────────────────────────────────────────────────────── */
@@ -510,10 +513,10 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
 }
 
 @media (max-width: 1099px) {
-  .menu-btn { display: inline-grid; }
+  .hd .menu-btn { display: inline-grid; }
   .hd-title { display: none; }
   .search-field { display: none; }
-  .search-ib { display: inline-grid; }
+  .hd .search-ib { display: inline-grid; }
   .tabs { margin-left: 0; }
   .side {
     position: fixed; top: 0; left: 0; bottom: 0; z-index: 60; width: 290px; box-shadow: var(--shadow-panel);
@@ -543,7 +546,9 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
   .btn.sm { height: 36px; }
   .fp { height: 36px; }
   .ib { width: 44px; height: 44px; }
-  .tile-top .ib { width: 36px; height: 36px; }
+  .tile-top .ib { width: 44px; height: 44px; margin: -8px -10px -8px 0; }
+  .pill:is(button) { min-height: 30px; padding: 0 12px; }
+  .srow-end .ib, .fold .ib { width: 44px; height: 44px; }
   .seg button { height: 34px; }
   .input, .textarea, .sel, .pv-input, .title-edit, .search-box .input { font-size: 16px; }   /* The 16px Input Rule: iOS never zooms */
   .input, .pv-input { height: 44px; }
@@ -574,7 +579,7 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
   }
   .tabbar a {
     flex: 1; min-height: 56px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-    color: var(--header-muted); text-decoration: none; font-size: 12px; font-weight: 600;
+    color: var(--header-muted); text-decoration: none; font-size: var(--fs-sm); font-weight: 600;
   }
   .tabbar a[aria-current="page"] { color: var(--header-text); box-shadow: inset 0 3px 0 var(--tab-active); }
   .fab {

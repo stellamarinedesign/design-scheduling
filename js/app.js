@@ -118,8 +118,14 @@ function drawChrome() {
   document.title = `${title} · Design Scheduling`;
 }
 
+/** On a phone the panel is a full-screen sheet: nothing behind it may take focus. */
+function setBehindInert(on) {
+  for (const n of [view, side, document.querySelector('.tabbar'), $('fab'), document.querySelector('.hd')]) if (n) n.inert = on;
+}
+
 function drawPanel(meta = {}) {
   const id = state.openId;
+  setBehindInert(Boolean(id) && window.matchMedia('(max-width: 699px)').matches);
   if (!id) { panel.hidden = true; panel.textContent = ''; lastOpen = null; return; }
   // A field being edited is never clobbered by the echo of a write (yours or
   // another device's); the panel redraws once the field lets go.
@@ -166,8 +172,17 @@ async function start() {
     return;
   }
   const note = $('modeNote');
-  note.hidden = state.mode !== 'local';
-  note.textContent = Store.reason;
+  // The strip under the header says where changes go: this browser only
+  // (local mode), or - with Firebase - that the connection is down and
+  // changes are held until it is back (Firestore queues them).
+  const sayMode = () => {
+    const offline = state.mode !== 'local' && !navigator.onLine;
+    note.hidden = state.mode !== 'local' && !offline;
+    note.textContent = offline ? 'Offline. Changes are kept on this device and sent when the connection is back.' : Store.reason;
+  };
+  sayMode();
+  window.addEventListener('online', sayMode);
+  window.addEventListener('offline', sayMode);
 
   initRouter(() => { closeMenu(); drawAll(); });
   subscribe((meta) => {

@@ -22,7 +22,7 @@ import { ageDays } from '../dates.js';
 import { tile, row, band, enableDrag, statusMenu, taskMenu, backlogDays } from './tile.js';
 import { go, routeHref, openTask } from '../router.js';
 import { promptDialog } from '../dialog.js';
-import { welcome } from './home.js';
+import { welcome, errorState } from './home.js';
 import { newMasterCategory } from './sidebar.js';
 
 const SORTS = {
@@ -44,6 +44,7 @@ export function viewTitle(id) {
 export function renderTasks(root, id) {
   const inner = el('div', { class: 'view-inner' });
   root.append(inner);
+  if (state.error && !state.ready) { inner.append(errorState()); return; }
   if (!state.ready) { inner.append(el('div', { class: 'grid', 'aria-busy': 'true', 'aria-label': 'Loading' }, [1, 2, 3, 4].map(() => el('div', { class: 'skel' })))); return; }
   if (!id) return overview(inner);
   if (id === 'top') return groupPage(inner, null);
@@ -151,6 +152,21 @@ function switches(n) {
   const sort = sortOf(n);
   const seg = (label, pairs) => el('div', { class: 'seg', role: 'group', 'aria-label': label }, pairs.map(([text, on, fn, ic]) =>
     el('button', { type: 'button', 'aria-pressed': String(on), onclick: fn, title: text }, ic ? icon(ic, 14) : null, el('span', {}, text))));
+  const set = (key, v) => { prefs.set(`${key}.${pageKey(n)}`, v); rerender(); };
+  // A phone has room for one row of controls: the three switches fold into
+  // one View menu with the same choices.
+  if (isPhone()) {
+    return [btn('View', (e) => menu(e.currentTarget, [
+      { heading: 'Sort' },
+      ...Object.entries(SORTS).map(([k, v]) => ({ label: v.label, checked: k === sort, onSelect: () => set('sort', k) })),
+      ...(sort === 'manual' ? [{ heading: 'Status' },
+        { label: 'By status', checked: bands, onSelect: () => set('bands', true) },
+        { label: 'Side by side', checked: !bands, onSelect: () => set('bands', false) }] : []),
+      { heading: 'Show as' },
+      { label: 'Tiles', checked: mode === 'tiles', onSelect: () => set('view', 'tiles') },
+      { label: 'List', checked: mode === 'list', onSelect: () => set('view', 'list') },
+    ], { label: 'View' }), { cls: 'sm', ic: 'sort' })];
+  }
   return [
     btn(`Sort: ${SORTS[sort].label}`, (e) => menu(e.currentTarget, Object.entries(SORTS).map(([k, v]) => ({
       label: v.label, checked: k === sort, onSelect: () => { prefs.set(`sort.${pageKey(n)}`, k); rerender(); },
@@ -230,8 +246,8 @@ function groupPage(inner, g) {
   inner.append(el('div', { class: 'sec', style: { gap: '10px' } },
     crumbs(g),
     el('div', { class: 'view-head' },
-      g ? dot(colour, true) : null,
-      el('h1', { class: 'h1' }, g ? T.nameOf(g) : 'Not in a category'),
+      // The dot rides inside the heading, so a long name wraps with it rather than leaving it alone on a line.
+      el('h1', { class: 'h1 with-dot' }, g ? dot(colour, true) : null, g ? T.nameOf(g) : 'Not in a category'),
       kindWord ? el('span', { class: 'grp-kind' }, kindWord) : null,
       el('span', { class: 'meta' }, `${open} open`),
       el('span', { class: 'sp' }),

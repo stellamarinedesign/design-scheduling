@@ -70,6 +70,7 @@ const columns = (grid) => getComputedStyle(grid).gridTemplateColumns.split(' ').
 export function renderHome(root) {
   const inner = el('div', { class: 'view-inner' });
   root.append(inner);
+  inner.append(el('h1', { class: 'sr-only' }, 'Home'));
   if (state.error && !state.ready) { inner.append(errorState()); return; }
   if (!state.ready) { inner.append(loading()); return; }
   if (!state.idx.nodes.length) { inner.append(welcome()); return; }
@@ -185,7 +186,7 @@ function loading() {
   return el('section', { class: 'sec' }, el('h2', { class: 'h2' }, 'My work'), grid);
 }
 
-function errorState() {
+export function errorState() {
   return el('div', { class: 'state-msg', role: 'alert' },
     el('h1', { class: 'h1' }, 'Your tasks did not load'),
     el('p', {}, String(state.error?.message ?? state.error)),
