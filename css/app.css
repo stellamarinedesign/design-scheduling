@@ -367,6 +367,11 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
 .callout-body { color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
 .callout .acts { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
 .psec { display: flex; flex-direction: column; gap: var(--sp-2); }
+/* The tasks and steps sit on the page's ground, not the panel's grey: grey tiles on a grey
+   panel ran together (owner, 2026-11-04). The Workshop theme's ground is the panel's white,
+   so it takes the band colour instead. */
+.psec.kids { background: var(--ground); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--sp-3); }
+[data-theme="workshop"] .psec.kids { background: var(--bg); }
 .psec-head { display: flex; align-items: center; gap: var(--sp-2); min-height: 30px; }
 .brief { color: var(--text2); max-width: 70ch; overflow-wrap: anywhere; display: flex; flex-direction: column; gap: 6px; }
 .brief ul { padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
@@ -673,6 +678,9 @@ input::-ms-reveal { display: none; }
   .pill:is(button) { min-height: 30px; padding: 0 12px; }
   .srow-end .ib, .fold .ib { width: 44px; height: 44px; }
   .seg button { height: 34px; }
+  /* The ground inset costs width, so on a phone the panel's Tiles/List switch shows its icons
+     only and the heading keeps to one line. The words stay for screen readers. */
+  .psec.kids .seg span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .input, .textarea, .sel, .pv-input, .title-edit, .search-box .input { font-size: 16px; }   /* The 16px Input Rule: iOS never zooms */
   .input, .pv-input { height: 44px; }
   .tick { width: 44px; height: 44px; margin: -8px; }   /* a 44px target, drawn at 28 */
