@@ -658,7 +658,7 @@ export async function run() {
 
   // -------------------------------------------------------------------------
   group = 'convert';
-  test('a job becomes a category: details stashed, subtasks become its jobs', () => {
+  test('a job becomes a category: details stashed, steps and subtasks become its jobs', () => {
     const nodes = apply(sampleNodes(), [{ id: 'j1', brief: 'The brief', revision: 'R2', assignee: BY }]);
     const r = C.toCategory(T.buildIndex(nodes), 'j1', { by: BY, at: AT, colour: 7 });
     ok(!r.error, r.error);
@@ -669,9 +669,9 @@ export async function run() {
     expect(p.jobStash.status, 'in_progress');
     expect(p.jobStash.brief, 'The brief');
     expect(p.status, null, 'hidden while it is a category');
-    expect(r.patches.find((x) => x.id === 't1').parentId, 'j1', 'the subtask under a step is lifted out to the category');
     const idx = T.buildIndex(apply(nodes, r.patches));
-    ok(T.isJob(idx, idx.byId.get('t1')), 't1 is now a job');
+    ok(T.isJob(idx, idx.byId.get('s2')), 'the step "3D model" is now a job');
+    expect(idx.byId.get('t1').parentId, 's2', 'the subtask under it stays inside that new job');
     ok(!T.isSection(idx, idx.byId.get('sec')), 'its section is now a sub-category');
     expect(r.updates[0].kind, 'convert');
     expect(S.eventLabel(r.updates[0]), 'Turned into a category');
@@ -712,8 +712,30 @@ export async function run() {
     expect([after.kind, after.title, after.status, after.brief, after.due, after.priority, after.assignee],
       [was.kind, was.title, was.status, was.brief, was.due, was.priority, was.assignee]);
     expect(after.jobStash, null);
-    const steps = T.childrenOf(T.buildIndex(apply(mid, b.patches)), 'j1').filter((c) => c.kind === 'step').map((c) => c.id);
-    expect(steps, ['s1', 's2', 's3'], 'its steps were kept, hidden, and are back');
+    const kids = T.childrenOf(T.buildIndex(apply(mid, b.patches)), 'j1');
+    expect(kids.filter((c) => c.kind === 'task' && ['s1', 's2'].includes(c.id)).map((c) => c.id), ['s1', 's2'], 'the step-jobs are subtasks now, not steps again');
+    expect(kids.filter((c) => c.kind === 'step').map((c) => c.id), ['s3'], 'the N/a step was kept hidden and is a step again');
+  });
+  test('converted steps: Done → Done, Doing → In progress, To do → To do, in their order', () => {
+    const nodes = apply(sampleNodes(), [{ id: 's1', state: 'doing' }, { id: 's2b', state: 'doing' }]);
+    const doneStep = { id: 's0', kind: 'step', parentId: 'j1', order: 512, label: 'Brief agreed', state: 'done' };
+    const r = C.toCategory(T.buildIndex([...nodes, doneStep]), 'j1', { by: BY, at: AT, colour: 2 });
+    const byId = Object.fromEntries(r.patches.map((x) => [x.id, x]));
+    expect([byId.s0.kind, byId.s0.status, byId.s0.title], ['task', 'done', 'Brief agreed']);
+    expect([byId.s1.kind, byId.s1.status], ['task', 'in_progress']);
+    expect([byId.s2.kind, byId.s2.status], ['task', 'todo']);
+    ok(byId.s0.doneAt, 'a done step-job has a done time');
+    ok(!byId.s3, 'the N/a step is not a job');
+    ok(!byId.s2a && !byId.s2b, 'sub-steps are left as steps');
+    const idx = T.buildIndex(apply([...nodes, doneStep], r.patches));
+    expect(T.childrenOf(idx, 'j1').filter((c) => c.kind === 'task').map((c) => c.id), ['s0', 's1', 's2'], 'same order');
+    expect(T.childrenOf(idx, 's2').filter((c) => c.kind === 'step').map((c) => c.state), ['done', 'doing'], 'the new job keeps its sub-steps as steps');
+    ok(r.updates.some((u) => u.taskId === 's1' && u.kind === 'convert'), 'each step-job notes where it came from');
+  });
+  test('a subtask under an N/a step is lifted out to the category, not hidden', () => {
+    const nodes = [...sampleNodes(), { id: 'tna', kind: 'task', parentId: 's3', order: 1, title: 'Under N/a', status: 'todo' }];
+    const r = C.toCategory(T.buildIndex(nodes), 'j1', { by: BY, at: AT });
+    expect(r.patches.find((x) => x.id === 'tna').parentId, 'j1');
   });
 
   // -------------------------------------------------------------------------

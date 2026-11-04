@@ -7,11 +7,18 @@
 //
 // JOB → CATEGORY: `kind` becomes 'group' and it takes the next category
 // colour. Its job details (status, brief, assignee, due, revision, folders,
-// waiting, check and done records…) are KEPT BUT HIDDEN in `jobStash`, and
-// its steps stay as hidden children, so turning it back restores the job as
-// it was. Its subtasks become jobs in the new category (those tucked under a
-// step are lifted out to it), and its sections become sub-categories. Tasks
-// that waited on it stop waiting on it: a category cannot hold anything up.
+// waiting, check and done records…) are KEPT BUT HIDDEN in `jobStash`, so
+// turning it back restores the job as it was. Its subtasks become jobs in the
+// new category, and its sections become sub-categories. Tasks that waited on
+// it stop waiting on it: a category cannot hold anything up.
+//
+// ITS STEPS BECOME JOBS (owner's amendment, 2026-11-04): each top-level step
+// becomes its own job in the new category, in the same place in the order -
+// Done → Done, Doing → In progress, To do → To do - and its sub-steps stay
+// steps inside that job. An N/a step is not a job; it stays hidden with the
+// stash. A subtask under an N/a step is lifted out to the category, so
+// nothing real is hidden. Turned back into a job, the step-jobs become
+// subtasks like any other job inside it; they do not go back to steps.
 //
 // CATEGORY → JOB: `kind` becomes 'task'; the stash restores the job it used
 // to be, or it starts as To do. Its jobs become subtasks and its
@@ -66,8 +73,14 @@ export function toCategory(idx, id, { by, at, colour = null }) {
   for (const k of JOB_FIELDS) patch[k] = null;
   const patches = [patch];
 
-  // Subtasks tucked under a step would be hidden with the steps: lift them
-  // out, so every subtask becomes a job in the new category.
+  const updates = [];
+  // Its top-level steps become jobs, where they are; N/a steps stay hidden.
+  for (const c of childrenOf(idx, id)) {
+    if (c.kind !== KIND.step || c.state === 'na') continue;
+    patches.push(stepToJob(c, { by, at, assignee: n.assignee ?? by }));
+    updates.push({ taskId: c.id, at, by, kind: 'convert', from: KIND.step, to: KIND.task, text: `Was a step of ${n.title}` });
+  }
+  // A subtask under an N/a step would be hidden with it: lift it out to the category.
   let order = newOrder(idx, id, 'end');
   const lift = (pid) => {
     for (const c of childrenOf(idx, pid)) {
@@ -75,14 +88,32 @@ export function toCategory(idx, id, { by, at, colour = null }) {
       else if (c.kind === KIND.step) lift(c.id);
     }
   };
-  for (const c of childrenOf(idx, id)) if (c.kind === KIND.step) lift(c.id);
+  for (const c of childrenOf(idx, id)) if (c.kind === KIND.step && c.state === 'na') lift(c.id);
 
   // It no longer holds anything up.
   const freed = removeBlockers(idx, [id], { by, at });
   patches.push(...freed.patches);
   return {
     patches,
-    updates: [{ taskId: id, at, by, kind: 'convert', from: KIND.task, to: KIND.group, text: 'Turned into a category' }, ...freed.updates],
+    updates: [{ taskId: id, at, by, kind: 'convert', from: KIND.task, to: KIND.group, text: 'Turned into a category' }, ...updates, ...freed.updates],
+  };
+}
+
+/** A step's state, as a job's status. */
+export const STEP_TO_STATUS = { done: 'done', doing: 'in_progress', todo: 'todo' };
+
+/** The patch that makes a step a job (or task) in its own place, with every task field written. */
+function stepToJob(step, { by, at, assignee }) {
+  const status = STEP_TO_STATUS[step.state ?? 'todo'] ?? 'todo';
+  return {
+    id: step.id, kind: KIND.task, title: step.label ?? '',
+    brief: '', status, waiting: null, priority: 'normal',
+    assignee, createdBy: step.createdBy ?? by,
+    updatedAt: at, lastActivityAt: at,
+    due: null, revision: null, folders: [],
+    checkedBy: null, checkedAt: null, doneAt: status === 'done' ? at : null,
+    fixNote: null, cancelled: null, submittedBy: null, submittedAt: null,
+    homeOrder: null, backlogIgnored: false,
   };
 }
 
