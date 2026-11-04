@@ -1,0 +1,11 @@
+{
+  "name": "Design Scheduling",
+  "short_name": "Design",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#0E0A0A",
+  "theme_color": "#282827",
+  "icons": [
+    { "src": "images/brand/stella-icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

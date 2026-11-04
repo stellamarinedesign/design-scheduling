@@ -1,0 +1,258 @@
+// store.js — persistence: the task tree, its updates, and the access list.
+//
+// TWO BACKENDS, ONE INTERFACE (the board's pattern).
+//
+// Firestore is the destination, but the app has to be buildable and usable
+// before the Firebase project exists. So with no config the store keeps
+// everything in localStorage, and the UI says plainly which mode it is in. An
+// app that silently stops persisting is worse than one that says it is local.
+//
+// COLLECTION NAMES COME FROM `COL` AND NOWHERE ELSE. At hub time (PLAN, Phase
+// 4) this app moves into a shared project; a prefix or a named database is
+// then a one-line change here.
+//
+// THE CLIENT MODEL: one live query on `tasks where archivedAt == null`, and
+// every view derived from it in memory (as TileDo held data["tasks"]). That is
+// why every node is written with `archivedAt: null` explicitly — Firestore's
+// `== null` matches a stored null, never a missing field. Updates live under
+// each task (tasks/{id}/updates/{id}) and are read when its panel opens.
+//
+// THE ECHO OF YOUR OWN WRITES. Firestore applies a write to the local cache at
+// once and the live query fires straight away with `hasPendingWrites`; the
+// callback passes that on as `fromSelf`, so a view can tell "I just did this"
+// from "someone else did" (the panel uses it to avoid clobbering a field
+// being edited, and Phase 2 uses it for "Updated by Alex just now").
+
+import { getFirebase, failureReason, isConfigured } from './firebase.js';
+
+export const COL = {
+  settings: 'settings',     // settings/access: who is what (the rules read it)
+  people: 'people',         // people/{email}: display name, initials
+  tasks: 'tasks',           // every node: group | product | task | step
+  updates: 'updates',       // tasks/{id}/updates/{id}: the timeline
+  images: 'images',         // Phase 2: photos as Bytes, one per document
+};
+
+const LS = 'stella.design.';
+const lsGet = (k, fallback) => {
+  try { const v = localStorage.getItem(LS + k); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
+};
+const lsSet = (k, v) => {
+  try { localStorage.setItem(LS + k, JSON.stringify(v)); return true; }
+  catch (e) { console.error('[store] local save failed', e); return false; }
+};
+
+/** Firestore's ceiling on writes in one batch, less some room. */
+export const BATCH_SIZE = 450;
+
+export const chunk = (list, size) => {
+  const out = [];
+  for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
+  return out;
+};
+
+/** A Firestore-style id: 20 letters and digits. */
+export function newId() {
+  const a = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  return Array.from(crypto.getRandomValues(new Uint8Array(20)), (b) => a[b % a.length]).join('');
+}
+
+const strip = ({ id, ...rest }) => rest;
+
+export const Store = {
+  mode: 'local',          // 'firestore' | 'local'
+  reason: '',             // why local, when local
+  _db: null,
+  _fs: null,
+  _watchers: new Set(),
+  _local: null,           // local mode: every node, archived ones included
+  newId,
+
+  async init() {
+    const fb = await getFirebase();
+    if (!fb) {
+      this.mode = 'local';
+      this.reason = isConfigured()
+        ? `Firebase unreachable (${failureReason()}). Saved on this device only.`
+        : 'Local mode. Saved on this device only.';
+      this._local = lsGet('tasks', []);
+      // Another tab of the app on this machine: pick its writes up.
+      window.addEventListener('storage', (e) => {
+        if (e.key === `${LS}tasks`) { this._local = lsGet('tasks', []); this._notify(false); }
+        if (e.key === `${LS}updates`) this._notifyUpdates();
+      });
+      return this.mode;
+    }
+    this._db = fb.db;
+    this._fs = fb.fs;
+    this.mode = 'firestore';
+    this.reason = '';
+    return this.mode;
+  },
+
+  // ---- the tree ------------------------------------------------------------
+
+  /**
+   * Every live node, now and on every change.
+   * @param {(nodes: object[], meta: {fromSelf: boolean}) => void} cb
+   * @param {(e: Error) => void} [onError]
+   * @returns {() => void} stop watching
+   */
+  watchTasks(cb, onError) {
+    if (this.mode === 'local') {
+      const w = { cb };
+      this._watchers.add(w);
+      queueMicrotask(() => cb(this._live(), { fromSelf: false }));
+      return () => this._watchers.delete(w);
+    }
+    const { collection, query, where, onSnapshot } = this._fs;
+    return onSnapshot(
+      query(collection(this._db, COL.tasks), where('archivedAt', '==', null)),
+      (snap) => cb(snap.docs.map((d) => ({ ...d.data(), id: d.id })), { fromSelf: snap.metadata.hasPendingWrites }),
+      (e) => onError?.(e),
+    );
+  },
+
+  _live() { return (this._local ?? []).filter((n) => !n.archivedAt); },
+
+  _notify(fromSelf) {
+    const nodes = this._live();
+    for (const w of this._watchers) w.cb(nodes, { fromSelf });
+  },
+
+  /** The archive: every archived node. Read on demand, not watched. */
+  async loadArchived() {
+    if (this.mode === 'local') return (this._local ?? []).filter((n) => n.archivedAt);
+    const { collection, query, where, getDocs } = this._fs;
+    const snap = await getDocs(query(collection(this._db, COL.tasks), where('archivedAt', '!=', null)));
+    return snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+  },
+
+  /**
+   * One change, written together: whole nodes (`set`), field changes
+   * (`patch`, each {id, ...fields}), deletions (`remove`, ids), and timeline
+   * entries (`updates`, each {taskId, ...}). Local mode applies it at once;
+   * Firestore applies it to its cache at once and to the server in batches
+   * of BATCH_SIZE (one atomic batch for any ordinary change).
+   */
+  async commit({ set = [], patch = [], remove = [], updates = [] } = {}) {
+    if (!set.length && !patch.length && !remove.length && !updates.length) return;
+    if (this.mode === 'local') {
+      const byId = new Map((this._local ?? []).map((n) => [n.id, n]));
+      for (const n of set) byId.set(n.id, { ...n });
+      for (const p of patch) { const cur = byId.get(p.id); if (cur) byId.set(p.id, { ...cur, ...p }); }
+      for (const id of remove) byId.delete(id);
+      const next = [...byId.values()];
+      if (!lsSet('tasks', next)) throw new Error('This browser would not save it: its local storage is full or switched off.');
+      this._local = next;
+      if (updates.length) {
+        const all = lsGet('updates', {});
+        for (const u of updates) {
+          const list = all[u.taskId] ?? (all[u.taskId] = []);
+          list.push({ ...u, id: newId() });
+        }
+        for (const id of remove) delete all[id];
+        lsSet('updates', all);
+      }
+      this._notify(true);
+      if (updates.length) this._notifyUpdates();
+      return;
+    }
+    const { doc, collection, writeBatch } = this._fs;
+    const ops = [
+      ...set.map((n) => (b) => b.set(doc(this._db, COL.tasks, n.id), strip(n))),
+      ...patch.map((p) => (b) => b.update(doc(this._db, COL.tasks, p.id), strip(p))),
+      ...remove.map((id) => (b) => b.delete(doc(this._db, COL.tasks, id))),
+      ...updates.map((u) => (b) => b.set(doc(collection(this._db, COL.tasks, u.taskId, COL.updates)), u)),
+    ];
+    for (const part of chunk(ops, BATCH_SIZE)) {
+      const b = writeBatch(this._db);
+      for (const op of part) op(b);
+      await b.commit();
+    }
+  },
+
+  // ---- updates (the timeline) ---------------------------------------------
+
+  _updWatchers: new Set(),
+  _notifyUpdates() { for (const w of this._updWatchers) w(); },
+
+  /**
+   * A task's timeline, newest first, live.
+   * @returns {() => void} stop watching
+   */
+  watchUpdates(taskId, limitTo, cb) {
+    if (this.mode === 'local') {
+      const send = () => {
+        const list = [...(lsGet('updates', {})[taskId] ?? [])].sort((a, b) => String(b.at).localeCompare(String(a.at)));
+        cb(list.slice(0, limitTo), list.length > limitTo);
+      };
+      this._updWatchers.add(send);
+      queueMicrotask(send);
+      return () => this._updWatchers.delete(send);
+    }
+    const { collection, query, orderBy, limit, onSnapshot } = this._fs;
+    return onSnapshot(
+      query(collection(this._db, COL.tasks, taskId, COL.updates), orderBy('at', 'desc'), limit(limitTo + 1)),
+      (snap) => {
+        const list = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+        cb(list.slice(0, limitTo), list.length > limitTo);
+      },
+      (e) => console.warn('[updates]', e.message),
+    );
+  },
+
+  /** Does a task have any updates? ("Make it a step" is only for one with none.) */
+  async hasUpdates(taskId) {
+    if (this.mode === 'local') return Boolean(lsGet('updates', {})[taskId]?.length);
+    const { collection, query, limit, getDocs } = this._fs;
+    const snap = await getDocs(query(collection(this._db, COL.tasks, taskId, COL.updates), limit(1)));
+    return !snap.empty;
+  },
+
+  // ---- access --------------------------------------------------------------
+
+  /** settings/access. Unreadable fails closed: empty lists promote nobody. */
+  async loadAccess() {
+    if (this.mode === 'local') return { leads: ['local'], designers: [], contributors: [], managers: [], masters: [] };
+    try {
+      const { doc, getDoc } = this._fs;
+      const snap = await getDoc(doc(this._db, COL.settings, 'access'));
+      // Missing means a brand-new project: the first person in may claim it.
+      this.accessMissing = !snap.exists();
+      return snap.exists() ? snap.data() : {};
+    } catch (e) {
+      // Unreadable is not missing: an unlisted account cannot read an
+      // existing document, and must not be offered the claim.
+      this.accessMissing = false;
+      console.error('[access]', e.message);
+      return {};
+    }
+  },
+
+  async saveAccess(a) {
+    if (this.mode === 'local') throw new Error('Local mode has no accounts.');
+    const { doc, setDoc } = this._fs;
+    await setDoc(doc(this._db, COL.settings, 'access'), {
+      leads: a.leads ?? [], designers: a.designers ?? [], contributors: a.contributors ?? [],
+      managers: a.managers ?? [], masters: a.masters ?? [],
+    });
+  },
+
+  // ---- local mode housekeeping --------------------------------------------
+
+  /** Everything this device holds, as one JSON object (Settings → Back up). */
+  exportLocal() {
+    return { exportedAt: new Date().toISOString(), tasks: lsGet('tasks', []), updates: lsGet('updates', {}) };
+  },
+
+  /** Replace this device's local data. */
+  replaceLocal({ tasks = [], updates = {} }) {
+    if (this.mode !== 'local') throw new Error('Only in local mode.');
+    lsSet('tasks', tasks);
+    lsSet('updates', updates);
+    this._local = tasks;
+    this._notify(true);
+    this._notifyUpdates();
+  },
+};

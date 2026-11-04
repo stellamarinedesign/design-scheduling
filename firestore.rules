@@ -1,0 +1,128 @@
+rules_version = '2';
+
+// Firestore security rules for Design Scheduling. The canonical copy: deploy
+// from this folder with `firebase deploy --only firestore:rules`. No
+// addresses live here: who is what is the settings/access document, which
+// these rules read. Modelled on the production board's rules.
+//
+// THE MODEL. An account counts only if a master listed it. Every read needs a
+// LISTED account, so a Firebase user nobody listed reads nothing - which is
+// what makes it safe for the app to create users. The rules are the
+// enforcement; hiding controls in the UI is tidiness.
+//
+//   lead         everything
+//   designer     reads all tasks (paths and blocked-by chips need them);
+//                creates their own; edits what they created or are assigned;
+//                never approves or sends back, never sets checkedBy/checkedAt
+//   manager      (Phase 2) reads only jobs shared with managers; posts
+//                `request` updates on them
+//   contributor  (Phase 2) the Log only: no tasks at all
+//
+// Phase 1 is the lead alone. The designer and manager paths are written now so
+// the rules exist before the accounts do; "harden the rules" is a Phase 2 step
+// (PLAN), with test accounts proving each refusal.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+
+    // The one document that says who is what. Read once per request by the
+    // rules (a get() costs one read, cached within the request). Missing, it
+    // fails closed: nobody is anything.
+    function accessExists() { return exists(/databases/$(database)/documents/settings/access); }
+    function access() { return get(/databases/$(database)/documents/settings/access).data; }
+    function email() { return request.auth.token.email.lower(); }
+    function onList(name) { return accessExists() && email() in access().get(name, []); }
+
+    function lead()        { return signedIn() && onList('leads'); }
+    function designer()    { return signedIn() && onList('designers'); }
+    function manager()     { return signedIn() && onList('managers'); }
+    function contributor() { return signedIn() && onList('contributors'); }
+    function listed()      { return lead() || designer() || manager() || contributor(); }
+
+    // MASTERS are not a role: a master is whatever role they are, and the only
+    // one who may change the lists. With no masters list, or an empty one, the
+    // first lead listed is the master - so the document can be claimed and
+    // then handed on from inside the app.
+    function masters() {
+      let m = access().get('masters', []);
+      return m.size() > 0 ? m : [access().get('leads', [''])[0]];
+    }
+    function master() { return signedIn() && accessExists() && email() in masters(); }
+
+    // ---- settings ----------------------------------------------------------
+    // The first-run claim: when the document does not exist yet, whoever is
+    // setting up creates it - and must list themselves as a lead in it, so a
+    // claim cannot hand the app to somebody else.
+    match /settings/access {
+      // Readable before it exists too, so the app can tell a new project
+      // (offer the claim) from an account nobody listed (show nothing).
+      allow read: if listed() || (signedIn() && !accessExists());
+      allow create: if signedIn() && !accessExists() && email() in request.resource.data.get('leads', []);
+      allow update, delete: if master();
+    }
+
+    // ---- people: display names --------------------------------------------
+    match /people/{who} {
+      allow read: if listed();
+      allow write: if signedIn() && (who == email() || lead());
+    }
+
+    // ---- the tree: groups, products, tasks and steps -----------------------
+    match /tasks/{id} {
+      function data() { return request.resource.data; }
+      function was() { return resource.data; }
+      function kindIs(k) { return data().kind == k; }
+      function isMine(d) { return d.get('createdBy', '') == email() || d.get('assignee', '') == email(); }
+      // Groups and steps inside a job belong to whoever owns the job: one
+      // get() on the parent. (A sub-step under a step is a level further;
+      // Phase 2 hardening decides whether designers get that far.)
+      function ownsParentOf(d) {
+        return d.get('parentId', null) != null
+          && exists(/databases/$(database)/documents/tasks/$(d.parentId))
+          && isMine(get(/databases/$(database)/documents/tasks/$(d.parentId)).data);
+      }
+      // Only a lead approves (check -> done) or sends back (check -> fix).
+      function noReview() {
+        return !(was().get('status', '') == 'check' && data().get('status', '') in ['done', 'fix'])
+          && !data().diff(was()).affectedKeys().hasAny(['checkedBy', 'checkedAt']);
+      }
+
+      allow read: if lead() || designer()
+        || (manager() && resource.data.get('sharedEffective', false) == true);
+
+      allow create: if lead() || (designer() && data().get('checkedBy', null) == null && (
+           (kindIs('task') && data().createdBy == email())
+        || ((kindIs('step') || kindIs('group')) && ownsParentOf(data()))));
+
+      allow update: if lead() || (designer() && noReview() && data().kind == was().kind && (
+           (was().kind == 'task' && isMine(was()))
+        || (was().kind in ['step', 'group'] && ownsParentOf(was()))));
+
+      allow delete: if lead();
+
+      // The timeline. Anyone who can read the task posts as themselves; the
+      // author may correct their own text and nothing else; nobody deletes.
+      match /updates/{uid} {
+        function task() { return get(/databases/$(database)/documents/tasks/$(id)).data; }
+        allow read: if lead() || designer()
+          || (manager() && task().get('sharedEffective', false) == true);
+        allow create: if request.resource.data.by == email() && (lead() || designer()
+          || (manager() && request.resource.data.kind == 'request' && task().get('sharedEffective', false) == true));
+        allow update: if signedIn() && resource.data.by == email()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text']);
+        allow delete: if false;
+      }
+    }
+
+    // The activity feed reads every task's updates in one collection-group
+    // query; that needs its own match. Lead and designers only.
+    match /{path=**}/updates/{uid} {
+      allow read: if lead() || designer();
+    }
+
+    // Everything else - including images (Phase 2) - is closed until a rule
+    // above names it.
+  }
+}

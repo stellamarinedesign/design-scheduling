@@ -4,7 +4,7 @@
     {
       "name": "local",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8790"],
+      "runtimeArgs": ["tools/serve.py", "8790"],
       "port": 8790
     }
   ]
