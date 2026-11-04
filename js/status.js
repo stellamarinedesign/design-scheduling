@@ -473,6 +473,7 @@ export function eventLabel(u) {
     case 'approve': return 'Approved';
     case 'sendback': return 'Sent back';
     case 'retract': return 'Taken back from check';
+    case 'convert': return u.to === 'group' ? 'Turned into a category' : 'Turned into a job';
     case 'block': return 'Changed what it waits on';
     case 'unblock': return 'Unblocked';
     case 'assign': return 'Assigned';

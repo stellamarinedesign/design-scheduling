@@ -83,6 +83,7 @@ export function renderHome(root) {
         ids.splice(at, 0, dragId);
         A.setHomeOrder(ids);
       },
+      validate: false,          // Home's own order, not a move in the tree
     });
     sec.append(grid);
     // Two rows, unless asked for all: measured once the grid has its width.

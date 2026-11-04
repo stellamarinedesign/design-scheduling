@@ -14,6 +14,7 @@ import { placeDialog } from './pickers.js';
 /** Where a new job goes by default: the open task's job, the page on screen, or the last place used. */
 function defaultPlace() {
   if (route.parts[0] === 'tasks' && route.parts[1] && route.parts[1] !== 'top' && node(route.parts[1])) return route.parts[1];
+  if (route.parts[0] === 'tasks' && route.query.c && node(route.query.c)) return route.query.c;
   const last = prefs.get('lastAddPlace', null);
   return last && node(last) ? last : null;
 }

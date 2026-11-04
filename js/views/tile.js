@@ -9,7 +9,7 @@
 // one-tap Start. Every action in the ⋯ menu is also reachable without hover,
 // and Move to… is the touch path for everything drag does.
 
-import { el, icon, iconBtn, btn, pill, dot, avatar, bar, menu, canDrag } from '../ui.js';
+import { el, icon, iconBtn, btn, pill, dot, avatar, bar, menu, canDrag, withMenu } from '../ui.js';
 import { state, node, personName } from '../state.js';
 import * as T from '../tree.js';
 import * as S from '../status.js';
@@ -82,7 +82,7 @@ export function statusMenu(anchor, t) {
 }
 
 /** The ⋯ menu on a tile or row. `extra` items go first (Home's Move earlier/later). */
-export function taskMenu(anchor, t, { extra = [] } = {}) {
+export function taskMenu(anchor, t, { extra = [], at = null } = {}) {
   const items = [
     ...extra,
     ...(extra.length ? ['sep'] : []),
@@ -97,11 +97,12 @@ export function taskMenu(anchor, t, { extra = [] } = {}) {
     S.isOpen(t.status) ? { label: 'Cancel…', icon: 'close', onSelect: () => A.setStatus(t.id, 'cancelled') } : null,
     t.status === 'cancelled' ? { label: `Reopen · back to ${S.LABEL[S.reopenTo(t)]}`, icon: 'restore', onSelect: () => A.reopen(t.id) } : null,
     { label: 'Move to…', icon: 'move', onSelect: async () => { const { moveDialog } = await import('./pickers.js'); moveDialog(t.id); } },
+    state.role === 'lead' && T.isJob(state.idx, t) ? { label: 'Turn into a category', icon: 'folderPlus', onSelect: () => A.turnIntoCategory(t.id) } : null,
     'sep',
     { label: 'Archive', icon: 'archive', onSelect: () => A.archive(t.id) },
     { label: 'Delete…', icon: 'trash', danger: true, onSelect: () => A.remove(t.id) },
   ];
-  menu(anchor, items, { label: `${t.title} actions` });
+  menu(anchor, items, { label: `${t.title} actions`, at });
 }
 
 /**
@@ -145,7 +146,8 @@ export function tile(t, { path = false, assignee = false, variant = 'normal', me
     variant !== 'backlog' && prog.total ? bar(prog.done, prog.total) : el('span', { class: 'sp' }),
     variant !== 'backlog' && prog.total ? el('span', { class: 'meta' }, `${prog.done}/${prog.total}`) : null,
     assignee ? whoBadge(t.assignee) : null));
-  return a;
+  // Right-click, long-press and Shift+F10 open the same menu as ⋯.
+  return withMenu(a, (at) => taskMenu(a.querySelector('.tile-top .ib') ?? a, t, { extra: menuExtra, at }));
 }
 
 /** A list row: the same facts in 44px. */
@@ -155,7 +157,7 @@ export function row(t, { path = false, assignee = false, drag = true } = {}) {
   const sub = subtext(t);
   const pathText = path ? T.pathText(state.idx, t.id) : '';
   const subLine = [pathText, sub?.text].filter(Boolean).join(' · ');
-  return el('div', { class: `trow${t.status === 'cancelled' ? ' muted' : ''}`, dataset: { id: t.id }, 'aria-current': open ? 'true' : null, draggable: drag && canDrag() ? 'true' : null },
+  const r = el('div', { class: `trow${t.status === 'cancelled' ? ' muted' : ''}`, dataset: { id: t.id }, 'aria-current': open ? 'true' : null, draggable: drag && canDrag() ? 'true' : null },
     el('button', { class: 'open-link', type: 'button', dataset: { fk: `open-${t.id}` }, 'aria-label': `Open ${t.title}, ${S.LABEL[t.status]}`, onclick: () => openTask(t.id) }),
     pill(t.status, { onClick: (e) => { e.stopPropagation(); statusMenu(e.currentTarget, t); } }),
     el('div', { class: 'trow-main' },
@@ -167,66 +169,110 @@ export function row(t, { path = false, assignee = false, drag = true } = {}) {
       el('span', { class: 'meta' }, ageLabel(t.lastActivityAt)),
       t.status === 'todo' ? iconBtn('play', `Start ${t.title}`, (e) => { e.stopPropagation(); A.start(t.id); }, 'sm') : null,
       iconBtn('more', `More actions for ${t.title}`, (e) => { e.stopPropagation(); taskMenu(e.currentTarget, t); }, 'sm')));
+  return withMenu(r, (at) => taskMenu(r.querySelector('.trow-end .ib:last-child') ?? r, t, { at }));
 }
 
 /** The labelled divider above a status band. */
 export const band = (status, count) => el('div', { class: 'band' }, el('span', { class: 'lbl' }, S.LABEL[status]), el('span', { class: 'meta' }, String(count)));
 
 /**
- * Drag to reorder, with a mouse. Drop on a tile or row: before or after it,
- * by which half the pointer is over. Drop on a group header: into the group.
- * Touch never sees this; it uses Move to… (and Home's Move earlier/later).
+ * Drag with a mouse: job tiles and rows, category tiles, category headers
+ * and sidebar items, all through this one engine.
+ * - Over a plain item (a job tile or row): before or after it, by which half
+ *   the pointer is in.
+ * - Over something that holds things (a category tile, a category header, a
+ *   sidebar item, all marked data-drop-into): its outer quarters place before
+ *   or after it, its middle drops INTO it.
+ * - The thing dragged lifts (it dims in place) and a gap the size of it
+ *   shows where it will land; a drop INTO is outlined instead.
+ * - The tree decides what is allowed (T.nestProblem): nothing goes into
+ *   itself or its own descendants, steps stay in jobs, products in
+ *   categories. A refused place shows no gap and takes no drop.
+ * Touch never sees this: it has Move to… in the same menus.
+ * `validate: false` skips the tree check (Home's own order is not the tree).
  */
-export function enableDrag(root, { onDrop, onDropInto = null }) {
+export function enableDrag(root, { onDrop, onDropInto = null, validate = true }) {
   if (!canDrag()) return;
   let dragId = null;
-  const clear = () => root.querySelectorAll('.drop-before, .drop-after, .drop-into').forEach((n) => n.classList.remove('drop-before', 'drop-after', 'drop-into'));
-  const where = (target, e) => {
-    const r = target.getBoundingClientRect();
-    const horizontal = target.classList.contains('tile');
-    return horizontal ? (e.clientX < r.left + r.width / 2 ? 'before' : 'after') : (e.clientY < r.top + r.height / 2 ? 'before' : 'after');
+  let dragEl = null;
+  let plan = null;
+  const gap = el('div', { class: 'drop-gap', 'aria-hidden': 'true' });
+  const across = (n) => n.classList.contains('tile') || n.classList.contains('cat-tile');
+  const reset = () => {
+    gap.remove();
+    root.querySelectorAll('.drop-into').forEach((n) => n.classList.remove('drop-into'));
+    plan = null;
   };
+
   root.addEventListener('dragstart', (e) => {
-    const item = e.target.closest?.('[data-id][draggable="true"]');
-    if (!item) return;
-    dragId = item.dataset.id;
-    item.classList.add('dragging');
+    const handle = e.target.closest?.('[draggable="true"]');
+    if (!handle || !root.contains(handle)) return;
+    // A category header drags its whole section.
+    const box = handle.dataset.id ? handle : (handle.closest('[data-id]') ?? handle);
+    const id = box.dataset.id ?? handle.dataset.dropInto;
+    if (!id) return;
+    dragId = id;
+    dragEl = box;
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', dragId);
+    e.dataTransfer.setData('text/plain', id);
+    gap.className = `drop-gap${across(box) ? '' : ' line'}${box.classList.contains('span') ? ' span' : ''}`;
+    gap.style.minHeight = across(box) ? `${box.offsetHeight}px` : '';
+    requestAnimationFrame(() => box.classList.add('dragging'));
   });
-  root.addEventListener('dragend', (e) => {
-    e.target.closest?.('[data-id]')?.classList.remove('dragging');
-    dragId = null;
-    clear();
-  });
+
   root.addEventListener('dragover', (e) => {
     if (!dragId) return;
-    const into = onDropInto && e.target.closest('[data-drop-into]');
-    const item = e.target.closest('[data-id]');
-    clear();
-    if (into && into.dataset.dropInto !== dragId) {
-      e.preventDefault();
-      into.closest('.grp')?.classList.add('drop-into');
-      return;
+    if (e.target.closest?.('.drop-gap')) { if (plan) e.preventDefault(); return; }
+    if (dragEl?.contains(e.target)) { reset(); return; }
+    const item = e.target.closest?.('[data-id]');
+    const holder = onDropInto ? e.target.closest?.('[data-drop-into]') : null;
+    let next = null;
+    if (holder && (!item || item === holder || item.contains(holder))) {
+      const r = holder.getBoundingClientRect();
+      const pos = across(holder) ? (e.clientX - r.left) / r.width : (e.clientY - r.top) / r.height;
+      const box = item && (item === holder || item.contains(holder)) ? item : null;
+      if (box && pos < 0.25) next = { where: 'before', targetId: box.dataset.id, el: box };
+      else if (box && pos > 0.75) next = { where: 'after', targetId: box.dataset.id, el: box };
+      else next = { where: 'into', targetId: holder.dataset.dropInto, el: holder };
+    } else if (item) {
+      const r = item.getBoundingClientRect();
+      const before = across(item) ? e.clientX < r.left + r.width / 2 : e.clientY < r.top + r.height / 2;
+      next = { where: before ? 'before' : 'after', targetId: item.dataset.id, el: item };
     }
-    if (item && item.dataset.id !== dragId) {
-      e.preventDefault();
-      item.classList.add(where(item, e) === 'before' ? (item.classList.contains('tile') ? 'drop-before' : 'drop-before') : 'drop-after');
+    if (!next || next.targetId === dragId) { reset(); return; }
+    if (validate) {
+      const { idx } = state;
+      const target = idx.byId.get(next.targetId);
+      const parentId = next.where === 'into' ? next.targetId : (T.parentOf(idx, target)?.id ?? null);
+      if (!target || T.nestProblem(idx, dragId, parentId)) { reset(); return; }
     }
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (plan && plan.where === next.where && plan.targetId === next.targetId) return;
+    reset();
+    plan = next;
+    if (next.where === 'into') next.el.classList.add('drop-into');
+    else next.el[next.where](gap);
   });
+
   root.addEventListener('drop', (e) => {
     if (!dragId) return;
     e.preventDefault();
-    const into = onDropInto && e.target.closest('[data-drop-into]');
-    const item = e.target.closest('[data-id]');
+    const p = plan;
     const id = dragId;
-    clear();
-    if (into && into.dataset.dropInto !== id) onDropInto(id, into.dataset.dropInto);
-    else if (item && item.dataset.id !== id) onDrop(id, item.dataset.id, where(item, e));
+    reset();
+    if (!p) return;
+    if (p.where === 'into') onDropInto?.(id, p.targetId);
+    else onDrop(id, p.targetId, p.where);
+  });
+
+  root.addEventListener('dragend', () => {
+    dragEl?.classList.remove('dragging');
+    reset();
+    dragId = null;
+    dragEl = null;
   });
 }
 
-/** A category link: dot, name. */
-export const catLink = (g) => el('a', { href: routeHref(`/tasks/${g.id}`), class: 'cat-link' }, dot(T.colourOf(state.idx, g.id)), T.nameOf(g));
 
 export { icon, node };

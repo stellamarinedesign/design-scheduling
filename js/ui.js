@@ -243,6 +243,95 @@ export function menu(anchor, items, { label = 'Actions', at = null } = {}) {
   return node;
 }
 
+// ---------------------------------------------------------------------------
+// right-click, long-press and Shift+F10: the same menu as the ⋯ button
+// ---------------------------------------------------------------------------
+
+const contextMenus = new WeakMap();
+const TEXT_FIELD = 'input, textarea, select, [contenteditable=""], [contenteditable="true"]';
+
+/**
+ * Give an element a context menu: `open(at, element)` opens the SAME menu as
+ * its ⋯ button, at a point (`at`: {left, top, bottom}) or, from the keyboard,
+ * anchored to the element (`at` null). Returns the element.
+ */
+export function withMenu(element, open) {
+  contextMenus.set(element, open);
+  element.classList.add('has-menu');
+  return element;
+}
+
+function menuFor(target) {
+  for (let n = target; n && n !== document.body; n = n.parentElement) {
+    if (contextMenus.has(n)) return [n, contextMenus.get(n)];
+  }
+  return null;
+}
+
+const point = (x, y) => ({ left: x, right: x, top: y, bottom: y });
+
+/**
+ * Once, at start-up. Right-click opens an element's own menu instead of the
+ * browser's - except in text fields, which keep theirs for copy and paste.
+ * On touch, holding about half a second does the same; the click the finger
+ * then makes is swallowed so it does not also open the tile. Shift+F10 or the
+ * context-menu key opens the menu of whatever has focus.
+ */
+export function installContextMenus() {
+  let lastLongPress = 0;
+  let timer = null;
+  let start = null;
+  let swallowClick = false;
+
+  document.addEventListener('contextmenu', (e) => {
+    if (e.target.closest?.(TEXT_FIELD)) return;
+    // Android fires contextmenu for the long-press we already handled.
+    if (Date.now() - lastLongPress < 800) { e.preventDefault(); return; }
+    const hit = menuFor(e.target);
+    if (!hit) return;
+    e.preventDefault();
+    hit[1](point(e.clientX, e.clientY), hit[0]);
+  });
+
+  const cancel = () => { clearTimeout(timer); timer = null; };
+  document.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'touch' || e.target.closest?.(TEXT_FIELD)) return;
+    const hit = menuFor(e.target);
+    if (!hit) return;
+    start = { x: e.clientX, y: e.clientY };
+    cancel();
+    timer = setTimeout(() => {
+      timer = null;
+      lastLongPress = Date.now();
+      swallowClick = true;
+      setTimeout(() => { swallowClick = false; }, 700);
+      hit[1](point(start.x, start.y), hit[0]);
+    }, 500);
+  }, { passive: true });
+  document.addEventListener('pointermove', (e) => {
+    if (timer && start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) cancel();
+  }, { passive: true });
+  document.addEventListener('pointerup', cancel);
+  document.addEventListener('pointercancel', cancel);
+  document.addEventListener('scroll', cancel, true);
+  document.addEventListener('click', (e) => {
+    if (!swallowClick || e.target.closest?.('.menu')) return;
+    swallowClick = false;
+    e.preventDefault();
+    e.stopPropagation();
+  }, true);
+
+  document.addEventListener('keydown', (e) => {
+    if (!(e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10'))) return;
+    const a = document.activeElement;
+    if (!a || a.closest?.(TEXT_FIELD)) return;
+    const hit = menuFor(a);
+    if (!hit) return;
+    e.preventDefault();
+    hit[1](null, hit[0]);
+  });
+}
+
 /** Narrow screens: under 700px is the phone layout (DESIGN.md width bands). */
 export const isPhone = () => window.matchMedia('(max-width: 699px)').matches;
 /** The sidebar is pinned only on wide screens. */

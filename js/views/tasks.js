@@ -1,26 +1,37 @@
-// views/tasks.js — the full list (Tasks brief, 2026-11-04).
+// views/tasks.js — Tasks: ONE FULL LIST of the whole tree (decided
+// 2026-11-04, after first live use; it supersedes the separate overview and
+// category pages of the Tasks brief).
 //
-// OVERVIEW (#/tasks): each master category is a collapsible section of
-// category cards: dot, name, open count, status pills, oldest untouched age.
+// MASTER CATEGORIES are collapsible sections. Inside each, CATEGORIES (and
+// sub-categories) sit as category tiles - dot, name, open count, status
+// pills, oldest untouched - in the same grid as the JOBS directly in it.
+// Expanding a category tile turns it into a full-width section IN PLACE,
+// with its own header: chevron, name, count, + Job, + Group, its By status /
+// Side by side and Tiles / List switches, and ⋯. Clicking the header folds it
+// back into a tile. A category's jobs can fold into one "Jobs in X (n)" tile.
+// Done (N) and Cancelled (N) fold at the end of each. Expanded and folded
+// state is remembered per device; the first visit shows master categories
+// open and their categories as tiles.
 //
-// A CATEGORY PAGE (#/tasks/<id>): the children in their manual order. Runs of
-// jobs render as tiles in STATUS BANDS (In progress → Fix → Ready for check →
-// Waiting → To do), or side by side in that order (the switch, 2026-11-04);
-// each sub-group is a collapsible section at its place in the order; Done (N)
-// folds at the end of each group. Tiles or list is remembered per group, as
-// in TileDo. Sort applies within each group and pauses dragging.
+// Inside a container the open jobs come first, then its categories, each in
+// their manual order (they share one order; new jobs sit above sub-groups).
 //
-// A JOB OPENED AS A PAGE renders the same way: its steps, its sections, its
-// tasks as tiles or a list.
+// The sidebar is navigation: #/tasks?c=<id> scrolls to the category, expands
+// it and its ancestors, and briefly highlights it. A category's ⋯ keeps
+// Focus (#/tasks/<id>, the category alone); a job keeps Open as page.
+//
+// Everything with a ⋯ also opens that menu on right-click, long-press and
+// Shift+F10 (ui.js withMenu). Categories drag like tiles: reorder among
+// siblings, or drop onto a category to move inside it.
 
-import { el, icon, iconBtn, btn, pill, dot, menu, prefs, isPhone } from '../ui.js';
+import { el, icon, iconBtn, btn, pill, dot, menu, prefs, isPhone, withMenu } from '../ui.js';
 import { state, node, personName } from '../state.js';
 import * as T from '../tree.js';
 import * as S from '../status.js';
 import * as A from '../actions.js';
 import { ageDays } from '../dates.js';
 import { tile, row, band, enableDrag, statusMenu, taskMenu, backlogDays } from './tile.js';
-import { go, routeHref, openTask } from '../router.js';
+import { go, route, routeHref, openTask } from '../router.js';
 import { promptDialog } from '../dialog.js';
 import { welcome, errorState } from './home.js';
 import { newMasterCategory } from './sidebar.js';
@@ -41,13 +52,89 @@ export function viewTitle(id) {
   return T.nameOf(node(id)) || 'Tasks';
 }
 
+// ---------------------------------------------------------------------------
+// remembered per device: what is expanded, which job lists are folded
+// ---------------------------------------------------------------------------
+
+const OPEN_KEY = 'tasks.open';
+const FOLD_KEY = 'tasks.jobsFolded';
+
+/** Expanded? Master categories start open, categories start as tiles. */
+export function isExpanded(g) {
+  const v = prefs.get(OPEN_KEY, {})[g.id];
+  return v ?? !g.parentId;
+}
+function setExpanded(ids, value) {
+  const m = prefs.get(OPEN_KEY, {});
+  for (const id of ids) m[id] = value;
+  prefs.set(OPEN_KEY, m);
+}
+const jobsFolded = (id) => Boolean(prefs.get(FOLD_KEY, {})[id ?? 'top']);
+function setJobsFolded(id, value) {
+  const m = prefs.get(FOLD_KEY, {});
+  m[id ?? 'top'] = value;
+  prefs.set(FOLD_KEY, m);
+}
+/** Every category in the tree (not the sections inside jobs). */
+const allCategories = () => state.idx.nodes.filter((n) => T.isGroupLike(n) && !T.isSection(state.idx, n));
+
+const pageKey = (n) => n?.id ?? 'top';
+const viewMode = (n) => prefs.get(`view.${pageKey(n)}`, n?.view ?? 'tiles');
+const bandsOn = (n) => prefs.get(`bands.${pageKey(n)}`, true);
+const sortOf = (n) => { const s = prefs.get(`sort.${pageKey(n)}`, 'manual'); return SORTS[s] ? s : 'manual'; };
+const rerender = () => go(location.hash.replace(/^#/, '').split('?')[0], { keepTask: true });
+
+// ---------------------------------------------------------------------------
+// reveal: the sidebar and #/tasks?c=<id>
+// ---------------------------------------------------------------------------
+
+let pendingReveal = null;
+let lastDeepLink = null;
+
+/**
+ * Show a category in the full list: expand it and its ancestors, scroll to
+ * it, light it up briefly. The sidebar calls this; a second click on the
+ * same item reveals again.
+ */
+export function revealCategory(id) {
+  pendingReveal = id;
+  const next = `#/tasks?c=${encodeURIComponent(id)}`;
+  if (location.hash === next) rerender();
+  else location.hash = next;
+}
+
+function takeReveal() {
+  let target = pendingReveal;
+  pendingReveal = null;
+  const c = route.parts[0] === 'tasks' && !route.parts[1] ? (route.query.c ?? null) : null;
+  if (!target && c && c !== lastDeepLink) target = c;
+  lastDeepLink = c;
+  return target;
+}
+
+function flash(target, inner) {
+  requestAnimationFrame(() => {
+    const n = inner.querySelector(`[data-group="${CSS.escape(target)}"]`);
+    if (!n) return;
+    const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    n.scrollIntoView({ block: 'start', behavior: smooth ? 'smooth' : 'auto' });
+    n.classList.add('flash');
+    setTimeout(() => n.classList.add('flash-out'), 900);
+    setTimeout(() => n.classList.remove('flash', 'flash-out'), 1700);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// routes
+// ---------------------------------------------------------------------------
+
 export function renderTasks(root, id) {
   const inner = el('div', { class: 'view-inner' });
   root.append(inner);
   if (state.error && !state.ready) { inner.append(errorState()); return; }
   if (!state.ready) { inner.append(el('div', { class: 'grid', 'aria-busy': 'true', 'aria-label': 'Loading' }, [1, 2, 3, 4].map(() => el('div', { class: 'skel' })))); return; }
-  if (!id) return overview(inner);
-  if (id === 'top') return groupPage(inner, null);
+  if (!id) return fullList(inner);
+  if (id === 'top') return focusPage(inner, null);
   const n = node(id);
   if (!n) {
     inner.append(el('div', { class: 'state-msg' },
@@ -58,16 +145,20 @@ export function renderTasks(root, id) {
   }
   if (n.kind === T.KIND.task) return jobPage(inner, n);
   if (n.kind === T.KIND.step) { openTask(T.jobOf(state.idx, n.id)?.id ?? n.parentId); return; }
-  return groupPage(inner, n);
+  return focusPage(inner, n);
 }
 
 // ---------------------------------------------------------------------------
-// overview
+// the full list
 // ---------------------------------------------------------------------------
 
-function overview(inner) {
+function fullList(inner) {
   const { idx } = state;
   if (!idx.nodes.length) { inner.append(welcome()); return; }
+  const target = takeReveal();
+  if (target && target !== 'top' && node(target)) {
+    setExpanded([...T.ancestorChain(idx, target).filter(T.isGroupLike).map((a) => a.id), target], true);
+  }
   const masters = T.childrenOf(idx, null).filter(T.isGroupLike);
   const allOpen = T.jobsUnder(idx, null).filter((j) => S.isOpen(j.status)).length;
   // Categories are what sit directly in a master category; sub-groups inside them are not counted again.
@@ -76,89 +167,226 @@ function overview(inner) {
     el('h1', { class: 'h1' }, 'Tasks'),
     el('span', { class: 'meta' }, `${allOpen} open across ${catCount} ${catCount === 1 ? 'category' : 'categories'}`),
     el('span', { class: 'sp' }),
-    state.role === 'lead' ? btn('New master category', newMasterCategory, { ic: 'folderPlus' }) : null));
+    btn(isPhone() ? 'Collapse' : 'Collapse all', () => { setExpanded(allCategories().map((g) => g.id), false); rerender(); }, { cls: 'sm', ic: 'chevRight', title: 'Fold every category, master categories too' }),
+    btn(isPhone() ? 'Expand' : 'Expand all', () => { setExpanded(allCategories().map((g) => g.id), true); rerender(); }, { cls: 'sm', ic: 'chevDown', title: 'Open every category' }),
+    state.role === 'lead' ? btn(isPhone() ? 'Master' : 'New master category', newMasterCategory, { cls: 'sm', ic: 'folderPlus', title: 'New master category' }) : null));
 
-  masters.forEach((m, i) => {
-    const key = `col.overview.${m.id}`;
-    const closed = prefs.get(key, isPhone() && i > 0);
-    const cats = T.childrenOf(idx, m.id).filter(T.isGroupLike);
-    const direct = T.childrenOf(idx, m.id).filter((c) => c.kind === T.KIND.task);
-    const open = T.openJobCount(idx, m.id);
-    const sec = el('section', { class: 'sec' },
-      el('div', { class: 'master-head' },
-        el('button', {
-          class: 'ib', type: 'button', 'aria-expanded': String(!closed), 'aria-label': `${closed ? 'Expand' : 'Collapse'} ${m.name}`,
-          onclick: () => { prefs.set(key, !closed); go('/tasks'); },
-        }, icon(closed ? 'chevRight' : 'chevDown', 16)),
-        el('h2', { class: 'h2' }, el('a', { href: routeHref(`/tasks/${m.id}`) }, m.name)),
-        el('span', { class: 'meta' }, `${cats.length} ${cats.length === 1 ? 'category' : 'categories'} · ${open} open`)));
-    if (!closed) {
-      const grid = el('div', { class: 'cards' });
-      for (const c of cats) grid.append(card(c));
-      if (direct.length) grid.append(card(m, { label: `Jobs directly in ${m.name}`, onlyDirect: true }));
-      if (!cats.length && !direct.length) {
-        grid.append(el('div', { class: 'empty' }, 'Empty.', btn('Open it', () => go(`/tasks/${m.id}`), { cls: 'sm' })));
-      }
-      sec.append(grid);
-    }
-    inner.append(sec);
-  });
-
+  const list = el('div', { class: 'tree' });
+  for (const m of masters) list.append(categorySection(m));
   const loose = T.childrenOf(idx, null).filter((n) => n.kind === T.KIND.task);
-  if (loose.length) {
-    const open = loose.filter((t) => S.isOpen(t.status));
-    inner.append(el('section', { class: 'sec' },
-      el('div', { class: 'master-head' },
-        el('h2', { class: 'h2' }, el('a', { href: routeHref('/tasks/top') }, 'Not in a category')),
-        el('span', { class: 'meta' }, `${open.length} open · use Move to… to file them`)),
-      el('div', { class: 'grid' }, open.slice(0, 8).map((t) => tile(t)))));
-  }
+  if (loose.length) list.append(looseSection(loose));
+  inner.append(list);
+  wireListDrag(list);
+  if (target) flash(target, inner);
 }
 
-function card(g, { label = null, onlyDirect = false } = {}) {
+/** Jobs at the top level, outside every category: shown so they can be filed. */
+function looseSection(loose) {
+  const open = loose.filter((t) => S.isOpen(t.status)).length;
+  return el('section', { class: 'grp master', dataset: { group: 'top' } },
+    el('div', { class: 'grp-head' },
+      el('h2', { class: 'h2' }, 'Not in a category'),
+      el('span', { class: 'meta' }, `${open} open · drag them onto a category, or Move to…`)),
+    ...containerBody(null));
+}
+
+/** A category (or master) as a full-width section: expanded, or (a master) folded to its header. */
+function categorySection(g) {
   const { idx } = state;
-  const jobs = (onlyDirect ? T.childrenOf(idx, g.id).filter((c) => c.kind === T.KIND.task) : T.jobsUnder(idx, g.id)).filter((j) => S.isOpen(j.status));
+  const master = !g.parentId;
+  const open = isExpanded(g);
+  const cats = T.childrenOf(idx, g.id).filter(T.isGroupLike).length;
+  const count = T.openJobCount(idx, g.id);
+  const toggle = () => { setExpanded([g.id], !open); rerender(); };
+  const head = el('div', {
+    class: 'grp-head', dataset: { dropInto: g.id },
+    draggable: state.role === 'lead' ? 'true' : null,
+    onclick: (e) => { if (!e.target.closest('button, a, input, .seg')) toggle(); },
+  },
+  el('button', { class: 'ib', type: 'button', 'aria-expanded': String(open), 'aria-label': `${open ? 'Collapse' : 'Expand'} ${T.nameOf(g)}`, onclick: toggle },
+    icon(open ? 'chevDown' : 'chevRight', 16)),
+  master ? null : dot(T.colourOf(idx, g.id)),
+  el('h2', { class: 'h2' }, T.nameOf(g)),
+  g.kind === T.KIND.product ? el('span', { class: 'grp-kind' }, 'Product') : null,
+  el('span', { class: 'meta' }, master ? `${cats} ${cats === 1 ? 'category' : 'categories'} · ${count} open` : `${count} open`),
+  el('span', { class: 'sp' }),
+  // A phone keeps the header to one row: + Job, + Group and the switches live in ⋯ there.
+  open && !isPhone() ? btn('Job', () => addJob(g.id), { cls: 'sm ghost', ic: 'plus', title: `New job in ${T.nameOf(g)}` }) : null,
+  open && !isPhone() && g.kind === T.KIND.group ? btn('Group', () => addGroup(g.id), { cls: 'sm ghost', ic: 'folderPlus', title: `New category inside ${T.nameOf(g)}` }) : null,
+  ...(open && !isPhone() ? switches(g, { compact: true }) : []),
+  iconBtn('more', `${T.nameOf(g)} actions`, (e) => { e.stopPropagation(); groupMenu(e.currentTarget, g); }, 'sm'));
+  withMenu(head, (at) => groupMenu(head.querySelector('.ib[aria-label$="actions"]') ?? head, g, { at }));
+  const sec = el('section', {
+    class: `grp${master ? ' master' : ''}${open ? '' : ' closed'} span`,
+    dataset: { group: g.id, id: g.id }, 'aria-label': T.nameOf(g),
+  }, head);
+  if (open) sec.append(...containerBody(g));
+  return sec;
+}
+
+/** A collapsed category, as a tile in its parent's grid. Click to expand in place. */
+function categoryTile(g) {
+  const { idx } = state;
+  const jobs = T.jobsUnder(idx, g.id).filter((j) => S.isOpen(j.status));
+  const expand = () => { setExpanded([g.id], true); rerender(); };
+  const a = el('article', {
+    class: 'card cat-tile', dataset: { id: g.id, dropInto: g.id, group: g.id },
+    draggable: state.role === 'lead' ? 'true' : null,
+  },
+  el('button', { class: 'open-link', type: 'button', 'aria-label': `Expand ${T.nameOf(g)}, ${jobs.length} open`, 'aria-expanded': 'false', onclick: expand }),
+  el('div', { class: 'cat-top' },
+    dot(T.colourOf(idx, g.id)), el('span', { class: 'nm' }, T.nameOf(g)),
+    iconBtn('more', `${T.nameOf(g)} actions`, (e) => { e.stopPropagation(); groupMenu(e.currentTarget, g); }, 'sm')),
+  ...countLines(jobs, g.kind === T.KIND.product ? 'Product' : null));
+  withMenu(a, (at) => groupMenu(a.querySelector('.ib') ?? a, g, { at }));
+  return a;
+}
+
+/** "Jobs in Davits (3)": a category's own jobs, folded into one tile. */
+function jobsTile(g, open) {
+  const name = g ? T.nameOf(g) : 'no category';
+  const unfold = () => { setJobsFolded(g?.id, false); rerender(); };
+  const a = el('article', { class: 'card cat-tile jobs-tile', dataset: g ? { dropInto: g.id } : {} },
+    el('button', { class: 'open-link', type: 'button', 'aria-label': `Show the ${open.length} jobs in ${name}`, onclick: unfold }),
+    el('div', { class: 'cat-top' }, icon('tasks', 16), el('span', { class: 'nm' }, `Jobs in ${name} (${open.length})`)),
+    ...countLines(open));
+  withMenu(a, (at) => menu(a, [{ label: 'Show the jobs as tiles', icon: 'grid', onSelect: unfold }], { label: 'Jobs', at }));
+  return a;
+}
+
+/** The open count, status pills and oldest-untouched line a category or jobs tile shows. */
+function countLines(jobs, kindWord = null) {
   const counts = {};
   for (const j of jobs) counts[j.status] = (counts[j.status] ?? 0) + 1;
   const words = { in_progress: 'in progress', fix: 'fix', check: 'for check', waiting: 'waiting', todo: 'to do' };
   const pills = S.BAND_ORDER.filter((s) => counts[s]).map((s) => pill(s, { label: `${counts[s]} ${words[s]}` }));
   const todo = jobs.filter((j) => j.status === 'todo');
   const oldest = todo.length ? Math.max(...todo.map((j) => ageDays(j.lastActivityAt))) : null;
-  return el('a', { class: 'card', href: routeHref(`/tasks/${g.id}`) },
-    el('div', { class: 'row' }, dot(T.colourOf(idx, g.id)), el('span', { class: 'nm' }, label ?? T.nameOf(g)), el('span', { class: 'sp' }), el('span', { class: 'meta' }, `${jobs.length} open`)),
-    pills.length ? el('div', { class: 'pills' }, pills) : el('div', { class: 'meta' }, jobs.length ? '' : 'Nothing open'),
-    oldest ? el('div', { class: `meta foot${oldest >= backlogDays() ? ' warn' : ''}` }, `Oldest untouched ${oldest}d`) : null);
+  return [
+    el('div', { class: 'pills' }, kindWord ? el('span', { class: 'grp-kind' }, kindWord) : null,
+      el('span', { class: 'meta' }, jobs.length ? `${jobs.length} open` : 'Nothing open'), ...pills),
+    oldest ? el('div', { class: `meta foot${oldest >= backlogDays() ? ' warn' : ''}` }, `Oldest untouched ${oldest}d`) : null,
+  ];
+}
+
+/**
+ * What a category (or the top level) holds: its open jobs (tiles in status
+ * bands or side by side, a list, or folded into one tile), then its
+ * categories as tiles or expanded sections, in one grid; then Done and
+ * Cancelled folded away.
+ */
+function containerBody(g) {
+  const { idx } = state;
+  const kids = T.childrenOf(idx, g?.id ?? null).filter((k) => k.kind !== T.KIND.step);
+  const jobs = kids.filter((k) => k.kind === T.KIND.task);
+  const cats = g ? kids.filter(T.isGroupLike) : [];
+  const open = jobs.filter((t) => S.isOpen(t.status));
+  const sort = sortOf(g);
+  const out = [];
+  const grid = el('div', { class: 'grid' });
+  let shownJobTiles = false;
+
+  if (open.length) {
+    if (jobsFolded(g?.id)) grid.append(jobsTile(g, open));
+    else {
+      const ordered = sort === 'manual' ? (bandsOn(g) ? S.BAND_ORDER.flatMap((s) => open.filter((t) => t.status === s)) : S.BAND_ORDER.flatMap((s) => open.filter((t) => t.status === s)))
+        : [...open].sort(SORTS[sort].cmp);
+      const opts = { assignee: true, drag: sort === 'manual' };
+      if (sort !== 'manual') {
+        grid.append(el('div', { class: 'sort-note span' }, `Jobs sorted by ${SORTS[sort].label.toLowerCase()}; dragging them is paused.`,
+          el('button', { type: 'button', onclick: () => { prefs.set(`sort.${pageKey(g)}`, 'manual'); rerender(); } }, 'Back to manual order')));
+      }
+      if (viewMode(g) === 'list') {
+        const rows = el('div', { class: 'rows span' });
+        let last = null;
+        for (const t of ordered) {
+          if (sort === 'manual' && bandsOn(g) && t.status !== last) {
+            rows.append(el('div', { class: 'trow band-row' }, el('span', { class: 'lbl' }, S.LABEL[t.status]), el('span', {}), el('span', { class: 'meta' }, String(ordered.filter((x) => x.status === t.status).length))));
+            last = t.status;
+          }
+          rows.append(row(t, opts));
+        }
+        grid.append(rows);
+      } else {
+        let last = null;
+        for (const t of ordered) {
+          if (sort === 'manual' && bandsOn(g) && t.status !== last) { grid.append(band(t.status, ordered.filter((x) => x.status === t.status).length)); last = t.status; }
+          grid.append(tile(t, opts));
+          shownJobTiles = true;
+        }
+      }
+    }
+  }
+  if (cats.length) {
+    // With jobs in status bands above, the categories get their own divider, so a tile under "To do" is not read as to do.
+    if (shownJobTiles && sort === 'manual' && bandsOn(g)) grid.append(el('div', { class: 'band' }, el('span', { class: 'lbl' }, 'Categories'), el('span', { class: 'meta' }, String(cats.length))));
+    for (const c of cats) grid.append(isExpanded(c) ? categorySection(c) : categoryTile(c));
+  }
+  if (grid.childNodes.length) out.push(grid);
+
+  const doneOnly = jobs.filter((t) => t.status === 'done');
+  const cancelled = jobs.filter((t) => t.status === 'cancelled');
+  if (doneOnly.length) out.push(doneFold(g?.id ?? null, doneOnly, g, 'done'));
+  if (cancelled.length) out.push(doneFold(g?.id ?? null, cancelled, g, 'cancelled'));
+  if (!out.length) {
+    out.push(el('div', { class: 'empty' }, el('span', {}, g ? 'Nothing in here yet.' : 'No jobs here.'),
+      g ? btn('Job', () => addJob(g.id), { cls: 'sm', ic: 'plus' }) : null,
+      g && g.kind === T.KIND.group ? btn('Group', () => addGroup(g.id), { cls: 'sm', ic: 'folderPlus' }) : null));
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
-// a category page (or the top level, for jobs not in a category)
+// Focus: one category alone (and the jobs not in any category)
 // ---------------------------------------------------------------------------
-
-const pageKey = (n) => n?.id ?? 'top';
-const viewMode = (n) => prefs.get(`view.${pageKey(n)}`, n?.view ?? 'tiles');
-const bandsOn = (n) => prefs.get(`bands.${pageKey(n)}`, true);
-const sortOf = (n) => { const s = prefs.get(`sort.${pageKey(n)}`, 'manual'); return SORTS[s] ? s : 'manual'; };
-const rerender = () => go(location.hash.replace(/^#/, '').split('?')[0], { keepTask: true });
 
 function crumbs(n) {
   const chain = n ? T.ancestorChain(state.idx, n.id) : [];
   return el('nav', { class: 'crumbs', 'aria-label': 'Breadcrumb' },
     el('a', { href: routeHref('/tasks') }, 'Tasks'),
-    chain.flatMap((a) => [el('span', { 'aria-hidden': 'true' }, '›'), el('a', { href: routeHref(`/tasks/${a.id}`) }, T.nameOf(a))]));
+    chain.flatMap((a) => [el('span', { 'aria-hidden': 'true' }, '›'),
+      el('a', { href: a.kind === T.KIND.task ? routeHref(`/tasks/${a.id}`) : routeHref('/tasks', { c: a.id }) }, T.nameOf(a))]));
 }
 
-function switches(n) {
+function focusPage(inner, g) {
+  const { idx } = state;
+  const colour = g ? T.colourOf(idx, g.id) : null;
+  const open = g ? T.openJobCount(idx, g.id) : T.childrenOf(idx, null).filter((c) => c.kind === T.KIND.task && S.isOpen(c.status)).length;
+  inner.append(el('div', { class: 'sec', style: { gap: '10px' } },
+    crumbs(g),
+    el('div', { class: 'view-head' },
+      // The dot rides inside the heading, so a long name wraps with it rather than leaving it alone on a line.
+      el('h1', { class: 'h1 with-dot' }, g ? dot(colour, true) : null, g ? T.nameOf(g) : 'Not in a category'),
+      g?.kind === T.KIND.product ? el('span', { class: 'grp-kind' }, 'Product') : null,
+      el('span', { class: 'meta' }, `${open} open`),
+      el('span', { class: 'sp' }),
+      btn('Back to the full list', () => (g ? revealCategory(g.id) : go('/tasks')), { cls: 'sm ghost', ic: 'back' }),
+      btn('Job', () => addJob(g?.id ?? null), { cls: 'sm', ic: 'plus', title: 'New job here (N)' }),
+      g && g.kind === T.KIND.group ? btn('Group', () => addGroup(g.id), { cls: 'sm', ic: 'folderPlus', title: 'New group inside this one' }) : null,
+      ...switches(g),
+      g ? iconBtn('more', `${T.nameOf(g)} actions`, (e) => groupMenu(e.currentTarget, g, { focus: true })) : null)));
+  const body = el('div', { class: 'sec tree' });
+  body.append(...containerBody(g));
+  inner.append(body);
+  wireListDrag(body);
+}
+
+// ---------------------------------------------------------------------------
+// the switches and menus
+// ---------------------------------------------------------------------------
+
+function switches(n, { compact = false } = {}) {
   const mode = viewMode(n);
   const bands = bandsOn(n);
   const sort = sortOf(n);
-  const seg = (label, pairs) => el('div', { class: 'seg', role: 'group', 'aria-label': label }, pairs.map(([text, on, fn, ic]) =>
-    el('button', { type: 'button', 'aria-pressed': String(on), onclick: fn, title: text }, ic ? icon(ic, 14) : null, el('span', {}, text))));
   const set = (key, v) => { prefs.set(`${key}.${pageKey(n)}`, v); rerender(); };
-  // A phone has room for one row of controls: the three switches fold into
-  // one View menu with the same choices.
+  const seg = (label, pairs) => el('div', { class: 'seg', role: 'group', 'aria-label': label }, pairs.map(([text, on, fn, ic]) =>
+    el('button', { type: 'button', 'aria-pressed': String(on), onclick: (e) => { e.stopPropagation(); fn(); }, title: text }, ic ? icon(ic, 14) : null, el('span', {}, text))));
+  // A phone (or a section header) has room for one row of controls: the
+  // switches fold into one View menu with the same choices.
   if (isPhone()) {
-    return [btn('View', (e) => menu(e.currentTarget, [
-      { heading: 'Sort' },
+    return [btn('View', (e) => { e.stopPropagation(); menu(e.currentTarget, [
+      { heading: 'Sort jobs' },
       ...Object.entries(SORTS).map(([k, v]) => ({ label: v.label, checked: k === sort, onSelect: () => set('sort', k) })),
       ...(sort === 'manual' ? [{ heading: 'Status' },
         { label: 'By status', checked: bands, onSelect: () => set('bands', true) },
@@ -166,19 +394,19 @@ function switches(n) {
       { heading: 'Show as' },
       { label: 'Tiles', checked: mode === 'tiles', onSelect: () => set('view', 'tiles') },
       { label: 'List', checked: mode === 'list', onSelect: () => set('view', 'list') },
-    ], { label: 'View' }), { cls: 'sm', ic: 'sort' })];
+    ], { label: 'View' }); }, { cls: 'sm', ic: 'sort' })];
   }
   return [
-    btn(`Sort: ${SORTS[sort].label}`, (e) => menu(e.currentTarget, Object.entries(SORTS).map(([k, v]) => ({
-      label: v.label, checked: k === sort, onSelect: () => { prefs.set(`sort.${pageKey(n)}`, k); rerender(); },
+    compact ? null : btn(`Sort: ${SORTS[sort].label}`, (e) => menu(e.currentTarget, Object.entries(SORTS).map(([k, v]) => ({
+      label: v.label, checked: k === sort, onSelect: () => set('sort', k),
     })), { label: 'Sort' }), { cls: 'sm', ic: 'sort' }),
     sort === 'manual' ? seg('Status layout', [
-      ['By status', bands, () => { prefs.set(`bands.${pageKey(n)}`, true); rerender(); }],
-      ['Side by side', !bands, () => { prefs.set(`bands.${pageKey(n)}`, false); rerender(); }],
+      ['By status', bands, () => set('bands', true)],
+      ['Side by side', !bands, () => set('bands', false)],
     ]) : null,
     seg('View', [
-      ['Tiles', mode === 'tiles', () => { prefs.set(`view.${pageKey(n)}`, 'tiles'); rerender(); }, 'grid'],
-      ['List', mode === 'list', () => { prefs.set(`view.${pageKey(n)}`, 'list'); rerender(); }, 'list'],
+      ['Tiles', mode === 'tiles', () => set('view', 'tiles'), 'grid'],
+      ['List', mode === 'list', () => set('view', 'list'), 'list'],
     ]),
   ];
 }
@@ -197,22 +425,51 @@ async function addGroup(parentId, { kind = T.KIND.group } = {}) {
     placeholder: kind === T.KIND.product ? 'e.g. Model 450' : inJob ? 'e.g. Laser' : 'e.g. Davits',
     body: kind === T.KIND.product ? 'A product holds its jobs, one per revision. The Progress page (later) reads its steps.' : '',
   });
-  if (name) A.createGroup({ name, parentId, kind });
+  if (name) {
+    const id = A.createGroup({ name, parentId, kind });
+    if (id && parentId) setExpanded([parentId], true);
+  }
 }
 
-function groupMenu(anchor, g) {
+/** The category ⋯ menu. The same menu opens on right-click and long-press. */
+export function groupMenu(anchor, g, { at = null, focus = false } = {}) {
+  const lead = state.role === 'lead';
   const isTop = !g.parentId;
   const isCat = !T.isSection(state.idx, g);
+  const sort = sortOf(g);
+  const hasJobs = T.childrenOf(state.idx, g.id).some((c) => c.kind === T.KIND.task && S.isOpen(c.status));
   menu(anchor, [
+    !focus && isCat ? (isExpanded(g)
+      ? { label: 'Collapse', icon: 'chevRight', onSelect: () => { setExpanded([g.id], false); rerender(); } }
+      : { label: 'Expand', icon: 'chevDown', onSelect: () => { setExpanded([g.id], true); rerender(); } }) : null,
+    !focus ? { label: 'Focus: show it alone', icon: 'page', onSelect: () => go(`/tasks/${g.id}`) } : { label: 'Show it in the full list', icon: 'back', onSelect: () => revealCategory(g.id) },
+    { label: 'New job here', icon: 'plus', onSelect: () => addJob(g.id) },
+    g.kind === T.KIND.group ? { label: 'New category inside', icon: 'folderPlus', onSelect: () => addGroup(g.id) } : null,
+    hasJobs ? (jobsFolded(g.id)
+      ? { label: 'Show the jobs as tiles', icon: 'grid', onSelect: () => { setJobsFolded(g.id, false); rerender(); } }
+      : { label: 'Fold the jobs into one tile', icon: 'tasks', onSelect: () => { setJobsFolded(g.id, true); rerender(); } }) : null,
+    'sep',
+    { heading: 'Sort jobs' },
+    ...Object.entries(SORTS).map(([k, v]) => ({ label: v.label, checked: k === sort, onSelect: () => { prefs.set(`sort.${pageKey(g)}`, k); rerender(); } })),
+    ...(isPhone() ? [
+      { heading: 'Status' },
+      { label: 'By status', checked: bandsOn(g), onSelect: () => { prefs.set(`bands.${pageKey(g)}`, true); rerender(); } },
+      { label: 'Side by side', checked: !bandsOn(g), onSelect: () => { prefs.set(`bands.${pageKey(g)}`, false); rerender(); } },
+      { heading: 'Show jobs as' },
+      { label: 'Tiles', checked: viewMode(g) === 'tiles', onSelect: () => { prefs.set(`view.${pageKey(g)}`, 'tiles'); rerender(); } },
+      { label: 'List', checked: viewMode(g) === 'list', onSelect: () => { prefs.set(`view.${pageKey(g)}`, 'list'); rerender(); } },
+    ] : []),
+    'sep',
     { label: 'Rename', icon: 'edit', onSelect: () => A.rename(g.id) },
     isCat && g.kind === T.KIND.group ? { label: 'Colour…', icon: 'grid', onSelect: () => colourMenu(anchor, g) } : null,
     isCat ? { label: 'Steps template…', icon: 'tasks', onSelect: () => editTemplate(g) } : null,
-    isCat && g.kind === T.KIND.group && !isTop ? { label: 'Add a product', icon: 'plus', onSelect: () => addGroup(g.id, { kind: T.KIND.product }) } : null,
+    lead && isCat && g.kind === T.KIND.group && !isTop ? { label: 'Add a product', icon: 'plus', onSelect: () => addGroup(g.id, { kind: T.KIND.product }) } : null,
+    lead && isCat && g.kind === T.KIND.group ? { label: 'Turn into a job', icon: 'restore', onSelect: () => A.turnIntoJob(g.id) } : null,
     { label: 'Move to…', icon: 'move', onSelect: async () => (await import('./pickers.js')).moveDialog(g.id) },
     'sep',
     { label: 'Archive', icon: 'archive', onSelect: () => A.archive(g.id) },
-    { label: 'Delete…', icon: 'trash', danger: true, onSelect: async () => { if (await A.remove(g.id)) go('/tasks'); } },
-  ], { label: `${T.nameOf(g)} actions` });
+    { label: 'Delete…', icon: 'trash', danger: true, onSelect: async () => { if (await A.remove(g.id) && focus) go('/tasks'); } },
+  ], { label: `${T.nameOf(g)} actions`, at });
 }
 
 function colourMenu(anchor, g) {
@@ -239,31 +496,16 @@ async function editTemplate(g) {
   A.updateFields(g.id, { stepsTemplate: v.trim() ? T.templateFromText(v) : null }, { message: v.trim() ? 'Template saved' : 'Template removed' });
 }
 
-function groupPage(inner, g) {
-  const { idx } = state;
-  const colour = g ? T.colourOf(idx, g.id) : null;
-  const open = g ? T.openJobCount(idx, g.id) : T.childrenOf(idx, null).filter((c) => c.kind === T.KIND.task && S.isOpen(c.status)).length;
-  const kindWord = g?.kind === T.KIND.product ? 'Product' : null;
-  inner.append(el('div', { class: 'sec', style: { gap: '10px' } },
-    crumbs(g),
-    el('div', { class: 'view-head' },
-      // The dot rides inside the heading, so a long name wraps with it rather than leaving it alone on a line.
-      el('h1', { class: 'h1 with-dot' }, g ? dot(colour, true) : null, g ? T.nameOf(g) : 'Not in a category'),
-      kindWord ? el('span', { class: 'grp-kind' }, kindWord) : null,
-      el('span', { class: 'meta' }, `${open} open`),
-      el('span', { class: 'sp' }),
-      btn('Job', () => addJob(g?.id ?? null), { cls: 'sm', ic: 'plus', title: 'New job here (N)' }),
-      g && g.kind === T.KIND.group ? btn('Group', () => addGroup(g.id), { cls: 'sm', ic: 'folderPlus', title: 'New group inside this one' }) : null,
-      ...switches(g),
-      g ? iconBtn('more', `${T.nameOf(g)} actions`, (e) => groupMenu(e.currentTarget, g)) : null)));
-  const body = el('div', { class: 'sec' });
-  body.append(...children(g?.id ?? null, 0, g, { tasksOnly: !g }));
-  inner.append(body);
-  wireDrag(body, g);
+/** Drag in the full list (and Focus): jobs and categories alike. */
+function wireListDrag(list) {
+  enableDrag(list, {
+    onDrop: (dragId, targetId, where) => A.moveNextTo(dragId, targetId, where),
+    onDropInto: (dragId, groupId) => { A.moveInto(dragId, groupId); setExpanded([groupId], true); },
+  });
 }
 
 // ---------------------------------------------------------------------------
-// a job, opened as a page
+// a job, opened as a page: its steps, its sections, its tasks
 // ---------------------------------------------------------------------------
 
 function jobPage(inner, j) {
@@ -282,24 +524,26 @@ function jobPage(inner, j) {
       ...switches(j),
       iconBtn('more', `${j.title} actions`, (e) => taskMenu(e.currentTarget, j)))));
   const body = el('div', { class: 'sec' });
-  const kids = children(j.id, 0, j, {});
+  const kids = children(j.id, 0, j);
   const hasSteps = T.childrenOf(idx, j.id).some((c) => c.kind === T.KIND.step);
   if (hasSteps) {
     body.append(el('div', { class: 'empty' }, el('span', {}, `${prog.done} of ${prog.total} steps and tasks done. `), btn('Open the steps', () => openTask(j.id), { cls: 'sm' })));
   }
   body.append(...kids);
   inner.append(body);
-  wireDrag(body, j);
+  if (sortOf(j) === 'manual') {
+    enableDrag(body, {
+      onDrop: (dragId, targetId, where) => A.moveNextTo(dragId, targetId, where),
+      onDropInto: (dragId, groupId) => A.moveInto(dragId, groupId),
+    });
+  }
 }
 
-// ---------------------------------------------------------------------------
-// the body: runs of tasks, sub-groups as sections, Done folded at the end
-// ---------------------------------------------------------------------------
-
-function children(parentId, depth, page, { tasksOnly = false } = {}) {
+/** Inside a job: runs of tasks, its sections, Done and Cancelled at the end. */
+function children(parentId, depth, page) {
   const { idx } = state;
   const sort = sortOf(page);
-  const kids = T.childrenOf(idx, parentId).filter((k) => k.kind !== T.KIND.step && (!tasksOnly || k.kind === T.KIND.task));
+  const kids = T.childrenOf(idx, parentId).filter((k) => k.kind !== T.KIND.step);
   const out = [];
   const done = [];
   let run = [];
@@ -317,21 +561,12 @@ function children(parentId, depth, page, { tasksOnly = false } = {}) {
     }
     flush();
   }
-  if (sort !== 'manual' && depth === 0) {
-    out.unshift(el('div', { class: 'sort-note' }, `Sorted by ${SORTS[sort].label.toLowerCase()}; dragging is paused.`,
-      el('button', { type: 'button', onclick: () => { prefs.set(`sort.${pageKey(page)}`, 'manual'); rerender(); } }, 'Back to manual order')));
-  }
-  // Finished work folds away at the end: Done, then Cancelled in its own strip, never mixed.
   const doneOnly = done.filter((t) => t.status === 'done');
   const cancelled = done.filter((t) => t.status === 'cancelled');
   if (doneOnly.length) out.push(doneFold(parentId, doneOnly, page, 'done'));
   if (cancelled.length) out.push(doneFold(parentId, cancelled, page, 'cancelled'));
-  if (!out.length || (out.length === 1 && out[0].classList.contains('sort-note'))) {
-    const p = parentId ? node(parentId) : null;
-    const isJob = p?.kind === T.KIND.task;
-    out.push(el('div', { class: 'empty' },
-      el('span', {}, isJob ? 'No tasks here.' : 'No jobs here yet.'),
-      btn(isJob ? 'Task' : 'Job', () => addJob(parentId), { cls: 'sm', ic: 'plus' })));
+  if (!out.length) {
+    out.push(el('div', { class: 'empty' }, el('span', {}, 'No tasks here.'), btn('Task', () => addJob(parentId), { cls: 'sm', ic: 'plus' })));
   }
   return out;
 }
@@ -340,7 +575,6 @@ function renderRun(list, page, { flat = false } = {}) {
   const mode = viewMode(page);
   const bands = !flat && bandsOn(page);
   const ordered = flat ? list : S.BAND_ORDER.flatMap((s) => list.filter((t) => t.status === s));
-  // While sorted, dragging is paused: no grab affordance either.
   const opts = { assignee: true, drag: sortOf(page) === 'manual' };
   if (mode === 'list') {
     const rows = el('div', { class: 'rows' });
@@ -363,30 +597,23 @@ function renderRun(list, page, { flat = false } = {}) {
   return grid;
 }
 
+/** A section inside a job. */
 function section(g, depth, page) {
   const { idx } = state;
   const key = `col.${g.id}`;
-  const firstOnPhone = isPhone() && T.childrenOf(idx, g.parentId).filter(T.isGroupLike)[0]?.id !== g.id;
   const empty = !T.childrenOf(idx, g.id).some((c) => c.kind !== T.KIND.step);
-  const closed = prefs.get(key, empty || firstOnPhone);
-  // A category counts its open jobs; a section inside a job counts its open tasks.
-  const open = T.isSection(idx, g) ? T.childrenOf(idx, g.id).filter((t) => t.kind === T.KIND.task && S.isOpen(t.status)).length : T.openJobCount(idx, g.id);
-  // Past three levels a link takes over from more nesting: the breadcrumb on its page carries the path.
-  if (depth >= 2) {
-    return el('a', { class: 'card', href: routeHref(`/tasks/${g.id}`), style: { 'min-height': '0' } },
-      el('div', { class: 'row' }, dot(T.colourOf(idx, g.id)), el('span', { class: 'nm' }, T.nameOf(g)), el('span', { class: 'sp' }), el('span', { class: 'meta' }, `${open} open`), icon('chevRight', 16)));
-  }
-  const s = el('section', { class: `grp${closed ? ' closed' : ''}`, 'aria-label': T.nameOf(g) },
+  const closed = prefs.get(key, empty);
+  const open = T.childrenOf(idx, g.id).filter((t) => t.kind === T.KIND.task && S.isOpen(t.status)).length;
+  const s = el('section', { class: `grp${closed ? ' closed' : ''}`, 'aria-label': T.nameOf(g), dataset: { id: g.id } },
     el('div', { class: 'grp-head', dataset: { dropInto: g.id } },
       el('button', {
         class: 'ib', type: 'button', 'aria-expanded': String(!closed), 'aria-label': `${closed ? 'Expand' : 'Collapse'} ${T.nameOf(g)}`,
         onclick: () => { prefs.set(key, !closed); rerender(); },
       }, icon(closed ? 'chevRight' : 'chevDown', 16)),
-      el('h2', { class: 'h2' }, el('a', { href: routeHref(`/tasks/${g.id}`), style: { color: 'inherit', 'text-decoration': 'none' } }, T.nameOf(g))),
-      g.kind === T.KIND.product ? el('span', { class: 'grp-kind' }, 'Product') : null,
+      el('h2', { class: 'h2' }, T.nameOf(g)),
       el('span', { class: 'meta' }, `${open} open`),
       el('span', { class: 'sp' }),
-      btn(page?.kind === T.KIND.task ? 'Task' : 'Job', () => addJob(g.id), { cls: 'sm ghost', ic: 'plus' })));
+      btn('Task', () => addJob(g.id), { cls: 'sm ghost', ic: 'plus' })));
   if (!closed) s.append(...children(g.id, depth + 1, page));
   return s;
 }
@@ -408,17 +635,9 @@ function doneFold(parentId, done, page, kind = 'done') {
   if (openFold) {
     const shown = all ? sorted : sorted.slice(0, 4);
     const mode = viewMode(page);
-    if (mode === 'list') wrap.append(el('div', { class: 'rows' }, shown.map((t) => row(t, { assignee: true }))));
-    else wrap.append(el('div', { class: 'grid' }, shown.map((t) => tile(t, { assignee: true, menuExtra: [{ label: 'Archive', icon: 'archive', onSelect: () => A.archive(t.id) }] }))));
+    if (mode === 'list') wrap.append(el('div', { class: 'rows' }, shown.map((t) => row(t, { assignee: true, drag: false }))));
+    else wrap.append(el('div', { class: 'grid' }, shown.map((t) => tile(t, { assignee: true, drag: false, menuExtra: [{ label: 'Archive', icon: 'archive', onSelect: () => A.archive(t.id) }] }))));
     if (sorted.length > 4) wrap.append(el('div', { class: 'more-row' }, btn(all ? 'Show fewer' : `Show all ${sorted.length}`, () => { prefs.set(allKey, !all); rerender(); }, { cls: 'ghost sm' })));
   }
   return wrap;
-}
-
-function wireDrag(body, page) {
-  if (sortOf(page) !== 'manual') return;
-  enableDrag(body, {
-    onDrop: (dragId, targetId, where) => A.moveNextTo(dragId, targetId, where),
-    onDropInto: (dragId, groupId) => A.moveInto(dragId, groupId),
-  });
 }

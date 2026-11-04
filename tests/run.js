@@ -8,6 +8,7 @@ import * as D from '../js/dates.js';
 import * as TD from '../js/import/tiledo.js';
 import * as XL from '../js/import/excel.js';
 import * as BL from '../js/backlog.js';
+import * as C from '../js/convert.js';
 import { sampleNodes, tiledoData, tiledoArchive, excelRows } from './samples.js';
 
 const results = [];
@@ -653,6 +654,66 @@ export async function run() {
     const built = XL.buildExcel(xp, { into: {}, skip: new Set(['0:0', '0:1']) }, { idx: empty, by: BY, at: AT, newId });
     expect(built.stats.jobs, 7);
     expect(built.stats.skipped, 2);
+  });
+
+  // -------------------------------------------------------------------------
+  group = 'convert';
+  test('a job becomes a category: details stashed, subtasks become its jobs', () => {
+    const nodes = apply(sampleNodes(), [{ id: 'j1', brief: 'The brief', revision: 'R2', assignee: BY }]);
+    const r = C.toCategory(T.buildIndex(nodes), 'j1', { by: BY, at: AT, colour: 7 });
+    ok(!r.error, r.error);
+    const p = r.patches.find((x) => x.id === 'j1');
+    expect(p.kind, 'group');
+    expect(p.name, 'Bracket redesign');
+    expect(p.colour, 7);
+    expect(p.jobStash.status, 'in_progress');
+    expect(p.jobStash.brief, 'The brief');
+    expect(p.status, null, 'hidden while it is a category');
+    expect(r.patches.find((x) => x.id === 't1').parentId, 'j1', 'the subtask under a step is lifted out to the category');
+    const idx = T.buildIndex(apply(nodes, r.patches));
+    ok(T.isJob(idx, idx.byId.get('t1')), 't1 is now a job');
+    ok(!T.isSection(idx, idx.byId.get('sec')), 'its section is now a sub-category');
+    expect(r.updates[0].kind, 'convert');
+    expect(S.eventLabel(r.updates[0]), 'Turned into a category');
+  });
+  test('a job that held something up stops holding it up', () => {
+    let nodes = sampleNodes();
+    nodes = apply(nodes, S.changeStatus(T.buildIndex(nodes), 'j2', 'waiting', { by: BY, at: AT, blockedBy: ['j1'] }).patches);
+    const r = C.toCategory(T.buildIndex(nodes), 'j1', { by: BY, at: AT });
+    expect(r.patches.find((x) => x.id === 'j2').status, 'todo');
+  });
+  test('only a job can become a category', () => {
+    ok(C.toCategory(index(), 't1', { by: BY, at: AT }).error, 'a subtask is refused');
+    ok(C.toCategory(index(), 'g-alpha', { by: BY, at: AT }).error, 'a category is refused');
+  });
+  test('a category becomes a job: its jobs become subtasks, sub-categories sections', () => {
+    const r = C.toJob(index(), 'g-alpha', { by: BY, at: AT });
+    ok(!r.error, r.error);
+    const p = r.patches[0];
+    expect([p.kind, p.title, p.status, p.assignee], ['task', 'Alpha Units', 'todo', BY]);
+    const idx = T.buildIndex(apply(sampleNodes(), r.patches));
+    ok(!T.isJob(idx, idx.byId.get('j1')), 'j1 is a subtask now');
+    ok(T.isSection(idx, idx.byId.get('g-alpha-sub')), 'its sub-category is a section now');
+    expect(S.eventLabel(r.updates[0]), 'Turned into a job');
+  });
+  test('a category holding a product is refused, with the reason', () => {
+    const idx = T.buildIndex([...sampleNodes(), { id: 'p1', kind: 'product', parentId: 'g-alpha-sub', order: 9000, name: 'Model X' }]);
+    const r = C.toJob(idx, 'g-alpha', { by: BY, at: AT });
+    ok(r.error && r.error.includes('Model X'), r.error);
+    ok(C.toJob(index(), 'sec', { by: BY, at: AT }).error, 'a section inside a job is refused too');
+  });
+  test('round trip: job → category → job brings the job back as it was', () => {
+    const before = apply(sampleNodes(), [{ id: 'j1', brief: 'Keep me', due: '2026-12-01', priority: 'high', assignee: BY }]);
+    const a = C.toCategory(T.buildIndex(before), 'j1', { by: BY, at: AT, colour: 3 });
+    const mid = apply(before, a.patches);
+    const b = C.toJob(T.buildIndex(mid), 'j1', { by: BY, at: AT });
+    const after = T.buildIndex(apply(mid, b.patches)).byId.get('j1');
+    const was = T.buildIndex(before).byId.get('j1');
+    expect([after.kind, after.title, after.status, after.brief, after.due, after.priority, after.assignee],
+      [was.kind, was.title, was.status, was.brief, was.due, was.priority, was.assignee]);
+    expect(after.jobStash, null);
+    const steps = T.childrenOf(T.buildIndex(apply(mid, b.patches)), 'j1').filter((c) => c.kind === 'step').map((c) => c.id);
+    expect(steps, ['s1', 's2', 's3'], 'its steps were kept, hidden, and are back');
   });
 
   // -------------------------------------------------------------------------

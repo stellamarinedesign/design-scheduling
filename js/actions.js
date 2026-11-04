@@ -18,6 +18,7 @@ import * as T from './tree.js';
 import * as S from './status.js';
 import { nowISO } from './dates.js';
 import { toast, toastError } from './ui.js';
+import * as C from './convert.js';
 import { confirmDialog, promptDialog } from './dialog.js';
 
 const ctx = () => ({ by: state.me, at: nowISO(), role: state.role, canWrite });
@@ -332,8 +333,11 @@ function applyMove(r, what) {
   return true;
 }
 
-/** Into a new parent (null is the top). */
-export function moveInto(id, parentId, position = 'beforeGroups') {
+/**
+ * Into a new parent (null is the top). A job lands above the sub-groups, as a
+ * new one does; a category lands after the categories already there.
+ */
+export function moveInto(id, parentId, position = T.isGroupLike(node(id)) ? 'end' : 'beforeGroups') {
   const dest = parentId ? T.nameOf(node(parentId)) : 'the top level';
   return applyMove(T.nestUnder(state.idx, id, parentId, position), `Moved to ${dest}`);
 }
@@ -430,6 +434,32 @@ export function reconcileOnLoad() {
   const r = S.reconcile(state.idx, ctx());
   if (r.patches.length) write({ patch: r.patches, updates: r.updates });
   return r.patches.length;
+}
+
+// ---------------------------------------------------------------------------
+// convert (lead only)
+// ---------------------------------------------------------------------------
+
+/** A job becomes a category: its job details kept but hidden, its subtasks become jobs. */
+export function turnIntoCategory(id) {
+  if (state.role !== 'lead') return;
+  const r = C.toCategory(state.idx, id, { ...ctx(), colour: nextColour() });
+  if (r.error) { toast(r.error, { warn: true }); return; }
+  const name = T.nameOf(node(id));
+  const inverse = inverseOf(r.patches);
+  write({ patch: r.patches, updates: r.updates });
+  toast(`${name} is now a category`, { action: 'Undo', onAction: () => write({ patch: inverse }) });
+}
+
+/** A category becomes a job: its jobs become subtasks, its sub-categories sections. */
+export function turnIntoJob(id) {
+  if (state.role !== 'lead') return;
+  const r = C.toJob(state.idx, id, ctx());
+  if (r.error) { toast(r.error, { warn: true, ms: 9000 }); return; }
+  const name = T.nameOf(node(id));
+  const inverse = inverseOf(r.patches);
+  write({ patch: r.patches, updates: r.updates });
+  toast(`${name} is now a job`, { action: 'Undo', onAction: () => write({ patch: inverse }) });
 }
 
 /** Rename via a prompt: groups, products, steps and tasks alike. */

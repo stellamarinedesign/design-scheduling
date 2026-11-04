@@ -6,7 +6,7 @@ import { Auth, setAccess, ROLE } from './auth.js';
 import { Store } from './store.js';
 import { state, subscribe, setNodes, setError } from './state.js';
 import { initRouter, route, go, currentTab, closePanel } from './router.js';
-import { el, icon, isWide, closeMenu } from './ui.js';
+import { el, icon, isWide, closeMenu, installContextMenus } from './ui.js';
 import * as A from './actions.js';
 import { renderSidebar } from './views/sidebar.js';
 import { renderHome } from './views/home.js';
@@ -35,6 +35,8 @@ $('searchField').append(icon('search', 16), el('span', {}, 'Search jobs and task
 const tabbar = document.querySelectorAll('.tabbar a');
 tabbar[0].append(icon('home', 22), 'Home');
 tabbar[1].append(icon('tasks', 22), 'Tasks');
+
+installContextMenus();
 
 const openSearch = () => searchNow();
 const quickAdd = (opts) => openQuickAdd(opts ?? {});
@@ -185,6 +187,10 @@ async function start() {
   window.addEventListener('offline', sayMode);
 
   initRouter(() => { closeMenu(); drawAll(); });
+  // Some controls differ by width band (a phone folds switches into menus):
+  // crossing the phone breakpoint - a rotated phone, a resized window -
+  // draws again.
+  window.matchMedia('(max-width: 699px)').addEventListener('change', () => { closeMenu(); drawAll(); });
   subscribe((meta) => {
     drawAll(meta);
     if (!state.reconciled && state.ready) { state.reconciled = true; A.reconcileOnLoad(); }

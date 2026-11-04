@@ -85,7 +85,7 @@ function crumbs(n) {
   const chain = n ? T.ancestorChain(state.idx, n.id) : [];
   return el('nav', { class: 'crumbs', 'aria-label': 'Where it is' },
     chain.length ? chain.flatMap((a, i) => [i ? el('span', { 'aria-hidden': 'true' }, '›') : null,
-      el('a', { href: routeHref(`/tasks/${a.id}`) }, T.nameOf(a))]) : el('span', {}, n ? 'Not in a category' : ''));
+      el('a', { href: a.kind === T.KIND.task ? routeHref(`/tasks/${a.id}`) : routeHref('/tasks', { c: a.id }) }, T.nameOf(a))]) : el('span', {}, n ? 'Not in a category' : ''));
 }
 
 function bar(n) {
