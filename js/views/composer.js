@@ -23,7 +23,7 @@ import * as PH from '../photos.js';
 import { openDialog } from '../dialog.js';
 import { photoTray, acceptPhotos } from './photo-ui.js';
 import { categoryDialog, jobDialog } from './pickers.js';
-import { route } from '../router.js';
+import { route, redraw } from '../router.js';
 
 const DRAFT = 'stella.design.noteDraft';
 const loadDraft = () => { try { return JSON.parse(localStorage.getItem(DRAFT) ?? 'null'); } catch { return null; } };
@@ -151,6 +151,9 @@ export function openComposer({ noteId = null, groupId, jobId } = {}) {
       PH.draftDrop(ids);
       markClean();
       close(id);
+      // The Log redrew when the note landed, while the draft was still kept, so
+      // its + Note still said "(draft)". Draw it again now the draft is gone.
+      redraw();
     };
     text.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); post(); } });
 
@@ -165,12 +168,14 @@ export function openComposer({ noteId = null, groupId, jobId } = {}) {
         markClean();
       }
       dismiss();
+      if (!editing) redraw();   // + Note shows whether a draft is waiting
     };
     const discard = editing ? null : btn('Discard draft', () => {
       PH.draftDrop(tray.ids());
       dropDraft();
       markClean();
       close(null);
+      redraw();
       toast('Draft discarded');
     }, { cls: 'ghost' });
 
