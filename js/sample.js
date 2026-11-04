@@ -29,7 +29,7 @@ export async function loadSample() {
       id, kind: 'task', parentId, order: next(parentId), title, brief: '', status, waiting: null, priority: 'normal',
       assignee: me, createdBy: me, createdAt: ago(days + 10), updatedAt: ago(days), lastActivityAt: ago(days),
       due: null, revision: null, folders: [], checkedBy: null, checkedAt: null, doneAt: status === 'done' ? ago(days) : null,
-      homeOrder: null, backlogIgnored: false, archivedAt: null, fixNote: null, ...extra,
+      homeOrder: null, backlogIgnored: false, archivedAt: null, fixNote: null, cancelled: null, ...extra,
     });
     return id;
   };
@@ -84,6 +84,8 @@ export async function loadSample() {
   task('Armrest profile', chairs, 'waiting', 8, { waiting: { note: 'Supplier sample of the new profile', since: ago(8), prevStatus: 'todo', blockedBy: [] } });
   task('600LPH boxed frame', water, 'in_progress', 8);
   task('Membrane bracket revision', water, 'done', 3);
+  const gone = task('Twin-membrane frame for a custom build', water, 'cancelled', 9, { cancelled: { by: me, at: ago(9), reason: 'Customer cancelled (verbal)', prevStatus: 'in_progress' } });
+  say(gone, 'cancel', 'Customer cancelled (verbal)', 9, { from: 'in_progress', to: 'cancelled' });
   task('Aircon unit drawings', fixes, 'todo', 24);
   task('Watertight door seal detail', fixes, 'todo', 17);
   task('Hinge plate thickness', fixes, 'todo', 4);

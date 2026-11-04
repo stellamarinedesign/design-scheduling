@@ -241,13 +241,18 @@ function contextAction(n) {
         btn('Submit for check', () => A.setStatus(n.id, 'check')),
         btn('Waiting…', () => A.setStatus(n.id, 'waiting'), { cls: 'ghost' }));
     case 'done':
-    case 'cancelled':
       return el('div', { class: 'row' },
-        el('span', { class: 'meta' }, n.status === 'done'
-          ? `Done${n.doneAt ? ` ${whenLabel(n.doneAt)}` : ''}${n.checkedBy ? ` · checked by ${personName(n.checkedBy)}` : ''}`
-          : 'Cancelled'),
+        el('span', { class: 'meta' }, `Done${n.doneAt ? ` ${whenLabel(n.doneAt)}` : ''}${n.checkedBy ? ` · checked by ${personName(n.checkedBy)}` : ''}`),
         el('span', { class: 'sp' }),
         btn('Reopen', () => A.setStatus(n.id, 'in_progress'), { cls: 'sm' }));
+    case 'cancelled': {
+      // Recorded apart, for future reference: who, when and why.
+      const why = String(n.cancelled?.reason ?? '').trim();
+      return el('div', { class: 'callout' },
+        el('div', { class: 'callout-head' }, `Cancelled${n.cancelled?.at ? ` ${whenLabel(n.cancelled.at)}` : ''}${n.cancelled?.by ? ` by ${personName(n.cancelled.by)}` : ''}`),
+        why ? el('div', { class: 'callout-body' }, why) : null,
+        el('div', { class: 'acts' }, btn(`Reopen · back to ${S.LABEL[S.reopenTo(n)]}`, () => A.reopen(n.id), { ic: 'restore' })));
+    }
     default: return null;
   }
 }

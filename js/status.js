@@ -12,6 +12,11 @@
 //   this is the same rule, so the UI never offers what the rules refuse.
 // - WAITING REMEMBERS where it came from (`waiting.prevStatus`), so leaving it
 //   restores that status instead of guessing.
+// - CANCELLED IS FINISHED LIKE DONE, RECORDED APART (decided 2026-11-04). It
+//   leaves every active list, unblocks what waits on it, and cancels the open
+//   tasks and steps inside it; but it keeps `cancelled: {by, at, reason,
+//   prevStatus}` and a `cancel` timeline event, and Reopen puts it - and what
+//   was cancelled with it - back where it was.
 // - A WAITING TASK CAN BE BLOCKED BY OTHER TASKS (`waiting.blockedBy`). When the
 //   last blocker is done or cancelled the task unblocks itself, in the same
 //   batch as the blocker's change, with an "Unblocked" update. A reconcile on
@@ -21,7 +26,7 @@
 // Everything here is pure: it reads an index (tree.js) and returns patches and
 // updates for the store to write in one batch.
 
-import { ancestorChain, descendantIds, nameOf, KIND } from './tree.js';
+import { ancestorChain, descendantIds, childrenOf, nameOf, KIND } from './tree.js';
 
 export const STATUSES = ['todo', 'in_progress', 'waiting', 'check', 'fix', 'done', 'cancelled'];
 
@@ -202,12 +207,65 @@ export function removeBlocker(idx, blockerId, { by, at } = {}) {
   return { patches, updates };
 }
 
+/** What a cancelled task goes back to when reopened: where it was, never Waiting or Cancelled. */
+export function reopenTo(t) {
+  const prev = t?.cancelled?.prevStatus;
+  return prev && prev !== 'cancelled' && prev !== 'waiting' && STATUSES.includes(prev) ? prev : 'todo';
+}
+
+/** The status a task held before it was cancelled (Waiting gives way to what it held before). */
+const beforeCancel = (t) => (t.status === 'waiting' ? restoreTo(t) : (t.status ?? 'todo'));
+
+const isLeafStep = (idx, n) => n.kind === KIND.step
+  && !childrenOf(idx, n.id).some((k) => k.kind === KIND.step || k.kind === KIND.task);
+
+/**
+ * Cancelling a job cancels what is still open inside it: open tasks become
+ * Cancelled (marked as cancelled with it), open leaf steps become N/a. Done
+ * work stays done. Each carries `withId`, so Reopen can put it back.
+ */
+export function cancelInside(idx, id, { by, at, reason = '' } = {}) {
+  const patches = [];
+  const updates = [];
+  const tasks = [];
+  for (const d of descendantIds(idx, id)) {
+    const n = idx.byId.get(d);
+    if (n.kind === KIND.task && isOpen(n.status)) {
+      patches.push({
+        id: d, status: 'cancelled', waiting: null, fixNote: null, updatedAt: at, lastActivityAt: at,
+        cancelled: { by, at, reason, prevStatus: beforeCancel(n), withId: id },
+      });
+      updates.push({ taskId: d, at, by, kind: 'cancel', from: n.status, to: 'cancelled', text: reason ? `${reason} (cancelled with its job)` : 'Cancelled with its job' });
+      tasks.push(d);
+    } else if (isLeafStep(idx, n) && n.state !== 'done' && n.state !== 'na') {
+      patches.push({ id: d, state: 'na', cancelledFrom: { state: n.state ?? 'todo', withId: id }, updatedAt: at });
+    }
+  }
+  return { patches, updates, tasks };
+}
+
+/** Reopening puts back what was cancelled with it, as it was. */
+export function reopenInside(idx, id, { by, at } = {}) {
+  const patches = [];
+  const updates = [];
+  for (const d of descendantIds(idx, id)) {
+    const n = idx.byId.get(d);
+    if (n.kind === KIND.task && n.status === 'cancelled' && n.cancelled?.withId === id) {
+      patches.push({ id: d, status: reopenTo(n), cancelled: null, updatedAt: at, lastActivityAt: at });
+      updates.push({ taskId: d, at, by, kind: 'reopen', from: 'cancelled', to: reopenTo(n), text: 'Reopened with its job' });
+    } else if (n.kind === KIND.step && n.cancelledFrom?.withId === id) {
+      patches.push({ id: d, state: n.cancelledFrom.state ?? 'todo', cancelledFrom: null, updatedAt: at });
+    }
+  }
+  return { patches, updates };
+}
+
 /**
  * Change a task's status. Waiting takes `note` and `blockedBy`; Fix needs a
  * `comment`. Finishing a task unblocks what waits on it in the same batch.
  * @returns {{error: string}|{patches: object[], updates: object[]}}
  */
-export function changeStatus(idx, id, to, { by, at, note = '', blockedBy = [], comment = '', role = 'lead' } = {}) {
+export function changeStatus(idx, id, to, { by, at, note = '', blockedBy = [], comment = '', reason = '', role = 'lead' } = {}) {
   const t = idx.byId.get(id);
   if (!t || t.kind !== KIND.task) return { error: 'That task has gone.' };
   const from = t.status ?? 'todo';
@@ -244,15 +302,33 @@ export function changeStatus(idx, id, to, { by, at, note = '', blockedBy = [], c
   // resubmitted or finished.
   if (to === 'fix' && from === 'check') patch.fixNote = String(comment).trim();
   else if (to === 'check' || isFinished(to)) patch.fixNote = null;
+  const why = String(reason ?? '').trim();
+  if (to === 'cancelled') patch.cancelled = { by, at, reason: why, prevStatus: beforeCancel(t) };
+  else if (from === 'cancelled') patch.cancelled = null;
 
-  const kind = from === 'waiting' && to === 'waiting' ? 'block' : eventKind(from, to);
-  const text = to === 'fix' ? String(comment).trim() : to === 'waiting' ? String(note).trim() : String(comment ?? '').trim();
+  let kind = from === 'waiting' && to === 'waiting' ? 'block' : eventKind(from, to);
+  if (to === 'cancelled') kind = 'cancel';
+  else if (from === 'cancelled') kind = 'reopen';
+  const text = to === 'fix' ? String(comment).trim() : to === 'waiting' ? String(note).trim() : to === 'cancelled' ? why : String(comment ?? '').trim();
   const updates = [{ taskId: id, at, by, kind, from, to, text }];
   const patches = [patch];
-  if (isFinished(to)) {
-    const more = unblockFor(idx, [id], { by, at, statusOverride: { [id]: to } });
-    patches.push(...more.patches);
-    updates.push(...more.updates);
+  let finished = isFinished(to) ? [id] : [];
+  const override = { [id]: to };
+  if (to === 'cancelled') {
+    const inside = cancelInside(idx, id, { by, at, reason: why });
+    patches.push(...inside.patches);
+    updates.push(...inside.updates);
+    finished = [id, ...inside.tasks];
+    for (const x of inside.tasks) override[x] = 'cancelled';
+  } else if (from === 'cancelled') {
+    const back = reopenInside(idx, id, { by, at });
+    patches.push(...back.patches);
+    updates.push(...back.updates);
+  }
+  if (finished.length) {
+    const more = unblockFor(idx, finished, { by, at, statusOverride: override });
+    patches.push(...more.patches.filter((p) => !override[p.id]));
+    updates.push(...more.updates.filter((u) => !override[u.taskId]));
   }
   return { patches, updates };
 }
@@ -285,6 +361,8 @@ export function eventLabel(u) {
     case 'assign': return 'Assigned';
     case 'create': return 'Created';
     case 'import': return 'Imported';
+    case 'cancel': return 'Cancelled';
+    case 'reopen': return `Reopened · ${LABEL[u.to] ?? u.to}`;
     case 'status':
       if (u.to === 'in_progress' && (u.from === 'todo' || !u.from)) return 'Started';
       if (u.from === 'waiting' && u.to !== 'waiting') return `Stopped waiting · ${LABEL[u.to] ?? u.to}`;

@@ -320,7 +320,11 @@ function children(parentId, depth, page, { tasksOnly = false } = {}) {
     out.unshift(el('div', { class: 'sort-note' }, `Sorted by ${SORTS[sort].label.toLowerCase()}; dragging is paused.`,
       el('button', { type: 'button', onclick: () => { prefs.set(`sort.${pageKey(page)}`, 'manual'); rerender(); } }, 'Back to manual order')));
   }
-  if (done.length) out.push(doneFold(parentId, done, page));
+  // Finished work folds away at the end: Done, then Cancelled in its own strip, never mixed.
+  const doneOnly = done.filter((t) => t.status === 'done');
+  const cancelled = done.filter((t) => t.status === 'cancelled');
+  if (doneOnly.length) out.push(doneFold(parentId, doneOnly, page, 'done'));
+  if (cancelled.length) out.push(doneFold(parentId, cancelled, page, 'cancelled'));
   if (!out.length || (out.length === 1 && out[0].classList.contains('sort-note'))) {
     const p = parentId ? node(parentId) : null;
     const isJob = p?.kind === T.KIND.task;
@@ -386,17 +390,20 @@ function section(g, depth, page) {
   return s;
 }
 
-function doneFold(parentId, done, page) {
-  const key = `done.${parentId ?? 'top'}`;
+/** A collapsed strip of finished work: `kind` is 'done' or 'cancelled', each with its own count and archive-all. */
+function doneFold(parentId, done, page, kind = 'done') {
+  const key = `${kind}.${parentId ?? 'top'}`;
   const openFold = prefs.get(key, false);
-  const allKey = `doneAll.${parentId ?? 'top'}`;
+  const allKey = `${kind}All.${parentId ?? 'top'}`;
   const all = prefs.get(allKey, false);
-  const sorted = [...done].sort((a, b) => String(b.doneAt ?? b.updatedAt).localeCompare(String(a.doneAt ?? a.updatedAt)));
+  const when = (t) => String((kind === 'cancelled' ? t.cancelled?.at : t.doneAt) ?? t.updatedAt);
+  const sorted = [...done].sort((a, b) => when(b).localeCompare(when(a)));
+  const word = kind === 'cancelled' ? 'Cancelled' : 'Done';
   const wrap = el('div', { class: 'done-fold' },
     el('div', { class: 'row' },
-      btn(`Done ${done.length}`, () => { prefs.set(key, !openFold); rerender(); }, { cls: 'sm ghost', ic: openFold ? 'chevDown' : 'chevRight', attrs: { 'aria-expanded': String(openFold) } }),
+      btn(`${word} ${done.length}`, () => { prefs.set(key, !openFold); rerender(); }, { cls: 'sm ghost', ic: openFold ? 'chevDown' : 'chevRight', attrs: { 'aria-expanded': String(openFold) } }),
       el('span', { class: 'sp' }),
-      btn('Archive all done', () => A.archive(done.map((d) => d.id)), { cls: 'sm ghost', ic: 'archive' })));
+      btn(`Archive all ${word.toLowerCase()}`, () => A.archive(done.map((d) => d.id)), { cls: 'sm ghost', ic: 'archive' })));
   if (openFold) {
     const shown = all ? sorted : sorted.slice(0, 4);
     const mode = viewMode(page);

@@ -127,7 +127,7 @@ export async function confirmDialog({ title, body = '', ok = 'OK', cancel = 'Can
  * nothing.
  * @returns {Promise<string|null>}
  */
-export function promptDialog({ title, label = '', value = '', placeholder = '', ok = 'Save', multiline = false, required = true, validate = null, body = '' }) {
+export function promptDialog({ title, label = '', value = '', placeholder = '', ok = 'Save', dismiss = 'Cancel', multiline = false, required = true, validate = null, body = '' }) {
   return openDialog((box, close) => {
     box.append(el('h3', null, title));
     if (body) box.append(el('p', 'lede', body));
@@ -148,7 +148,7 @@ export function promptDialog({ title, label = '', value = '', placeholder = '', 
     box.append(field);
     const acts = el('div', 'actions');
     const yes = el('button', 'btn primary', ok);
-    const no = el('button', 'btn', 'Cancel');
+    const no = el('button', 'btn', dismiss);
     acts.append(yes, no);
     box.append(acts);
     const submit = () => {

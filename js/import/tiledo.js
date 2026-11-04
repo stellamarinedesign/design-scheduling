@@ -226,6 +226,7 @@ export function buildTiledo(p, plan, { idx, by, at, newId, archiveDone = true })
       doneAt: item.status === 'done' ? at : null,
       checkedBy: null,
       checkedAt: null,
+      cancelled: null,
       homeOrder: null,
       backlogIgnored: false,
     };

@@ -51,7 +51,7 @@ function draw(host, root) {
           n.kind === T.KIND.task ? pill(n.status) : dot(n.colour ?? null),
           el('div', { style: { 'min-width': '0' } },
             el('div', { class: 'trow-title' }, T.nameOf(n)),
-            el('div', { class: 'trow-sub' }, [where ? `From ${T.nameOf(where)}` : null, `archived ${whenLabel(n.archivedAt)}`, inside ? `${inside} inside` : null].filter(Boolean).join(' · ')))),
+            el('div', { class: 'trow-sub' }, [n.status === 'cancelled' && n.cancelled?.reason ? `Cancelled: ${n.cancelled.reason}` : null, where ? `From ${T.nameOf(where)}` : null, `archived ${whenLabel(n.archivedAt)}`, inside ? `${inside} inside` : null].filter(Boolean).join(' · ')))),
         el('div', { class: 'row' },
           btn('Restore', () => { A.restore(n, archived); cache = archived.filter((x) => !(x.archivedAt === n.archivedAt)); draw(host, root); }, { cls: 'sm', ic: 'restore' }),
           btn('Delete…', async () => { if (await A.removeArchived(n, archived)) { cache = await Store.loadArchived(); draw(host, root); } }, { cls: 'sm ghost' }))));

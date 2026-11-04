@@ -69,6 +69,7 @@ export const excelRows = [
   ['Gamma panel', 'Done', 'Needs another look', '', 'Fix'],
   ['Delta clamp', '', '', 'Low priority', ''],
   ['Old idea', 'N/a', '', '', ''],
+  ['Theta cradle', 'Cancelled', 'Cancelled - verbal 12/03/26', '', ''],
   [],
   ['Handover'],
   ['Model', 'Status', 'Status Notes', 'Notes', 'Path'],

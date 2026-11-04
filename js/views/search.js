@@ -12,6 +12,7 @@ import { go, openTask } from '../router.js';
 const norm = (s) => String(s ?? '').toLowerCase();
 
 let open = false;
+let includeCancelled = false;   // cancelled work is on record, found on request
 
 export function openSearch() {
   if (open) return;
@@ -20,7 +21,11 @@ export function openSearch() {
     box.classList.add('search-box');
     const q = el('input', { class: 'input', type: 'search', placeholder: 'Search jobs, tasks and categories', 'aria-label': 'Search', autocomplete: 'off', 'data-autofocus': '' });
     const list = el('div', { class: 'picker-list', role: 'listbox', 'aria-label': 'Results', style: { 'max-height': '60vh' } });
-    const hint = el('div', { class: 'hint' }, 'Enter opens the first · arrows move · Esc closes');
+    const tick = el('input', { type: 'checkbox', checked: includeCancelled });
+    tick.addEventListener('change', () => { includeCancelled = tick.checked; draw(); q.focus(); });
+    const hint = el('div', { class: 'row', style: { 'justify-content': 'space-between', 'flex-wrap': 'wrap' } },
+      el('label', { class: 'check-line' }, tick, 'Include cancelled'),
+      el('span', { class: 'hint' }, 'Enter opens the first · arrows move · Esc closes'));
     const choose = (n) => {
       close(true);
       if (n.kind === T.KIND.task) openTask(n.id);
@@ -31,7 +36,7 @@ export function openSearch() {
       list.textContent = '';
       const query = q.value.trim();
       const words = norm(query).split(/\s+/).filter(Boolean);
-      let hits = state.idx.nodes.filter((n) => n.kind !== T.KIND.step || words.length);
+      let hits = state.idx.nodes.filter((n) => (n.kind !== T.KIND.step || words.length) && (includeCancelled || n.status !== 'cancelled'));
       if (words.length) {
         hits = hits.filter((n) => {
           const hay = `${norm(T.nameOf(n))} ${norm(n.brief)} ${norm(n.revision)}`;
@@ -52,7 +57,14 @@ export function openSearch() {
           el('span', { style: { 'min-width': '0', overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap' } }, ...label),
           el('span', { class: 'sub' }, T.ancestorChain(state.idx, n.id).map(T.nameOf).join(' › '))));
       }
-      if (!hits.length) list.append(el('div', { class: 'pick' }, query ? `Nothing matches "${query}". Archived items are in the archive.` : 'Nothing yet.'));
+      if (!hits.length) {
+        // Hidden cancelled work that would match is worth a sentence, not silence.
+        const hidden = !includeCancelled && words.length ? state.idx.nodes.filter((n) => n.status === 'cancelled'
+          && words.every((w) => `${norm(T.nameOf(n))} ${norm(n.brief)} ${norm(n.revision)}`.includes(w))).length : 0;
+        list.append(el('div', { class: 'pick' }, !query ? 'Nothing yet.'
+          : hidden ? `Nothing open matches "${query}". ${hidden} cancelled ${hidden === 1 ? 'item does' : 'items do'}: tick Include cancelled.`
+            : `Nothing matches "${query}". Archived items are in the archive.`));
+      }
     };
     q.addEventListener('input', draw);
     q.addEventListener('keydown', (e) => {

@@ -60,7 +60,7 @@ export function taskNode({ id = Store.newId(), parentId = null, order, title, br
     assignee: state.me, createdBy: state.me,
     createdAt: at, updatedAt: at, lastActivityAt: at,
     due: null, revision: null, folders: [],
-    checkedBy: null, checkedAt: null, doneAt: null,
+    checkedBy: null, checkedAt: null, doneAt: null, cancelled: null,
     homeOrder: null, backlogIgnored: false, archivedAt: null,
   };
 }
@@ -159,7 +159,7 @@ const STATUS_WORD = {
  * Change a task's status. Waiting asks what it waits on; a send-back asks
  * why; Done on a job with open work inside asks whether to close it too.
  */
-export async function setStatus(id, to, { comment, note, blockedBy } = {}) {
+export async function setStatus(id, to, { comment, note, blockedBy, reason } = {}) {
   const t = node(id);
   if (!t || t.kind !== T.KIND.task) return;
   const from = t.status ?? 'todo';
@@ -172,6 +172,17 @@ export async function setStatus(id, to, { comment, note, blockedBy } = {}) {
   if (to === 'fix' && from === 'check' && comment === undefined) {
     comment = await promptDialog({ title: 'Send back', label: 'What needs fixing?', multiline: true, ok: 'Send back', body: 'The comment shows on the task, highlighted, until it is resubmitted.' });
     if (comment === null) return;
+  }
+  if (to === 'cancelled' && reason === undefined) {
+    // Finished like Done, recorded apart: say why, for later (optional).
+    const inside = T.cascadeTargets(state.idx, id);
+    const what = [inside.tasks.length && plural(inside.tasks.length, 'open task'), inside.steps.length && plural(inside.steps.length, 'open step')].filter(Boolean).join(' and ');
+    reason = await promptDialog({
+      title: `Cancel ${t.title}?`, label: 'Reason (optional)', value: 'Customer cancelled', required: false,
+      ok: 'Mark cancelled', dismiss: 'Keep it',
+      body: `It leaves the active lists and stops holding anything up, but stays on record with its reason.${what ? ` Its ${what} are cancelled with it.` : ''} Reopen brings it back.`,
+    });
+    if (reason === null) return;
   }
   const c = ctx();
   const extra = { patches: [], updates: [] };
@@ -199,15 +210,18 @@ export async function setStatus(id, to, { comment, note, blockedBy } = {}) {
       }
     }
   }
-  const r = S.changeStatus(state.idx, id, to, { ...c, comment, note, blockedBy });
+  const r = S.changeStatus(state.idx, id, to, { ...c, comment, note, blockedBy, reason });
   if (r.error) { toast(r.error, { warn: true }); return; }
   if (!r.patches.length) return;
   const patches = mergePatches([...r.patches, ...extra.patches]);
   const inverse = inverseOf(patches);
   write({ patch: patches, updates: [...r.updates, ...extra.updates] });
   const unblocked = [...r.updates, ...extra.updates].filter((u) => u.kind === 'unblock').length;
-  const word = from === 'check' && to === 'done' ? 'Approved' : from === 'waiting' && to !== 'waiting' ? `Stopped waiting · ${S.LABEL[to]}` : STATUS_WORD[to];
-  toast(`${word}${unblocked ? ` · ${plural(unblocked, 'task')} unblocked` : ''}`, {
+  const withIt = r.updates.filter((u) => u.taskId !== id && (u.kind === 'cancel' || u.kind === 'reopen')).length;
+  const word = from === 'check' && to === 'done' ? 'Approved'
+    : from === 'cancelled' ? `Reopened · ${S.LABEL[to]}`
+      : from === 'waiting' && to !== 'waiting' ? `Stopped waiting · ${S.LABEL[to]}` : STATUS_WORD[to];
+  toast(`${word}${withIt ? ` · ${plural(withIt, 'task')} with it` : ''}${unblocked ? ` · ${plural(unblocked, 'task')} unblocked` : ''}`, {
     action: 'Undo',
     onAction: () => write({ patch: inverse, updates: [{ taskId: id, at: nowISO(), by: state.me, kind: 'status', from: to, to: from, text: 'Undone' }] }),
   });
@@ -215,6 +229,9 @@ export async function setStatus(id, to, { comment, note, blockedBy } = {}) {
 
 /** One tap: To do (or Fix) → In progress. */
 export const start = (id) => setStatus(id, 'in_progress');
+
+/** Reopen a cancelled task: back to where it was before. */
+export const reopen = (id) => { const t = node(id); if (t) setStatus(id, S.reopenTo(t)); };
 
 /** Post an update. On a To-do task it starts it. */
 export function postUpdate(id, text) {

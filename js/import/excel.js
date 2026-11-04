@@ -18,6 +18,8 @@
 //   Path          → a folder link, normalised to Stella Systems-relative
 //   Checked=Done  → done, checked by the importer
 //   Checked=Fix   → fix
+//   Status=Cancelled → cancelled, Status Notes as the reason (and its date,
+//                 when the note carries one: "Cancelled - verbal 12/03/26")
 
 import { normaliseFolder } from '../folders.js';
 import { ORDER_GAP, newOrder, KIND } from '../tree.js';
@@ -85,8 +87,23 @@ export function parseTodoRows(rows) {
 }
 
 /**
+ * A day written in a note the Australian way (12/03/26, 12/3/2026, 12-03-26),
+ * as an instant at that local midnight; null when there is none.
+ */
+export function noteDate(text) {
+  const m = /(?<!\d)(\d{1,2})[/.-](\d{1,2})[/.-](\d{4}|\d{2})(?!\d)/.exec(String(text ?? ''));
+  if (!m) return null;
+  const day = Number(m[1]);
+  const month = Number(m[2]);
+  const year = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3]);
+  const d = new Date(year, month - 1, day);
+  if (d.getMonth() !== month - 1 || d.getDate() !== day) return null;   // 31/02 is not a day
+  return d.toISOString();
+}
+
+/**
  * One row's meaning.
- * @returns {{title, status, brief, firstUpdate, checked: boolean, folders: object[], folderError: string|null}}
+ * @returns {{title, status, brief, firstUpdate, checked: boolean, folders: object[], folderError: string|null, cancelReason: string, cancelledAt: string|null}}
  */
 export function mapRow(r) {
   const s = low(r.status);
@@ -107,7 +124,13 @@ export function mapRow(r) {
     if (n.error) folderError = n.error;
     else folders.push({ path: n.path, label: '' });
   }
-  return { title: r.model, status, brief: r.notes, firstUpdate: r.statusNotes, checked, folders, folderError };
+  // A cancelled row's Status Notes say why: that is its reason, not an update.
+  const cancelled = status === 'cancelled';
+  const cancelReason = cancelled ? (r.statusNotes || (s === 'n/a' || s === 'na' ? 'Marked N/a in the tracker' : '')) : '';
+  return {
+    title: r.model, status, brief: r.notes, firstUpdate: cancelled ? '' : r.statusNotes, checked, folders, folderError,
+    cancelReason, cancelledAt: cancelled ? noteDate(r.statusNotes) : null,
+  };
 }
 
 /**
@@ -152,11 +175,13 @@ export function buildExcel(parsed, plan, { idx, by, at, newId, archiveDone = tru
         waiting: m.status === 'waiting' ? { note: m.firstUpdate || 'Imported as waiting', since: at, prevStatus: 'todo', blockedBy: [] } : null,
         doneAt: m.status === 'done' ? at : null,
         checkedBy: m.checked ? by : null, checkedAt: m.checked ? at : null,
+        cancelled: m.status === 'cancelled' ? { by, at: m.cancelledAt ?? at, reason: m.cancelReason, prevStatus: 'todo' } : null,
         homeOrder: null, backlogIgnored: false, archivedAt: arch,
       });
       stats.jobs += 1;
       if (arch) stats.archived += 1;
       if (m.firstUpdate) updates.push({ taskId: id, at, by, kind: 'comment', text: m.firstUpdate });
+      if (m.status === 'cancelled') updates.push({ taskId: id, at: m.cancelledAt ?? at, by, kind: 'cancel', from: 'todo', to: 'cancelled', text: m.cancelReason });
     }
   });
   return { nodes, updates, stats };

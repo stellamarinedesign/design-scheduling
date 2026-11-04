@@ -258,6 +258,66 @@ export async function run() {
     const idx = T.buildIndex(apply(sampleNodes(), w.patches));
     expect(S.waitingLine(idx, idx.byId.get('j2')), 'Blocked by: Compact frame concept');
   });
+  // Cancelled: finished like Done, recorded apart (decided 2026-11-04).
+  test('cancelling records who, when, why and where it was, with a cancel event', () => {
+    const r = S.changeStatus(index(), 'j2', 'cancelled', { by: BY, at: AT, reason: 'Customer cancelled' });
+    const p = r.patches.find((x) => x.id === 'j2');
+    expect(p.cancelled, { by: BY, at: AT, reason: 'Customer cancelled', prevStatus: 'todo' });
+    expect(r.updates[0].kind, 'cancel');
+    expect(r.updates[0].text, 'Customer cancelled');
+    expect(S.eventLabel(r.updates[0]), 'Cancelled');
+  });
+  test('cancelling a job cancels its open tasks and steps; done stays done', () => {
+    const nodes = apply(sampleNodes(), [{ id: 't2', status: 'done' }]);
+    const r = S.changeStatus(T.buildIndex(nodes), 'j1', 'cancelled', { by: BY, at: AT, reason: 'Dropped' });
+    const byId = Object.fromEntries(r.patches.map((x) => [x.id, x]));
+    expect(byId.t1.status, 'cancelled');
+    expect(byId.t1.cancelled.withId, 'j1');
+    expect(byId.t1.cancelled.prevStatus, 'in_progress');
+    ok(!byId.t2, 'the done task is left alone');
+    expect(byId.s2b.state, 'na', 'open leaf step becomes N/a');
+    expect(byId.s2b.cancelledFrom, { state: 'todo', withId: 'j1' });
+    ok(!byId.s1 && !byId.s2a, 'done steps are left alone');
+    ok(!byId.s2, 'a step with sub-steps is derived, not written');
+  });
+  test('cancelled counts as finished for blocking, the job and what went with it', () => {
+    let nodes = sampleNodes();
+    const w = S.changeStatus(T.buildIndex(nodes), 'j2', 'waiting', { by: BY, at: AT, blockedBy: ['t1'] });
+    nodes = apply(nodes, w.patches);
+    const r = S.changeStatus(T.buildIndex(nodes), 'j1', 'cancelled', { by: BY, at: AT });
+    const un = r.patches.find((x) => x.id === 'j2');
+    ok(un && un.status === 'todo', 'j2 waited on t1, which was cancelled with j1: it unblocks');
+  });
+  test('cancelling from Waiting remembers the status before the wait', () => {
+    const w = S.changeStatus(index(), 'j1', 'waiting', { by: BY, at: AT, note: 'Customer' });
+    const idx = T.buildIndex(apply(sampleNodes(), w.patches));
+    const r = S.changeStatus(idx, 'j1', 'cancelled', { by: BY, at: AT });
+    const p = r.patches.find((x) => x.id === 'j1');
+    expect(p.cancelled.prevStatus, 'in_progress');
+    expect(p.waiting, null);
+  });
+  test('reopen returns it, and what was cancelled with it, to where they were', () => {
+    let nodes = sampleNodes();
+    const c = S.changeStatus(T.buildIndex(nodes), 'j1', 'cancelled', { by: BY, at: AT });
+    nodes = apply(nodes, c.patches);
+    const idx = T.buildIndex(nodes);
+    const t = idx.byId.get('j1');
+    expect(S.reopenTo(t), 'in_progress');
+    const r = S.changeStatus(idx, 'j1', S.reopenTo(t), { by: BY, at: AT });
+    const byId = Object.fromEntries(r.patches.map((x) => [x.id, x]));
+    expect(byId.j1.cancelled, null);
+    expect(byId.t1.status, 'in_progress');
+    expect(byId.s2b.state, 'todo');
+    expect(r.updates[0].kind, 'reopen');
+    expect(S.eventLabel(r.updates[0]), 'Reopened · In progress');
+  });
+  test('a task cancelled on its own is not reopened by its job', () => {
+    let nodes = sampleNodes();
+    nodes = apply(nodes, S.changeStatus(T.buildIndex(nodes), 't2', 'cancelled', { by: BY, at: AT }).patches);
+    nodes = apply(nodes, S.changeStatus(T.buildIndex(nodes), 'j1', 'cancelled', { by: BY, at: AT }).patches);
+    const r = S.changeStatus(T.buildIndex(nodes), 'j1', 'in_progress', { by: BY, at: AT });
+    ok(!r.patches.some((x) => x.id === 't2'), 't2 stays cancelled');
+  });
   test('step states cycle To do → Doing → Done → N/a', () => {
     expect(['todo', 'doing', 'done', 'na'].map(S.nextStepState), ['doing', 'done', 'na', 'todo']);
   });
@@ -383,11 +443,11 @@ export async function run() {
   const xp = XL.parseTodoRows(excelRows);
   test('sections and their titles are found by the header rows', () => {
     expect(xp.sections.map((s) => s.title), ['Drafting tracker', 'Handover']);
-    expect(xp.sections.map((s) => s.rows.length), [5, 3]);
+    expect(xp.sections.map((s) => s.rows.length), [6, 3]);
   });
   test('Status and Checked map onto statuses', () => {
     const m = xp.sections[0].rows.map((r) => XL.mapRow(r).status);
-    expect(m, ['in_progress', 'done', 'fix', 'todo', 'cancelled']);
+    expect(m, ['in_progress', 'done', 'fix', 'todo', 'cancelled', 'cancelled']);
     ok(XL.mapRow(xp.sections[0].rows[1]).checked, 'Checked = Done is checked');
   });
   test('Path normalises, and a non-Stella path is reported, not imported', () => {
@@ -399,7 +459,7 @@ export async function run() {
   test('build: Notes → brief, Status Notes → first update, done rows archived', () => {
     const built = XL.buildExcel(xp, { into: { 0: 'new', 1: null }, skip: new Set() }, { idx: empty, by: BY, at: AT, newId, archiveDone: true });
     expect(built.stats.groups, 1);
-    expect(built.stats.jobs, 8);
+    expect(built.stats.jobs, 9);
     const a = built.nodes.find((x) => x.title === 'Alpha bracket R2');
     expect(a.brief, 'Use the standard pins');
     ok(built.updates.some((u) => u.taskId === a.id && u.text === 'Drawings half done'), 'first update');
@@ -407,9 +467,26 @@ export async function run() {
     ok(built.nodes.find((x) => x.title === 'Beta frame laser').archivedAt, 'done archived');
     expect(built.nodes.find((x) => x.title === 'Gamma panel').archivedAt, null, 'fix stays live');
   });
+  test('a Cancelled row keeps its Status Notes as the reason, dated from the note', () => {
+    const row = xp.sections[0].rows.find((r) => r.model === 'Theta cradle');
+    const m = XL.mapRow(row);
+    expect(m.status, 'cancelled');
+    expect(m.cancelReason, 'Cancelled - verbal 12/03/26');
+    expect(m.cancelledAt, new Date(2026, 2, 12).toISOString());
+    expect(m.firstUpdate, '', 'the note is the reason, not an update');
+    const built = XL.buildExcel(xp, { into: {}, skip: new Set() }, { idx: empty, by: BY, at: AT, newId, archiveDone: false });
+    const n = built.nodes.find((x) => x.title === 'Theta cradle');
+    expect(n.cancelled.reason, 'Cancelled - verbal 12/03/26');
+    ok(built.updates.some((u) => u.taskId === n.id && u.kind === 'cancel'), 'a cancel event in the timeline');
+  });
+  test('note dates: Australian order, impossible days refused', () => {
+    expect(XL.noteDate('verbal 3/7/2026'), new Date(2026, 6, 3).toISOString());
+    expect(XL.noteDate('31/02/26'), null);
+    expect(XL.noteDate('no date here'), null);
+  });
   test('skipped rows are not written', () => {
     const built = XL.buildExcel(xp, { into: {}, skip: new Set(['0:0', '0:1']) }, { idx: empty, by: BY, at: AT, newId });
-    expect(built.stats.jobs, 6);
+    expect(built.stats.jobs, 7);
     expect(built.stats.skipped, 2);
   });
 

@@ -14,7 +14,7 @@ import { state, node, personName } from '../state.js';
 import * as T from '../tree.js';
 import * as S from '../status.js';
 import * as A from '../actions.js';
-import { ageLabel, ageDays } from '../dates.js';
+import { ageLabel, ageDays, dayLabel, dayOf } from '../dates.js';
 import { go, openTask, routeHref } from '../router.js';
 
 export const backlogDays = () => {
@@ -31,8 +31,17 @@ export function whoBadge(email) {
   return avatar(personName(email) === 'You' ? email : personName(email), personName(email));
 }
 
+/** "Cancelled 12 Mar · Customer cancelled": when, and why. */
+export function cancelledLine(t) {
+  const at = t.cancelled?.at;
+  const when = at ? ` ${dayLabel(dayOf(new Date(at)))}` : '';
+  const why = String(t.cancelled?.reason ?? '').trim();
+  return `Cancelled${when}${why ? ` · ${why}` : ''}`;
+}
+
 /** The one subtext line a tile or row shows. */
 export function subtext(t) {
+  if (t.status === 'cancelled') return { text: cancelledLine(t), cls: '' };
   if (t.status === 'fix' && t.fixNote) return { text: `Sent back: ${t.fixNote}`, cls: 'fix' };
   if (t.status === 'waiting') return { text: S.waitingLine(state.idx, t), cls: 'wait' };
   if (S.isOpen(t.status)) {
@@ -45,12 +54,17 @@ export function subtext(t) {
 /** Status changes offered from a pill. Approve/send back only for the lead. */
 export function statusMenu(anchor, t) {
   const lead = state.role === 'lead';
+  if (t.status === 'cancelled') {
+    menu(anchor, [{ heading: 'Cancelled' }, { label: `Reopen · back to ${S.LABEL[S.reopenTo(t)]}`, icon: 'restore', onSelect: () => A.reopen(t.id) }], { label: 'Set status' });
+    return;
+  }
   const items = S.STATUSES.filter((s) => s !== t.status || s === 'waiting').map((s) => {
     const blocked = !lead && t.status === 'check' && (s === 'done' || s === 'fix');
     let label = S.LABEL[s];
     if (t.status === 'check' && s === 'done') label = 'Approve';
     if (t.status === 'check' && s === 'fix') label = 'Send back…';
     if (s === 'waiting') label = t.status === 'waiting' ? 'Edit what it waits on…' : 'Waiting…';
+    if (s === 'cancelled') label = 'Cancel…';
     return {
       node: el('span', { class: 'row' }, pill(s, { label: S.LABEL[s] }), s === t.status ? null : el('span', { class: 'menu-hint' }, label === S.LABEL[s] ? '' : label)),
       label, disabled: blocked,
@@ -71,6 +85,8 @@ export function taskMenu(anchor, t, { extra = [] } = {}) {
     t.status === 'todo' || t.status === 'fix' ? { label: 'Start', icon: 'play', onSelect: () => A.start(t.id) } : null,
     S.isOpen(t.status) && t.status !== 'check' ? { label: 'Mark done', icon: 'check', onSelect: () => A.setStatus(t.id, 'done') } : null,
     t.status !== 'waiting' && S.isOpen(t.status) ? { label: 'Waiting…', icon: 'hide', onSelect: () => A.setStatus(t.id, 'waiting') } : null,
+    S.isOpen(t.status) ? { label: 'Cancel…', icon: 'close', onSelect: () => A.setStatus(t.id, 'cancelled') } : null,
+    t.status === 'cancelled' ? { label: `Reopen · back to ${S.LABEL[S.reopenTo(t)]}`, icon: 'restore', onSelect: () => A.reopen(t.id) } : null,
     { label: 'Move to…', icon: 'move', onSelect: async () => { const { moveDialog } = await import('./pickers.js'); moveDialog(t.id); } },
     'sep',
     { label: 'Archive', icon: 'archive', onSelect: () => A.archive(t.id) },
@@ -99,7 +115,7 @@ export function tile(t, { path = false, assignee = false, variant = 'normal', me
   const titleCls = `tile-title${t.status === 'done' ? ' done' : ''}${t.status === 'cancelled' ? ' cancelled' : ''}`;
 
   const a = el('article', {
-    class: 'tile', dataset: { id: t.id }, 'aria-current': open ? 'true' : null,
+    class: `tile${t.status === 'cancelled' ? ' muted' : ''}`, dataset: { id: t.id }, 'aria-current': open ? 'true' : null,
     draggable: drag && variant !== 'backlog' && canDrag() ? 'true' : null,
   },
   el('button', {
@@ -130,7 +146,7 @@ export function row(t, { path = false, assignee = false, drag = true } = {}) {
   const sub = subtext(t);
   const pathText = path ? T.pathText(state.idx, t.id) : '';
   const subLine = [pathText, sub?.text].filter(Boolean).join(' · ');
-  return el('div', { class: 'trow', dataset: { id: t.id }, 'aria-current': open ? 'true' : null, draggable: drag && canDrag() ? 'true' : null },
+  return el('div', { class: `trow${t.status === 'cancelled' ? ' muted' : ''}`, dataset: { id: t.id }, 'aria-current': open ? 'true' : null, draggable: drag && canDrag() ? 'true' : null },
     el('button', { class: 'open-link', type: 'button', dataset: { fk: `open-${t.id}` }, 'aria-label': `Open ${t.title}, ${S.LABEL[t.status]}`, onclick: () => openTask(t.id) }),
     pill(t.status, { onClick: (e) => { e.stopPropagation(); statusMenu(e.currentTarget, t); } }),
     el('div', { class: 'trow-main' },
