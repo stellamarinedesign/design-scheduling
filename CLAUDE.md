@@ -26,8 +26,12 @@ parent. Starting here is what loads this file, the project skills and the Impecc
   hub project later (plan, Phase 4).
   - Collection names come from the one `COL` map in `js/store.js`. Never write a collection
     name anywhere else.
-- **Local mode.** An empty Firebase config means no sign-in, data in localStorage, one
-  machine. Build and test in local mode; never against live data unless a step needs it.
+- **Local mode.** The Firebase project (`stella-design-scheduling`) is configured, so the app
+  is live by default.
+  - `?local=1` switches this device into local mode: no sign-in, data in localStorage, the
+    "Local mode" strip shown. The choice is remembered.
+  - `?local=0` switches it back.
+  - Build and test in local mode; never against live data unless a step needs it.
 - **Modules copied from the board.** These are copied, not imported, from
   `../../production-scheduling/Production Scheduling/js/`:
   - `firebase.js`, `auth.js`, `access.js`, `password.js`, `settings.js` and `dialog.js`;
@@ -81,7 +85,12 @@ parent. Starting here is what loads this file, the project skills and the Impecc
   The Tasks tree is the Design lead's view only. That restriction is in the UI; the rules still
   let designers read all tasks.
 - **Statuses are fixed:** `todo | in_progress | waiting | check | fix | done | cancelled`
-  (`js/status.js`). Only a lead may make check → done/fix.
+  (`js/status.js`).
+  - **Only a Design lead marks anything Done**, by any route, and only a lead sends back.
+    `status.js`, the UI and `firestore.rules` all enforce it, and non-leads can't post
+    `approve` or `sendback` updates.
+  - Whoever submitted work may **take it back** from Ready for check to In progress, with an
+    optional note (a `retract` timeline event).
   - Starting a task is one tap.
   - Posting an update on a To-do task starts it.
 - **Waiting** keeps `prevStatus`, and leaving it restores that status. A waiting task can be
@@ -103,9 +112,10 @@ parent. Starting here is what loads this file, the project skills and the Impecc
 
 ## Running and testing
 
-- `python -m http.server 8790`, or the `local` entry in `.claude/launch.json` for the browser
-  pane.
-- Unit tests: open `/tests/`.
+- Run `python tools/serve.py` (or the `local` entry in `.claude/launch.json` for the browser
+  pane), then open `http://localhost:8790/?local=1`. It is the plain server with caching off,
+  so edited modules always reload.
+- Unit tests: open `/tests/`. They import pure modules only and never load Firebase.
 - Node.js is installed only for `npx` (installing and updating skills). The app never needs it.
 
 ## Design workflow
