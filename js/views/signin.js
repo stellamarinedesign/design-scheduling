@@ -24,8 +24,7 @@ export function renderSignIn(app) {
       el('div', { class: 'field' }, el('label', { for: 'siEmail' }, 'Email'), email),
       el('div', { class: 'field' }, el('label', { for: 'siPw' }, 'Password'), withReveal(pw)),
       err,
-      el('div', { class: 'actions' }, go),
-      el('p', { class: 'hint' }, 'Accounts are made by the Design lead, with a temporary password you change under the cog.'))));
+      el('div', { class: 'actions' }, go))));
   email.focus();
 }
 
