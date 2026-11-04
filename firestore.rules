@@ -13,7 +13,9 @@ rules_version = '2';
 //   lead         everything
 //   designer     reads all tasks (paths and blocked-by chips need them);
 //                creates their own; edits what they created or are assigned;
-//                never approves or sends back, never sets checkedBy/checkedAt
+//                never marks anything done (only a lead does, by any route:
+//                decided 2026-11-04), never sends back, never sets
+//                checkedBy/checkedAt; may take their own submission back
 //   manager      (Phase 2) reads only jobs shared with managers; posts
 //                `request` updates on them
 //   contributor  (Phase 2) the Log only: no tasks at all
@@ -91,6 +93,11 @@ service cloud.firestore {
       function sharingKeys() { return ['shared', 'sharedEffective', 'shareLevel']; }
       function noSharingOnCreate() { return !data().keys().hasAny(sharingKeys()); }
       function noSharingChange() { return !data().diff(was()).affectedKeys().hasAny(sharingKeys()); }
+      // Only a lead marks anything done. A non-lead write may never produce
+      // 'done': not on create, and not as a change on update (a task that is
+      // already done may still have its other fields edited by its owner).
+      function noDoneOnCreate() { return data().get('status', 'todo') != 'done'; }
+      function noNewDone() { return was().get('status', '') == 'done' || data().get('status', '') != 'done'; }
       // Only a lead approves (check -> done) or sends back (check -> fix).
       function noReview() {
         return !(was().get('status', '') == 'check' && data().get('status', '') in ['done', 'fix'])
@@ -100,7 +107,7 @@ service cloud.firestore {
       allow read: if lead() || designer()
         || (manager() && resource.data.get('sharedEffective', false) == true);
 
-      allow create: if lead() || (designer() && data().get('checkedBy', null) == null && noSharingOnCreate() && (
+      allow create: if lead() || (designer() && data().get('checkedBy', null) == null && noSharingOnCreate() && noDoneOnCreate() && (
            (kindIs('task') && data().createdBy == email())
         || ((kindIs('step') || kindIs('group')) && ownsParentOf(data()))));
 
@@ -108,7 +115,7 @@ service cloud.firestore {
       // and where it goes: checking only the old parent let a section be
       // moved to the top or into a lead's category, or a step into someone
       // else's job.
-      allow update: if lead() || (designer() && noReview() && noSharingChange() && data().kind == was().kind && (
+      allow update: if lead() || (designer() && noReview() && noNewDone() && noSharingChange() && data().kind == was().kind && (
            (was().kind == 'task' && isMine(was()))
         || (was().kind in ['step', 'group'] && ownsParentOf(was()) && ownsParentOf(data()))));
 
@@ -121,7 +128,10 @@ service cloud.firestore {
         function task() { return get(/databases/$(database)/documents/tasks/$(id)).data; }
         allow read: if lead() || designer()
           || (manager() && task().get('sharedEffective', false) == true);
-        allow create: if request.resource.data.by == email() && (lead() || designer()
+        // Approve and send-back events are the lead's; nobody else may post one.
+        allow create: if request.resource.data.by == email()
+          && (lead() || !(request.resource.data.get('kind', '') in ['approve', 'sendback']))
+          && (lead() || designer()
           || (manager() && request.resource.data.kind == 'request' && task().get('sharedEffective', false) == true));
         allow update: if signedIn() && resource.data.by == email()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text']);

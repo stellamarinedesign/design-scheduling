@@ -209,12 +209,18 @@ function contextAction(n) {
   const lead = state.role === 'lead';
   const since = (iso) => (iso ? ` · ${whenLabel(iso)}` : '');
   switch (n.status) {
-    case 'check':
+    case 'check': {
+      // Whoever submitted it can take it back ("forgot a part"); only the lead approves or sends back.
+      const mine = S.canTakeBack(n, state.me);
+      const takeBack = mine ? btn('Take back', () => A.takeBack(n.id), { cls: lead ? 'ghost' : '', ic: 'undo', title: 'Back to In progress, with an optional note' }) : null;
       return el('div', { class: 'callout check' },
-        el('div', { class: 'callout-head' }, `Ready for check${since(n.updatedAt)}`),
+        el('div', { class: 'callout-head' }, `Ready for check${n.submittedBy && !mine ? ` · submitted by ${personName(n.submittedBy)}` : ''}${since(n.submittedAt ?? n.updatedAt)}`),
         lead ? el('div', { class: 'acts' },
           btn('Approve', () => A.setStatus(n.id, 'done'), { cls: 'primary', ic: 'check' }),
-          btn('Send back', () => A.setStatus(n.id, 'fix'))) : el('div', { class: 'meta' }, 'Waiting for the Design lead to check it.'));
+          btn('Send back', () => A.setStatus(n.id, 'fix')),
+          takeBack)
+          : el('div', { class: 'acts' }, el('span', { class: 'meta', style: { 'white-space': 'normal' } }, 'Waiting for the Design lead to check it.'), takeBack));
+    }
     case 'fix':
       return el('div', { class: 'callout fix' },
         el('div', { class: 'callout-head' }, `Sent back${n.checkedBy ? '' : ''}${since(n.updatedAt)}`),
@@ -237,9 +243,10 @@ function contextAction(n) {
         btn('Start', () => A.start(n.id), { cls: 'primary', ic: 'play' }),
         btn('Waiting…', () => A.setStatus(n.id, 'waiting'), { cls: 'ghost' }));
     case 'in_progress':
+      // Only the lead marks work done; everyone else submits it for check.
       return el('div', { class: 'acts row' },
-        btn('Mark done', () => A.setStatus(n.id, 'done'), { cls: 'primary', ic: 'check' }),
-        btn('Submit for check', () => A.setStatus(n.id, 'check')),
+        lead ? btn('Mark done', () => A.setStatus(n.id, 'done'), { cls: 'primary', ic: 'check' }) : null,
+        btn('Submit for check', () => A.setStatus(n.id, 'check'), { cls: lead ? '' : 'primary' }),
         btn('Waiting…', () => A.setStatus(n.id, 'waiting'), { cls: 'ghost' }));
     case 'done':
       return el('div', { class: 'row' },
@@ -556,14 +563,15 @@ function dock(n) {
   const focusCompose = () => { const ta = rootEl.querySelector('.compose-input'); ta?.scrollIntoView({ block: 'center' }); ta?.focus(); };
   const primary = {
     todo: ['Start', () => A.start(n.id)],
-    in_progress: ['Mark done', () => A.setStatus(n.id, 'done')],
-    check: state.role === 'lead' ? ['Approve', () => A.setStatus(n.id, 'done')] : null,
+    in_progress: state.role === 'lead' ? ['Mark done', () => A.setStatus(n.id, 'done')] : ['Submit for check', () => A.setStatus(n.id, 'check')],
+    check: state.role === 'lead' ? ['Approve', () => A.setStatus(n.id, 'done')]
+      : S.canTakeBack(n, state.me) ? ['Take back', () => A.takeBack(n.id), 'secondary'] : null,
     fix: ['Submit for check', () => A.setStatus(n.id, 'check')],
     waiting: ['Stop waiting', () => A.setStatus(n.id, n.waiting?.prevStatus && n.waiting.prevStatus !== 'waiting' ? n.waiting.prevStatus : 'todo')],
   }[n.status];
   return el('div', { class: 'panel-dock' },
     btn('Post update', focusCompose),
-    primary ? btn(primary[0], primary[1], { cls: n.status === 'waiting' ? '' : 'primary' }) : null);
+    primary ? btn(primary[0], primary[1], { cls: n.status === 'waiting' || primary[2] === 'secondary' ? '' : 'primary' }) : null);
 }
 
 export { dot, dayLabel };

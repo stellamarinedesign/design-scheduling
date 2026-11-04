@@ -58,17 +58,24 @@ export function statusMenu(anchor, t) {
     menu(anchor, [{ heading: 'Cancelled' }, { label: `Reopen · back to ${S.LABEL[S.reopenTo(t)]}`, icon: 'restore', onSelect: () => A.reopen(t.id) }], { label: 'Set status' });
     return;
   }
-  const items = S.STATUSES.filter((s) => s !== t.status || s === 'waiting').map((s) => {
-    const blocked = !lead && t.status === 'check' && (s === 'done' || s === 'fix');
+  // Done (and, from check, Fix) is the lead's alone: not offered, rather than
+  // offered and refused. From check, In progress is a Take back, for whoever
+  // submitted it.
+  const offered = (s) => (s !== t.status || s === 'waiting')
+    && (lead || (s !== 'done' && !(t.status === 'check' && s === 'fix')))
+    && !(t.status === 'check' && s === 'in_progress' && !lead && !S.canTakeBack(t, state.me));
+  const items = S.STATUSES.filter(offered).map((s) => {
+    const takeBack = t.status === 'check' && s === 'in_progress';
     let label = S.LABEL[s];
+    if (takeBack) label = 'Take back…';
     if (t.status === 'check' && s === 'done') label = 'Approve';
     if (t.status === 'check' && s === 'fix') label = 'Send back…';
     if (s === 'waiting') label = t.status === 'waiting' ? 'Edit what it waits on…' : 'Waiting…';
     if (s === 'cancelled') label = 'Cancel…';
     return {
       node: el('span', { class: 'row' }, pill(s, { label: S.LABEL[s] }), s === t.status ? null : el('span', { class: 'menu-hint' }, label === S.LABEL[s] ? '' : label)),
-      label, disabled: blocked,
-      onSelect: () => A.setStatus(t.id, s),
+      label,
+      onSelect: () => (takeBack ? A.takeBack(t.id) : A.setStatus(t.id, s)),
     };
   });
   menu(anchor, [{ heading: 'Set status' }, ...items], { label: 'Set status' });
@@ -83,7 +90,9 @@ export function taskMenu(anchor, t, { extra = [] } = {}) {
     { label: 'Open as page', icon: 'page', onSelect: () => go(`/tasks/${t.id}`) },
     'sep',
     t.status === 'todo' || t.status === 'fix' ? { label: 'Start', icon: 'play', onSelect: () => A.start(t.id) } : null,
-    S.isOpen(t.status) && t.status !== 'check' ? { label: 'Mark done', icon: 'check', onSelect: () => A.setStatus(t.id, 'done') } : null,
+    state.role === 'lead' && S.isOpen(t.status) && t.status !== 'check' ? { label: 'Mark done', icon: 'check', onSelect: () => A.setStatus(t.id, 'done') } : null,
+    state.role !== 'lead' && ['in_progress', 'fix'].includes(t.status) ? { label: 'Submit for check', icon: 'check', onSelect: () => A.setStatus(t.id, 'check') } : null,
+    S.canTakeBack(t, state.me) ? { label: 'Take back from check…', icon: 'undo', onSelect: () => A.takeBack(t.id) } : null,
     t.status !== 'waiting' && S.isOpen(t.status) ? { label: 'Waiting…', icon: 'hide', onSelect: () => A.setStatus(t.id, 'waiting') } : null,
     S.isOpen(t.status) ? { label: 'Cancel…', icon: 'close', onSelect: () => A.setStatus(t.id, 'cancelled') } : null,
     t.status === 'cancelled' ? { label: `Reopen · back to ${S.LABEL[S.reopenTo(t)]}`, icon: 'restore', onSelect: () => A.reopen(t.id) } : null,

@@ -42,7 +42,7 @@ function account(close) {
     el('div', {},
       el('div', {}, local ? 'Local mode' : (Auth.user?.email ?? '')),
       el('div', { class: 'settings-row-sub' }, local
-        ? 'No accounts on this copy: everything is saved in this browser only, until the Firebase project is set up.'
+        ? 'No accounts here: everything is saved in this browser only, never the live data. Open the app with ?local=0 to use the live data.'
         : `${ROLE_LABEL[Auth.role] ?? 'Not listed'}${Auth.isMaster ? ' · master (may change the accounts)' : ''}`)),
     local ? null : el('div', { class: 'row' },
       btn('Password', () => { close(null); openPasswordDialog(); }, { cls: 'sm' }),

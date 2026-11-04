@@ -7,9 +7,12 @@
 // - STARTING IS ONE TAP, and posting an update on a To-do task starts it. The
 //   owner's TileDo data had 1 of 124 open tasks marked in progress because
 //   changing status cost too much; Home is only true if this costs nothing.
-// - ONLY A LEAD approves (check → done) or sends back (check → fix), and a
-//   send-back always says why. The Firestore rules enforce the first half;
-//   this is the same rule, so the UI never offers what the rules refuse.
+// - ONLY A LEAD MARKS ANYTHING DONE (decided 2026-11-04), by any route: that
+//   closes the check → in progress → done way round review. Only a lead
+//   sends back, and a send-back always says why. Whoever submitted work may
+//   TAKE IT BACK from Ready for check to In progress, with an optional note.
+//   The Firestore rules enforce the same, so the UI never offers what the
+//   rules refuse.
 // - WAITING REMEMBERS where it came from (`waiting.prevStatus`), so leaving it
 //   restores that status instead of guessing.
 // - CANCELLED IS FINISHED LIKE DONE, RECORDED APART (decided 2026-11-04). It
@@ -56,16 +59,21 @@ export const nextStepState = (s) => STEP_STATES[(STEP_STATES.indexOf(s) + 1) % S
 export function changeProblem(from, to, role = 'lead') {
   if (!STATUSES.includes(to)) return `Not a status: ${to}`;
   if (from === to && to !== 'waiting') return null;
-  if (from === 'check' && (to === 'done' || to === 'fix') && role !== 'lead') {
-    return 'Only the Design lead can approve or send back.';
+  if (role !== 'lead') {
+    if (to === 'done') return from === 'check' ? 'Only the Design lead can approve.' : 'Only the Design lead marks work done. Submit it for check instead.';
+    if (from === 'check' && to === 'fix') return 'Only the Design lead can send back.';
   }
   return null;
 }
+
+/** May this person take this task back from Ready for check? Whoever submitted it. */
+export const canTakeBack = (t, me) => t?.status === 'check' && Boolean(me) && t.submittedBy === me;
 
 /** The kind of timeline entry a change posts. */
 function eventKind(from, to) {
   if (from === 'check' && to === 'done') return 'approve';
   if (from === 'check' && to === 'fix') return 'sendback';
+  if (from === 'check' && to === 'in_progress') return 'retract';
   if (to === 'check') return 'submit';
   return 'status';
 }
@@ -408,6 +416,8 @@ export function changeStatus(idx, id, to, { by, at, note = '', blockedBy = [], c
   // resubmitted or finished.
   if (to === 'fix' && from === 'check') patch.fixNote = String(comment).trim();
   else if (to === 'check' || isFinished(to)) patch.fixNote = null;
+  // Who submitted it: they may take it back.
+  if (to === 'check') { patch.submittedBy = by; patch.submittedAt = at; }
   const why = String(reason ?? '').trim();
   if (to === 'cancelled') patch.cancelled = cancelRecord(t, { by, at, reason: why });
   else if (from === 'cancelled') patch.cancelled = null;
@@ -462,6 +472,7 @@ export function eventLabel(u) {
     case 'submit': return 'Submitted for check';
     case 'approve': return 'Approved';
     case 'sendback': return 'Sent back';
+    case 'retract': return 'Taken back from check';
     case 'block': return 'Changed what it waits on';
     case 'unblock': return 'Unblocked';
     case 'assign': return 'Assigned';

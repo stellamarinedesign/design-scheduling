@@ -23,7 +23,7 @@
 // from "someone else did" (the panel uses it to avoid clobbering a field
 // being edited, and Phase 2 uses it for "Updated by Alex just now").
 
-import { getFirebase, failureReason, isConfigured } from './firebase.js';
+import { getFirebase, failureReason, isConfigured, localForced } from './firebase.js';
 
 export const COL = {
   settings: 'settings',     // settings/access: who is what (the rules read it)
@@ -72,9 +72,11 @@ export const Store = {
     const fb = await getFirebase();
     if (!fb) {
       this.mode = 'local';
-      this.reason = isConfigured()
-        ? `Firebase unreachable (${failureReason()}). Saved on this device only.`
-        : 'Local mode. Saved on this device only.';
+      this.reason = localForced
+        ? 'Local mode on this device: saved in this browser only, never the live data. Open with ?local=0 to go live.'
+        : isConfigured()
+          ? `Firebase unreachable (${failureReason()}). Saved on this device only.`
+          : 'Local mode. Saved on this device only.';
       this._local = lsGet('tasks', []);
       // Another tab of the app on this machine: pick its writes up.
       window.addEventListener('storage', (e) => {

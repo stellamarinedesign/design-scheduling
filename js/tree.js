@@ -203,6 +203,23 @@ export function templateFromText(text) {
   return prune(root);
 }
 
+/**
+ * Step nodes from a steps template, under a parent. Pure: the caller hands in
+ * who and when, and how ids are made. Each carries createdBy, which the rules
+ * check when a designer ticks it.
+ */
+export function stepsFromTemplate(template, parentId, { at, by, newId }) {
+  const out = [];
+  const walk = (list, pid) => list.forEach((t, i) => {
+    const item = typeof t === 'string' ? { label: t } : t;
+    const id = newId();
+    out.push({ id, kind: KIND.step, parentId: pid, order: (i + 1) * ORDER_GAP, label: item.label, state: 'todo', createdBy: by, createdAt: at, updatedAt: at, archivedAt: null });
+    if (item.children?.length) walk(item.children, id);
+  });
+  walk(template ?? [], parentId);
+  return out;
+}
+
 export function templateToText(template, depth = 0) {
   return (template ?? []).map((t) => {
     const item = typeof t === 'string' ? { label: t } : t;

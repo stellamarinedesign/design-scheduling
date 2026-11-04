@@ -8,8 +8,6 @@ import * as D from '../js/dates.js';
 import * as TD from '../js/import/tiledo.js';
 import * as XL from '../js/import/excel.js';
 import * as BL from '../js/backlog.js';
-import { stepsFrom } from '../js/actions.js';
-import { state } from '../js/state.js';
 import { sampleNodes, tiledoData, tiledoArchive, excelRows } from './samples.js';
 
 const results = [];
@@ -347,6 +345,50 @@ export async function run() {
     const r = S.changeStatus(T.buildIndex(nodes), 'j1', 'in_progress', { by: BY, at: AT });
     ok(!r.patches.some((x) => x.id === 't2'), 't2 stays cancelled');
   });
+  // ---- only a Design lead marks anything Done (decided 2026-11-04) ----
+  test('a designer cannot mark anything done, from any status', () => {
+    for (const from of ['todo', 'in_progress', 'waiting', 'fix', 'check']) {
+      const nodes = apply(sampleNodes(), [{ id: 'j2', status: from, waiting: from === 'waiting' ? { note: 'x', since: AT, prevStatus: 'todo', blockedBy: [] } : null }]);
+      const r = S.changeStatus(T.buildIndex(nodes), 'j2', 'done', { by: BY, at: AT, role: 'designer' });
+      ok(r.error, `from ${from}: refused`);
+    }
+    ok(!S.changeStatus(index(), 'j2', 'done', { by: BY, at: AT, role: 'lead' }).error, 'a lead may');
+  });
+  test('the check → in progress → done way round review is closed', () => {
+    const nodes = apply(sampleNodes(), [{ id: 'j2', status: 'check', submittedBy: BY }]);
+    const back = S.changeStatus(T.buildIndex(nodes), 'j2', 'in_progress', { by: BY, at: AT, role: 'designer' });
+    ok(!back.error, 'taking it back is allowed');
+    const after = T.buildIndex(apply(nodes, back.patches));
+    ok(S.changeStatus(after, 'j2', 'done', { by: BY, at: AT, role: 'designer' }).error, 'but then done is still refused');
+  });
+  test('submitting records who submitted; only they may take it back', () => {
+    const r = S.changeStatus(index(), 'j1', 'check', { by: BY, at: AT, role: 'designer' });
+    expect(r.patches[0].submittedBy, BY);
+    expect(r.patches[0].submittedAt, AT);
+    const t = T.buildIndex(apply(sampleNodes(), r.patches)).byId.get('j1');
+    ok(S.canTakeBack(t, BY), 'the submitter may');
+    ok(!S.canTakeBack(t, 'someone@example.test'), 'nobody else may');
+  });
+  test('take back: In progress, logged with its note', () => {
+    const nodes = apply(sampleNodes(), [{ id: 'j2', status: 'check', submittedBy: BY }]);
+    const r = S.changeStatus(T.buildIndex(nodes), 'j2', 'in_progress', { by: BY, at: AT, role: 'designer', comment: 'forgot a part' });
+    expect(r.patches[0].status, 'in_progress');
+    expect(r.updates[0].kind, 'retract');
+    expect(r.updates[0].text, 'forgot a part');
+    expect(S.eventLabel(r.updates[0]), 'Taken back from check');
+  });
+  test('Close them too as a designer closes no tasks (only a lead marks done)', () => {
+    const r = S.closeInside(index(), 'j1', { by: BY, at: AT, role: 'designer' });
+    expect(r.tasks, []);
+  });
+  test('a designer cannot reopen something straight into Done', () => {
+    let nodes = apply(sampleNodes(), [{ id: 'j4', status: 'done' }]);
+    nodes = apply(nodes, S.changeStatus(T.buildIndex(nodes), 'j4', 'cancelled', { by: BY, at: AT }).patches);
+    const idx = T.buildIndex(nodes);
+    expect(S.reopenTo(idx.byId.get('j4')), 'done');
+    ok(S.changeStatus(idx, 'j4', 'done', { by: BY, at: AT, role: 'designer' }).error, 'refused for a designer');
+  });
+
   // ---- fix batch before the first push (regressions) ----
   test('removeBlockers: a job archived with both blockers in it leaves no stale blocker', () => {
     // D (j2) waits on X (t1) and Y (t2); their job j1 is archived as a whole.
@@ -381,9 +423,9 @@ export async function run() {
     const c = S.changeStatus(index(), 'j1', 'cancelled', { by: BY, at: AT, canWrite: (t) => t.id !== 't1' });
     ok(!c.patches.some((x) => x.id === 't1'), 'a task we cannot write is not cancelled with it');
   });
-  test('Close them too: never approves what waits for check, and uses the real role', () => {
+  test('Close them too: never approves what waits for check, even for the lead', () => {
     const nodes = apply(sampleNodes(), [{ id: 't2', status: 'check' }]);
-    const r = S.closeInside(T.buildIndex(nodes), 'j1', { by: BY, at: AT, role: 'designer' });
+    const r = S.closeInside(T.buildIndex(nodes), 'j1', { by: BY, at: AT, role: 'lead' });
     ok(!r.patches.some((x) => x.id === 't2'), 'the task in check is left alone');
     expect(r.leftInCheck, 1);
     expect(r.patches.find((x) => x.id === 't1').status, 'done');
@@ -635,9 +677,15 @@ export async function run() {
 
   group = 'writes';
   test('steps from a template carry createdBy, which the rules check', () => {
-    const steps = stepsFrom([{ label: 'A', children: [{ label: 'A1' }] }, 'B'], 'job1', AT);
+    let k = 0;
+    const steps = T.stepsFromTemplate([{ label: 'A', children: [{ label: 'A1' }] }, 'B'], 'job1', { at: AT, by: BY, newId: () => `s${++k}` });
     expect(steps.length, 3);
-    ok(steps.every((x) => x.createdBy === state.me), 'every step has createdBy');
+    ok(steps.every((x) => x.createdBy === BY), 'every step has createdBy');
+    expect(steps.find((x) => x.label === 'A1').parentId, steps.find((x) => x.label === 'A').id);
+  });
+  test('the tests page stays pure: no store, no Firebase', () => {
+    const loaded = performance.getEntriesByType('resource').map((e) => e.name);
+    ok(!loaded.some((u) => /\/js\/(store|firebase|actions|state)\.js|gstatic\.com/.test(u)), loaded.filter((u) => /store|firebase|actions|state|gstatic/.test(u)).join(', '));
   });
 
   return results;

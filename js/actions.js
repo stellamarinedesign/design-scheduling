@@ -77,17 +77,7 @@ export function taskNode({ id = Store.newId(), parentId = null, order, title, br
 }
 
 /** Step nodes from a template, under a parent. */
-export function stepsFrom(template, parentId, at = nowISO()) {
-  const out = [];
-  const walk = (list, pid) => list.forEach((t, i) => {
-    const item = typeof t === 'string' ? { label: t } : t;
-    const id = Store.newId();
-    out.push({ id, kind: T.KIND.step, parentId: pid, order: (i + 1) * T.ORDER_GAP, label: item.label, state: 'todo', createdBy: state.me, createdAt: at, updatedAt: at, archivedAt: null });
-    if (item.children?.length) walk(item.children, id);
-  });
-  walk(template ?? [], parentId);
-  return out;
-}
+export const stepsFrom = (template, parentId, at = nowISO()) => T.stepsFromTemplate(template, parentId, { at, by: state.me, newId: Store.newId });
 
 /** The colour least used so far, so categories spread across the ten. */
 function nextColour() {
@@ -239,12 +229,29 @@ export async function setStatus(id, to, { comment, note, blockedBy, reason } = {
   const unblocked = [...r.updates, ...extra.updates].filter((u) => u.kind === 'unblock').length;
   const withIt = r.updates.filter((u) => u.taskId !== id && (u.kind === 'cancel' || u.kind === 'reopen')).length;
   const word = from === 'check' && to === 'done' ? 'Approved'
+    : from === 'check' && to === 'in_progress' ? 'Taken back from check'
     : from === 'cancelled' ? `Reopened · ${S.LABEL[to]}`
       : from === 'waiting' && to !== 'waiting' ? `Stopped waiting · ${S.LABEL[to]}` : STATUS_WORD[to];
   toast(`${word}${withIt ? ` · ${plural(withIt, 'task')} with it` : ''}${unblocked ? ` · ${plural(unblocked, 'task')} unblocked` : ''}`, {
     action: 'Undo',
     onAction: () => write({ patch: inverse, updates: [{ taskId: id, at: nowISO(), by: state.me, kind: 'status', from: to, to: from, text: 'Undone' }] }),
   });
+}
+
+/**
+ * Take back from Ready for check (whoever submitted it): back to In progress,
+ * with an optional note that goes in the timeline.
+ */
+export async function takeBack(id) {
+  const t = node(id);
+  if (!t || t.status !== 'check') return;
+  const note = await promptDialog({
+    title: 'Take it back from check?', label: 'Note (optional)', placeholder: 'e.g. forgot a part', required: false,
+    ok: 'Take back', dismiss: 'Leave it with the lead',
+    body: 'It goes back to In progress; submit it again when it is ready.',
+  });
+  if (note === null) return;
+  setStatus(id, 'in_progress', { comment: note });
 }
 
 /** One tap: To do (or Fix) → In progress. */

@@ -9,6 +9,11 @@ Pages does its own caching, which the ?v= stamps handle.
 
     python tools/serve.py            # port 8790
     python tools/serve.py 8791
+
+Then open http://localhost:8790/?local=1 for development. With the Firebase
+project configured the app is live by default; ?local=1 switches this browser
+into local mode (remembered) so development never touches live data, and
+?local=0 switches it back. The tests page (/tests/) never uses Firebase.
 """
 import http.server
 import socketserver
@@ -37,4 +42,5 @@ if __name__ == '__main__':
     NoCache.extensions_map.update({'.js': 'text/javascript', '.mjs': 'text/javascript'})
     with Server(('', port), NoCache) as httpd:
         print(f'Serving {ROOT} on http://localhost:{port} (no-store)')
+        print(f'Development: open http://localhost:{port}/?local=1 (local mode, never the live data)')
         httpd.serve_forever()
