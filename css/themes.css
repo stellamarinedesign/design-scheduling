@@ -1,0 +1,57 @@
+/* ═══════════════════════════════════════════════════════════════════
+   THEMES
+   The default look is the :root block in css/style.css (Stella, dark). A
+   theme is a variable-override block keyed on <html data-theme="…">; it sets
+   only what differs and everything else falls through. Same mechanism and
+   same Workshop values as material-ordering/css/themes.css, so a person who
+   prefers the light look gets the same light look in every app.
+
+   The per-device choice lives in localStorage; an inline script in the
+   page <head> applies it before first paint.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Workshop — light, for bright offices and the workshop floor ───── */
+[data-theme="workshop"] {
+  color-scheme: light;
+  --ground:      #ffffff;
+  --bg:          #f5f4f0;
+  --bg2:         #eceae4;
+  --surface:     #ffffff;
+  --border:      #d4d2c8;
+  --border2:     #b8b6ac;
+  --text:        #1a1a18;
+  --text2:       #5a5a54;
+  --text3:       #6f6f68;   /* darker than material-ordering's #8a8a82: small grey text on white needs the contrast */
+  --accent:      #1a1a18;
+  --accent-text: #f5f4f0;
+  --link:        #1d4ed8;
+  --blue:   #2563eb;  --blue-bg:   #eff6ff;  --blue-text:   #1d4ed8;
+  --green:  #16a34a;  --green-bg:  #f0fdf4;  --green-text:  #15803d;
+  --red:    #dc2626;  --red-bg:    #fef2f2;  --red-text:    #b91c1c;
+  --amber:  #d97706;  --amber-bg:  #fffbeb;  --amber-text:  #b45309;
+  --violet: #7c3aed;  --violet-bg: #f5f3ff;  --violet-text: #6d28d9;
+  --cat-1:  #c2453d;  --cat-2:  #c2742a;  --cat-3:  #a08a1a;  --cat-4:  #3f8f35;
+  --cat-5:  #23877a;  --cat-6:  #2f74b5;  --cat-7:  #5b57c4;  --cat-8:  #9246ad;
+  --cat-9:  #b8467a;  --cat-10: #77726a;
+  --header-bg:     var(--accent);
+  --header-text:   var(--accent-text);
+  --header-line:   0 solid transparent;
+  --header-muted:  #9ca3af;
+  --title-transform: none;
+  --title-spacing: .02em;
+  --logo:          none;
+  --logo-w:        0px;
+  --tab-active:    var(--text);
+  --focus:         var(--blue);
+  --select-bg:     var(--blue-bg);
+  --select-text:   var(--blue-text);
+  --count-bg:      var(--amber-bg);
+  --count-text:    var(--amber-text);
+  --panel-bg:      var(--surface);
+  --scrim:         rgba(26, 26, 24, .35);
+  --toast-bg:      var(--green-text);
+  --toast-warn-bg: var(--red-text);
+  --shadow-panel:  0 12px 40px rgba(0, 0, 0, .18);
+  --radius:        6px;
+  --radius-lg:     10px;
+}

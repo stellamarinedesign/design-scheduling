@@ -1,0 +1,26 @@
+.DS_Store
+Thumbs.db
+node_modules/
+*.log
+
+# Real TileDo data and the Drafting Progress Tracker carry customer names,
+# vessel names and staff notes. The repo is public: never commit them. Test
+# fixtures use invented data; the real files stay in ../handoff/.
+tests/fixtures/
+
+# Licensed brand fonts (Friz Quadrata, Sweet Sans). Headings use them when
+# they are installed on the machine and fall back otherwise.
+fonts/
+*.ttf
+*.otf
+*.woff
+*.woff2
+
+# Per-machine Claude state. The project skills ARE committed; the Impeccable
+# design hook lives in settings.local.json, so it stays per machine.
+.claude/settings.local.json
+.claude/worktrees/
+
+# Impeccable's engine binary (~20 MB, platform-specific). The skill fetches it
+# into ~/.impeccable/bin/ when missing; `npx impeccable install` restores it here.
+.claude/skills/impeccable/scripts/bin/

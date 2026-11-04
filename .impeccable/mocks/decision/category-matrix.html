@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en-AU"><head><meta charset="utf-8"><title>Category matrix · Home</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1440px;height:900px;overflow:hidden;background:#0e0a0a;color:#fff;font:400 14.5px/1.4 system-ui,"Segoe UI",sans-serif}
+.hd{height:52px;display:flex;align-items:center;gap:20px;padding:0 20px;background:#282827;border-bottom:3px solid #ea372e}
+.logo{width:28px;height:28px;border-radius:50%;border:2px solid #fff;display:grid;place-items:center;font:700 13px Georgia,serif}
+.ttl{font:700 15px "Friz Quadrata BT",Georgia,serif;letter-spacing:.1em;text-transform:uppercase}
+.tabs{display:flex;height:100%}.tabs a{display:flex;align-items:center;padding:0 14px;font-weight:600;color:#b0b0ab;border-bottom:3px solid transparent;margin-bottom:-3px}
+.tabs a.on{color:#fff;border-color:#ea372e}.sp{flex:1}
+.search{width:260px;height:34px;border:1px solid #454542;border-radius:8px;background:#1c1c1b;color:#b0b0ab;padding:7px 12px;font-size:13px}
+.btn{height:34px;padding:0 14px;border-radius:8px;font:600 14px system-ui,sans-serif;border:1px solid #5e5e5a;background:transparent;color:#d2d2ce}
+.btn.pri{background:#af1f24;border-color:#af1f24;color:#fff}.btn.sm{height:28px;padding:0 10px;font-size:13px}
+.wrap{display:grid;grid-template-columns:1fr 360px;gap:20px;padding:18px 20px}
+.lbl{font:700 11px/1.2 system-ui,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#b0b0ab}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.st{background:#282827;border:1px solid #454542;border-radius:11px;padding:10px 14px}
+.st b{display:block;font:700 24px/1.1 system-ui,sans-serif;font-variant-numeric:tabular-nums;margin-top:4px}
+.st small{color:#b0b0ab;font-size:13px}
+h2{font:700 16px "Friz Quadrata BT",Georgia,serif;margin:0 0 8px}
+.grid{display:grid;grid-template-columns:200px repeat(4,1fr);border:1px solid #454542;border-radius:11px;overflow:hidden;background:#282827}
+.grid>div{border-top:1px solid #333331;border-left:1px solid #333331;padding:7px 10px;min-height:46px}
+.grid>.ph{border-top:0;display:flex;align-items:center;gap:8px;font-weight:600;background:#1c1c1b}
+.grid>.ph small{color:#b0b0ab;font-weight:400;font-size:13px;margin-left:auto}
+.grid>.ph.q small{color:#f2b84b}
+.grid>.corner{border-left:0;border-top:0;background:#1c1c1b}
+.grid>.cn{border-left:0;display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px}
+.av{width:24px;height:24px;border-radius:50%;background:#333331;display:grid;place-items:center;font:700 11px system-ui}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}
+.job{display:flex;flex-direction:column;gap:2px;border-radius:8px;padding:5px 8px;background:#1c1c1b;margin-bottom:4px}
+.job b{font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.job span{display:flex;justify-content:space-between;font-size:13px;color:#b0b0ab;font-variant-numeric:tabular-nums}
+.pill{border-radius:999px;padding:0 8px;font-size:13px;line-height:18px}
+.p-prog{background:#172033;color:#8ab4ff}.p-chk{background:#251c45;color:#c4b5fd}.p-wait{background:#2b1f08;color:#f2b84b}.p-fix{background:#2b100e;color:#ff7369}
+.rail .box{background:#282827;border:1px solid #454542;border-radius:11px;padding:12px 14px;margin-bottom:12px}
+.chk{border-top:1px solid #333331;padding:10px 0}.chk:first-of-type{border-top:0}
+.chk .ti{font-weight:600}.chk .mt{color:#b0b0ab;font-size:13px;margin-bottom:6px}.acts{display:flex;gap:8px}
+.li{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-top:1px solid #333331;font-size:13.5px}
+.li:first-of-type{border-top:0}.li em{font-style:normal;color:#f2b84b;font-variant-numeric:tabular-nums}
+</style></head><body>
+<header class="hd"><div class="logo">S</div><span class="ttl">Design Scheduling</span>
+<nav class="tabs"><a class="on">Home</a><a>Categories</a><a>Team</a><a>Log</a></nav><div class="sp"></div>
+<div class="search">Search jobs and tasks · Ctrl K</div><button class="btn pri">+ New job</button></header>
+<div class="wrap"><main>
+<div class="stats">
+<div class="st"><span class="lbl">In progress</span><b>5</b><small>across 4 people</small></div>
+<div class="st"><span class="lbl">Needs checking</span><b style="color:#c4b5fd">2</b><small>oldest 1d</small></div>
+<div class="st"><span class="lbl">Waiting</span><b style="color:#f2b84b">1</b><small>6d on GA check</small></div>
+<div class="st"><span class="lbl">Gathering dust</span><b>4</b><small>untouched 14d+</small></div>
+</div>
+<h2>Who is on what</h2>
+<div class="grid">
+<div class="corner"><span class="lbl">Category</span></div>
+<div class="ph"><span class="av">YO</span>You<small>3</small></div>
+<div class="ph"><span class="av">AL</span>Alex<small>2</small></div>
+<div class="ph"><span class="av">JO</span>Jordan<small>2</small></div>
+<div class="ph q"><span class="av">SA</span>Sam<small>quiet 8d</small></div>
+
+<div class="cn"><i class="dot" style="background:#e0675f"></i>Cylinder Lifters</div><div></div><div></div>
+<div><div class="job"><b>Cylinder lifter concept: 48ft cat</b><span><i class="pill p-fix">Fix</i>2d</span></div></div><div></div>
+
+<div class="cn"><i class="dot" style="background:#4fb8a8"></i>Rotary Lifters</div>
+<div><div class="job"><b>Rotary lifter design guide</b><span><i class="pill p-prog">In progress</i>5d</span></div></div><div></div><div></div><div></div>
+
+<div class="cn"><i class="dot" style="background:#e39b4b"></i>Davits</div>
+<div><div class="job"><b>450kg SS davit: R3 extension</b><span><i class="pill p-prog">In progress</i>2d</span></div><div class="job"><b>Plinth range rebuild</b><span><i class="pill p-wait">Waiting</i>6d</span></div></div><div></div><div></div><div></div>
+
+<div class="cn"><i class="dot" style="background:#d4c25a"></i>Tender Launchers</div><div></div><div></div>
+<div><div class="job"><b>Sliding tender chock drawings</b><span><i class="pill p-prog">In progress</i>4d</span></div></div><div></div>
+
+<div class="cn"><i class="dot" style="background:#8f8de6"></i>Helm Chairs</div><div></div>
+<div><div class="job"><b>Premium helm chair backrest</b><span><i class="pill p-chk">Ready for check</i>1d</span></div></div><div></div><div></div>
+
+<div class="cn"><i class="dot" style="background:#5aa5e0"></i>Watermakers</div><div></div>
+<div><div class="job"><b>600LPH watermaker frame</b><span><i class="pill p-prog">In progress</i>3d</span></div></div><div></div><div></div>
+
+<div class="cn"><i class="dot" style="background:#c47fd6"></i>Doors</div><div></div><div></div><div></div>
+<div><div class="job"><b>Watertight door hinge update</b><span><i class="pill p-chk">Ready for check</i>3h</span></div></div>
+
+<div class="cn"><i class="dot" style="background:#7cc46f"></i>Minor Fixes</div><div></div><div></div><div></div><div></div>
+</div>
+</main>
+<aside class="rail">
+<div class="box"><h2>Needs checking</h2>
+<div class="chk"><div class="ti">Watertight door hinge update</div><div class="mt">Sam · Doors · submitted 3h ago</div><div class="acts"><button class="btn pri sm">Approve</button><button class="btn sm">Send back</button></div></div>
+<div class="chk"><div class="ti">Premium helm chair backrest</div><div class="mt">Alex · Helm Chairs · submitted 1d ago</div><div class="acts"><button class="btn sm">Approve</button><button class="btn sm">Send back</button></div></div>
+</div>
+<div class="box"><h2>Gathering dust</h2>
+<div class="li"><span>Davit BOM levels</span><em>31d</em></div>
+<div class="li"><span>Exploded diagrams: 650kg</span><em>24d</em></div>
+<div class="li"><span>Aircon unit drawings</span><em>19d</em></div>
+<div class="li"><span>Electric plinth wiring</span><em>15d</em></div>
+</div>
+</aside></div>
+</body></html>

@@ -1,0 +1,139 @@
+/* ═══════════════════════════════════════════════════════════════════
+   DESIGN SCHEDULING — tokens and base
+   Brand (Stella brand guidelines p7): Friz Quadrata Pro for headlines,
+   Sweet Sans Pro for paragraphs. Both are licensed and never ship in this
+   public repo, so headings use Friz Quadrata when the machine has it
+   installed (the drafting PCs do, as "Friz Quadrata BT") and fall back to
+   Georgia; body text falls back to the platform UI font — Segoe UI on the
+   PCs, San Francisco on iPhone — which is also what a dense tool wants.
+
+   The colour tokens are the ones the Drawings, Production Board and Material
+   Ordering apps share (material-ordering/css/style.css), so the apps look
+   like one family. Themes (css/themes.css) override variables only: no rule
+   anywhere else carries a colour of its own, so a theme cannot miss a spot.
+
+   These tokens are FIXED. Change them only with the owner's say-so
+   (CLAUDE.md, "Design workflow").
+   ═══════════════════════════════════════════════════════════════════ */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  color-scheme: dark;
+
+  /* ── Surfaces and text (Stella dark) ─────────────────────────────── */
+  --ground:      #0e0a0a;   /* Black Night — page background */
+  --bg:          #1c1c1b;   /* band — inputs, hover, insets */
+  --bg2:         #333331;   /* a step lighter than cards, for chips */
+  --surface:     #282827;   /* Shadow Grey — bars, cards, panels */
+  --border:      #454542;
+  --border2:     #5e5e5a;
+  --text:        #ffffff;
+  --text2:       #d2d2ce;
+  --text3:       #b0b0ab;
+  --accent:      #af1f24;   /* Upsdell Red — primary buttons, active items */
+  --accent-text: #ffffff;
+  --link:        #ff7369;
+
+  /* ── Safety language (shared with the other apps) ────────────────── */
+  --blue:  #3b82f6;  --blue-bg:  #172033;  --blue-text:  #8ab4ff;
+  --green: #5fb85f;  --green-bg: #13261a;  --green-text: #7fd47f;
+  --red:   #ea372e;  --red-bg:   #2b100e;  --red-text:   #ff7369;
+  --amber: #d97706;  --amber-bg: #2b1f08;  --amber-text: #f2b84b;
+  --violet:#8b5cf6;  --violet-bg:#251c45;  --violet-text:#c4b5fd;
+
+  /* ── Task status → colour. Statuses are fixed (js/status.js); each
+        maps onto the safety language so it reads the same everywhere. ── */
+  --st-todo:        var(--text3);      --st-todo-bg:        var(--bg2);
+  --st-progress:    var(--blue);       --st-progress-bg:    var(--blue-bg);    --st-progress-text: var(--blue-text);
+  --st-waiting:     var(--amber);      --st-waiting-bg:     var(--amber-bg);   --st-waiting-text:  var(--amber-text);
+  --st-check:       var(--violet);     --st-check-bg:       var(--violet-bg);  --st-check-text:    var(--violet-text);
+  --st-fix:         var(--red);        --st-fix-bg:         var(--red-bg);     --st-fix-text:      var(--red-text);
+  --st-done:        var(--green);      --st-done-bg:        var(--green-bg);   --st-done-text:     var(--green-text);
+  --st-cancelled:   var(--border2);
+
+  /* ── Category colours: a dot and a thin rule, never a fill, so they
+        stay apart from the status colours above. ── */
+  --cat-1:  #e0675f;  --cat-2:  #e39b4b;  --cat-3:  #d4c25a;  --cat-4:  #7cc46f;
+  --cat-5:  #4fb8a8;  --cat-6:  #5aa5e0;  --cat-7:  #8f8de6;  --cat-8:  #c47fd6;
+  --cat-9:  #e07fa8;  --cat-10: #a39e93;
+
+  /* ── Header and chrome ───────────────────────────────────────────── */
+  --header-bg:     #282827;
+  --header-text:   #ffffff;
+  --header-line:   3px solid #ea372e;
+  --header-muted:  #b0b0ab;
+  --title-transform: uppercase;
+  --title-spacing: .1em;
+  --logo:          url('../images/brand/stella-icon.png');
+  --logo-w:        40px;
+  --tab-active:    #ea372e;
+  --focus:         #ea372e;
+  --select-bg:     var(--accent);
+  --select-text:   var(--accent-text);
+  --count-bg:      #ea372e;
+  --count-text:    #ffffff;
+  --panel-bg:      var(--surface);
+  --scrim:         rgba(0, 0, 0, .55);
+  --toast-bg:      #1f7a3a;
+  --toast-warn-bg: #af1f24;
+  --shadow-panel:  0 12px 40px rgba(0, 0, 0, .5);
+
+  /* ── Type ────────────────────────────────────────────────────────── */
+  --font:      "Sweet Sans Pro", "Sweet Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-head: "Friz Quadrata Pro", "Friz Quadrata BT", "Friz Quadrata", Georgia, serif;
+  --mono:      ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace;  /* paths, revisions */
+  --fs-micro:  11px;     /* uppercase micro-labels, .1em tracking */
+  --fs-sm:     13px;     /* metadata, breadcrumbs, chips */
+  --fs-base:   14.5px;   /* body and task titles */
+  --fs-md:     16px;     /* panel titles, inputs on phone (≥16 stops iOS zoom) */
+  --fs-lg:     19px;     /* view headings */
+  --fs-xl:     24px;     /* stat tile numbers */
+  --lh:        1.4;
+  --label-spacing: .1em;
+
+  /* ── Space, shape, targets ───────────────────────────────────────── */
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px;  --sp-4: 16px;  --sp-5: 24px;  --sp-6: 32px;
+  --radius:    8px;
+  --radius-lg: 11px;
+  --radius-pill: 999px;
+  --touch:     44px;     /* minimum tap target */
+  --row-h:     44px;     /* task row height (desktop may go denser, never below --touch on phone) */
+  --panel-w:   min(560px, 100vw);   /* task side panel */
+  --sidebar-w: 240px;
+
+  /* ── Motion (emil-design-eng decides where it is used; only to show a
+        change of state) ── */
+  --ease-out:   cubic-bezier(.23, 1, .32, 1);
+  --ease-in-out:cubic-bezier(.77, 0, .175, 1);
+  --dur-fast:   120ms;
+  --dur:        200ms;
+  --dur-panel:  260ms;
+}
+
+/* ── Base ─────────────────────────────────────────────────────────── */
+html, body {
+  min-height: 100%;
+  background: var(--ground);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--fs-base);
+  line-height: var(--lh);
+  -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+  touch-action: manipulation;
+}
+input, button, textarea, select { font: inherit; color: inherit; touch-action: manipulation; }
+button { cursor: pointer; }
+a { color: var(--link); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.brand-head { font-family: var(--font-head); font-weight: 700; }
+.mono       { font-family: var(--mono); }
+.micro      { font-size: var(--fs-micro); font-weight: 700; text-transform: uppercase;
+              letter-spacing: var(--label-spacing); color: var(--text3); }
+.sr-only    { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-fast: 0ms; --dur: 0ms; --dur-panel: 0ms; }
+}

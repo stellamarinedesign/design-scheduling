@@ -1,0 +1,482 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-03T22:55:20.193941+00:00",
+  "title": "Design System: Design Scheduling",
+  "extensions": {
+    "colorMeta": {
+      "black-night": {
+        "role": "neutral",
+        "displayName": "Black Night",
+        "canonical": "oklch(15.0% 0.007 18)",
+        "tonalRamp": [
+          "#0e0a0a",
+          "#282424",
+          "#464140",
+          "#656060",
+          "#868181",
+          "#a9a3a3",
+          "#cec7c7",
+          "#f3eded"
+        ]
+      },
+      "band": {
+        "role": "neutral",
+        "displayName": "Band",
+        "canonical": "oklch(22.6% 0.002 107)",
+        "tonalRamp": [
+          "#0b0b0a",
+          "#252524",
+          "#424241",
+          "#616160",
+          "#828281",
+          "#a5a5a4",
+          "#c9c9c8",
+          "#eeeeed"
+        ]
+      },
+      "chip-grey": {
+        "role": "neutral",
+        "displayName": "Chip Grey",
+        "canonical": "oklch(32.0% 0.003 107)",
+        "tonalRamp": [
+          "#0b0b0a",
+          "#252523",
+          "#424240",
+          "#61615f",
+          "#828280",
+          "#a5a5a3",
+          "#c9c9c7",
+          "#efefec"
+        ]
+      },
+      "shadow-grey": {
+        "role": "neutral",
+        "displayName": "Shadow Grey",
+        "canonical": "oklch(27.6% 0.002 107)",
+        "tonalRamp": [
+          "#0b0b0a",
+          "#252524",
+          "#424241",
+          "#616160",
+          "#828281",
+          "#a5a5a4",
+          "#c9c9c8",
+          "#eeeeed"
+        ]
+      },
+      "rule-grey": {
+        "role": "neutral",
+        "displayName": "Rule Grey",
+        "canonical": "oklch(38.9% 0.005 107)",
+        "tonalRamp": [
+          "#0b0b09",
+          "#252522",
+          "#42423f",
+          "#61615e",
+          "#82827f",
+          "#a5a5a2",
+          "#c9c9c6",
+          "#efefeb"
+        ]
+      },
+      "rule-strong": {
+        "role": "neutral",
+        "displayName": "Strong Rule",
+        "canonical": "oklch(48.1% 0.006 107)",
+        "tonalRamp": [
+          "#0b0b08",
+          "#252522",
+          "#42423e",
+          "#61615d",
+          "#83837e",
+          "#a5a5a1",
+          "#c9c9c5",
+          "#efefea"
+        ]
+      },
+      "text-white": {
+        "role": "neutral",
+        "displayName": "White",
+        "canonical": "oklch(100.0% 0.000 90)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "text-ash": {
+        "role": "neutral",
+        "displayName": "Ash",
+        "canonical": "oklch(86.3% 0.005 107)",
+        "tonalRamp": [
+          "#0b0b09",
+          "#252522",
+          "#42423f",
+          "#61615e",
+          "#82827f",
+          "#a5a5a1",
+          "#c9c9c5",
+          "#efefeb"
+        ]
+      },
+      "text-muted": {
+        "role": "neutral",
+        "displayName": "Muted Ash",
+        "canonical": "oklch(75.6% 0.007 107)",
+        "tonalRamp": [
+          "#0b0b08",
+          "#252521",
+          "#42423e",
+          "#61615d",
+          "#83837e",
+          "#a5a5a0",
+          "#c9c9c4",
+          "#efefe9"
+        ]
+      },
+      "upsdell-red": {
+        "role": "primary",
+        "displayName": "Upsdell Red",
+        "canonical": "oklch(48.9% 0.179 26)",
+        "tonalRamp": [
+          "#2b0000",
+          "#550000",
+          "#81000c",
+          "#b02125",
+          "#cf5650",
+          "#ed8279",
+          "#ffada4",
+          "#ffd8d0"
+        ]
+      },
+      "burning-star-red": {
+        "role": "primary",
+        "displayName": "Burning Star Red",
+        "canonical": "oklch(61.5% 0.216 28)",
+        "tonalRamp": [
+          "#2a0000",
+          "#540000",
+          "#820000",
+          "#b31a16",
+          "#e7352d",
+          "#ff6c5d",
+          "#ff9c8b",
+          "#ffcbba"
+        ]
+      },
+      "link-coral": {
+        "role": "neutral",
+        "displayName": "Link Coral",
+        "canonical": "oklch(72.2% 0.173 26)",
+        "tonalRamp": [
+          "#200000",
+          "#460e0c",
+          "#702521",
+          "#9d3e38",
+          "#cd5850",
+          "#ff7369",
+          "#ffa094",
+          "#ffccc0"
+        ]
+      },
+      "signal-blue": {
+        "role": "secondary",
+        "displayName": "Signal Blue",
+        "canonical": "oklch(62.3% 0.188 260)",
+        "tonalRamp": [
+          "#000430",
+          "#001f5b",
+          "#0c3d89",
+          "#225cbb",
+          "#387def",
+          "#63a3ff",
+          "#91caff",
+          "#bff0ff"
+        ]
+      },
+      "signal-green": {
+        "role": "secondary",
+        "displayName": "Signal Green",
+        "canonical": "oklch(70.6% 0.152 144)",
+        "tonalRamp": [
+          "#001100",
+          "#052e08",
+          "#1b4f1c",
+          "#327232",
+          "#4a974a",
+          "#65bd65",
+          "#94df92",
+          "#c1ffbf"
+        ]
+      },
+      "signal-amber": {
+        "role": "secondary",
+        "displayName": "Signal Amber",
+        "canonical": "oklch(66.6% 0.157 58)",
+        "tonalRamp": [
+          "#1e0100",
+          "#421600",
+          "#6a2f00",
+          "#954b00",
+          "#c16800",
+          "#e88b37",
+          "#ffb471",
+          "#ffdda5"
+        ]
+      },
+      "signal-violet": {
+        "role": "secondary",
+        "displayName": "Signal Violet",
+        "canonical": "oklch(60.6% 0.219 293)",
+        "tonalRamp": [
+          "#110033",
+          "#2b075f",
+          "#49248f",
+          "#6940c2",
+          "#8b5df6",
+          "#ab89ff",
+          "#cdb3ff",
+          "#f1ddff"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "stat": {
+        "displayName": "Stat",
+        "purpose": "Numbers in Home's stat tiles only; tabular figures."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "View headings and the uppercase app title in the header (Friz Quadrata)."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Section headings inside a view (Friz Quadrata)."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Briefs, descriptions and update text; about 70ch max in the task panel."
+      },
+      "body-strong": {
+        "displayName": "Body strong",
+        "purpose": "Job and task titles in rows; button labels."
+      },
+      "meta": {
+        "displayName": "Meta",
+        "purpose": "Breadcrumbs, ages, assignees, status pills; tabular figures."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Uppercase field captions and small group labels in Muted Ash."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Folder paths and revision codes."
+      }
+    },
+    "shadows": [
+      {
+        "name": "floating-panel",
+        "value": "0 12px 40px rgba(0, 0, 0, .5)",
+        "purpose": "Only on floating, dismissable layers: side panel, phone sheet, menus, popovers, toasts. Workshop theme: rgba(0, 0, 0, .18)."
+      },
+      {
+        "name": "scrim",
+        "value": "rgba(0, 0, 0, .55)",
+        "purpose": "Behind the phone sheet and any blocking dialog."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(.23, 1, .32, 1)",
+        "purpose": "Default easing for entering layers and state changes."
+      },
+      {
+        "name": "ease-in-out",
+        "value": "cubic-bezier(.77, 0, .175, 1)",
+        "purpose": "Layers that move across the screen."
+      },
+      {
+        "name": "dur-fast",
+        "value": "120ms",
+        "purpose": "Colour cross-fades (status pill, hover fills)."
+      },
+      {
+        "name": "dur",
+        "value": "200ms",
+        "purpose": "Toasts and small layers."
+      },
+      {
+        "name": "dur-panel",
+        "value": "260ms",
+        "purpose": "Side panel and phone sheet slide-in."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "phone",
+        "value": "700px",
+        "purpose": "Below: one column, panel as a full-height sheet, floating add button (provisional)."
+      },
+      {
+        "name": "wide",
+        "value": "1100px",
+        "purpose": "Above: Home splits into two columns (provisional). Every view is also checked at ~900px (half-screen)."
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one filled action per view (Approve, Save, Add job).",
+      "html": "<button class=\"ds-btn-primary\">Approve</button>",
+      "css": ".ds-btn-primary{background:var(--accent, #af1f24);color:var(--accent-text, #fff);border:0;border-radius:8px;height:36px;padding:0 16px;font:600 14.5px/1 system-ui,'Segoe UI',sans-serif;cursor:pointer;transition:filter 120ms cubic-bezier(.23,1,.32,1)}.ds-btn-primary:hover{filter:brightness(1.12)}.ds-btn-primary:focus-visible{outline:2px solid var(--focus, #ea372e);outline-offset:2px}.ds-btn-primary:active{filter:brightness(.95)}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Default for most actions: outlined and quiet.",
+      "html": "<button class=\"ds-btn-secondary\">Send back</button>",
+      "css": ".ds-btn-secondary{background:transparent;color:var(--text2, #d2d2ce);border:1px solid var(--border2, #5e5e5a);border-radius:8px;height:36px;padding:0 14px;font:600 14.5px/1 system-ui,'Segoe UI',sans-serif;cursor:pointer;transition:background 120ms cubic-bezier(.23,1,.32,1)}.ds-btn-secondary:hover{background:var(--bg, #1c1c1b)}.ds-btn-secondary:focus-visible{outline:2px solid var(--focus, #ea372e);outline-offset:2px}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Low-stakes row actions: Start, Snooze, more.",
+      "html": "<button class=\"ds-btn-ghost\">&#9654; Start</button>",
+      "css": ".ds-btn-ghost{background:transparent;color:var(--text3, #b0b0ab);border:0;border-radius:8px;height:36px;padding:0 10px;font:400 14.5px/1 system-ui,'Segoe UI',sans-serif;cursor:pointer}.ds-btn-ghost:hover{background:var(--bg, #1c1c1b);color:var(--text, #fff)}.ds-btn-ghost:focus-visible{outline:2px solid var(--focus, #ea372e);outline-offset:2px}"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Band fill, hairline stroke, red stroke on focus.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">Revision</span><input class=\"ds-input\" value=\"R4\"></label>",
+      "css": ".ds-field{display:grid;gap:4px}.ds-field-label{font:700 11px/1.2 system-ui,'Segoe UI',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--text3, #b0b0ab)}.ds-input{background:var(--bg, #1c1c1b);color:var(--text, #fff);border:1px solid var(--border, #454542);border-radius:8px;height:36px;padding:0 12px;font:400 14.5px/1.4 system-ui,'Segoe UI',sans-serif}.ds-input:focus{outline:none;border-color:var(--focus, #ea372e)}"
+    },
+    {
+      "name": "Status Pills",
+      "kind": "chip",
+      "refersTo": "status-pill-progress",
+      "description": "The status word on its own tint; tapping a pill opens the status menu.",
+      "html": "<div class=\"ds-pills\"><span class=\"ds-pill ds-todo\">To do</span><span class=\"ds-pill ds-prog\">In progress</span><span class=\"ds-pill ds-wait\">Waiting</span><span class=\"ds-pill ds-check\">Ready for check</span><span class=\"ds-pill ds-fix\">Fix</span><span class=\"ds-pill ds-done\">Done</span></div>",
+      "css": ".ds-pills{display:flex;flex-wrap:wrap;gap:6px}.ds-pill{display:inline-flex;align-items:center;border-radius:999px;padding:2px 10px;font:400 13px/1.35 system-ui,'Segoe UI',sans-serif}.ds-todo{background:var(--bg2, #333331);color:var(--text3, #b0b0ab)}.ds-prog{background:var(--blue-bg, #172033);color:var(--blue-text, #8ab4ff)}.ds-wait{background:var(--amber-bg, #2b1f08);color:var(--amber-text, #f2b84b)}.ds-check{background:var(--violet-bg, #251c45);color:var(--violet-text, #c4b5fd)}.ds-fix{background:var(--red-bg, #2b100e);color:var(--red-text, #ff7369)}.ds-done{background:var(--green-bg, #13261a);color:var(--green-text, #7fd47f)}"
+    },
+    {
+      "name": "Task Row",
+      "kind": "custom",
+      "refersTo": "task-row",
+      "description": "Signature 44px row: status, title over breadcrumb, owner, age, action.",
+      "html": "<div class=\"ds-row\" tabindex=\"0\"><span class=\"ds-pill2\">Waiting</span><div class=\"ds-row-main\"><div class=\"ds-row-title\">Laser files for plinth rebuild</div><div class=\"ds-row-sub\"><span class=\"ds-dot\"></span>Davits &rsaquo; Plinth rebuild &middot; Blocked by: GA check</div></div><span class=\"ds-row-meta\">AB</span><span class=\"ds-row-meta\">3d</span><button class=\"ds-row-act\" aria-label=\"More actions\">&#8943;</button></div>",
+      "css": ".ds-row{display:flex;align-items:center;gap:12px;min-height:44px;padding:0 12px;border-radius:8px;color:var(--text, #fff);font:400 14.5px/1.4 system-ui,'Segoe UI',sans-serif}.ds-row:hover{background:var(--bg, #1c1c1b)}.ds-row:focus-visible{outline:2px solid var(--focus, #ea372e);outline-offset:-2px}.ds-pill2{border-radius:999px;padding:2px 10px;font-size:13px;background:var(--amber-bg, #2b1f08);color:var(--amber-text, #f2b84b);white-space:nowrap}.ds-row-main{flex:1;min-width:0}.ds-row-title{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ds-row-sub{font-size:13px;color:var(--text3, #b0b0ab);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px}.ds-dot{width:8px;height:8px;border-radius:50%;background:var(--cat-6, #5aa5e0);flex:none}.ds-row-meta{font-size:13px;color:var(--text3, #b0b0ab);font-variant-numeric:tabular-nums}.ds-row-act{background:transparent;border:0;color:var(--text3, #b0b0ab);width:36px;height:36px;border-radius:8px;cursor:pointer}.ds-row-act:hover{background:var(--bg2, #333331);color:var(--text, #fff)}"
+    },
+    {
+      "name": "Stat Tile",
+      "kind": "card",
+      "refersTo": "stat-tile",
+      "description": "Home's glance numbers: flat Shadow Grey with a hairline border.",
+      "html": "<div class=\"ds-stat\"><div class=\"ds-stat-label\">Needs checking</div><div class=\"ds-stat-num\">3</div></div>",
+      "css": ".ds-stat{background:var(--surface, #282827);border:1px solid var(--border, #454542);border-radius:11px;padding:12px 16px;min-width:140px}.ds-stat-label{font:700 11px/1.2 system-ui,'Segoe UI',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--text3, #b0b0ab)}.ds-stat-num{font:700 24px/1.1 system-ui,'Segoe UI',sans-serif;font-variant-numeric:tabular-nums;color:var(--violet-text, #c4b5fd);margin-top:6px}"
+    },
+    {
+      "name": "Header and Tabs",
+      "kind": "nav",
+      "refersTo": "count-bubble",
+      "description": "Shadow Grey bar on the 3px red rule; active tab underlined; counts in bubbles.",
+      "html": "<header class=\"ds-head\"><span class=\"ds-title\">Design Scheduling</span><nav class=\"ds-tabs\"><a class=\"ds-tab ds-on\">Home</a><a class=\"ds-tab\">Categories</a><a class=\"ds-tab\">Team <span class=\"ds-count\">2</span></a><a class=\"ds-tab\">Log</a></nav></header>",
+      "css": ".ds-head{display:flex;align-items:center;gap:24px;background:var(--header-bg, #282827);border-bottom:3px solid #ea372e;padding:0 16px;height:52px}.ds-title{font:700 15px/1 'Friz Quadrata Pro','Friz Quadrata BT','Friz Quadrata',Georgia,serif;text-transform:uppercase;letter-spacing:.1em;color:var(--header-text, #fff)}.ds-tabs{display:flex;gap:4px;height:100%}.ds-tab{display:flex;align-items:center;gap:6px;padding:0 12px;font:600 14.5px/1 system-ui,'Segoe UI',sans-serif;color:var(--text3, #b0b0ab);border-bottom:3px solid transparent;margin-bottom:-3px;cursor:pointer}.ds-tab:hover{color:var(--text, #fff)}.ds-on{color:var(--text, #fff);border-bottom-color:var(--tab-active, #ea372e)}.ds-count{background:var(--count-bg, #ea372e);color:var(--count-text, #fff);border-radius:999px;padding:1px 6px;font:700 11px/1.2 system-ui,'Segoe UI',sans-serif}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Wheelhouse",
+    "overview": "Design Scheduling is a console you glance at between other work: on a second monitor beside SolidWorks, snapped beside File Explorer, or pulled out on a phone on the workshop floor. Like a wheelhouse at night it is dark and quiet at rest, and the only things that light up are the things that need you. A job waiting on someone glows amber, work ready for checking glows violet, a send-back glows red. Everything else stays in greys, so a status change is noticed the moment the eye lands on the page.\n\nThe system belongs to the Stella family: the production board, material ordering and the workshop drawings app.\n\n- **Shared with the family:** the same Black Night ground, Shadow Grey surfaces, Upsdell Red primary action, and the Burning Star Red rule under the header. - **Different:** the density. This is a working list, not a printed board. Rows are tight, labels are small uppercase captions, and numbers line up. - **Friz Quadrata** names places (the app, each view, each section). The body face does everything you read in a row or act on.\n\nControls are **quiet and exact**: hairline borders, modest 8px corners, outlined secondary actions, and one filled red button at most per view. Surfaces are flat and told apart by tone. Only things that float over the page cast a shadow: the task panel, the phone sheet, menus and toasts. Motion exists only to show that something changed state.",
+    "keyCharacteristics": [
+      "Dark, calm and greyscale at rest. Hue is reserved for signals.",
+      "Dense rows (44px) on a 4/8px rhythm, readable at half-screen width.",
+      "Friz Quadrata for place names; the body face for everything actionable.",
+      "Flat surfaces with tonal layers; shadows only on floating layers.",
+      "One filled primary action per view, in Upsdell Red.",
+      "A light **Workshop** theme exists for bright rooms. It swaps variables only (`css/themes.css`)."
+    ],
+    "rules": [
+      {
+        "name": "The Signal Rule",
+        "body": "Colour at rest is greyscale. Hue appears only when it says something: a status, a category dot, a count, or the single primary action. If a coloured element carries no meaning, it goes grey.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Red Rule",
+        "body": "- Upsdell Red fills at most one button per view. - Burning Star Red is for lines and markers (header rule, active tab, focus, counts), never a filled area larger than a count bubble.",
+        "section": "colors"
+      },
+      {
+        "name": "The Dot-Not-Fill Rule",
+        "body": "Categories are a dot and, at most, a thin rule. They never fill a row, card or chip, so they can never be mistaken for a status.",
+        "section": "colors"
+      },
+      {
+        "name": "The Word-With-Colour Rule",
+        "body": "Status colour always travels with its word (\"Waiting\", \"Ready for check\"). Colour alone never carries the meaning.",
+        "section": "colors"
+      },
+      {
+        "name": "The Friz-for-Places Rule",
+        "body": "- Friz Quadrata names where you are: the app, the view, the section. - Anything you can click, edit or scan in a row is set in the body face. - Never set a job or task title in Friz.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Numbers Rule",
+        "body": "Counts, ages and dates use tabular figures, so columns of numbers line up and don't jitter as they change.",
+        "section": "typography"
+      },
+      {
+        "name": "The 16px Input Rule",
+        "body": "On phone widths, text inputs are 16px, so iOS never zooms the page on focus.",
+        "section": "typography"
+      },
+      {
+        "name": "The Half-Screen Rule",
+        "body": "Every view is designed and checked at about 900px wide (snapped beside CAD), as well as at 375px and full desktop. Nothing important may depend on width above 1100px.",
+        "section": "layout"
+      },
+      {
+        "name": "The Glance Rule",
+        "body": "A row's status, owner and age are readable without hovering, expanding or opening anything.",
+        "section": "layout"
+      },
+      {
+        "name": "The Floating-Only Shadow Rule",
+        "body": "Nothing at rest casts a shadow. Cards, tiles and rows are flat. A shadow means \"this is above the page and will go away\".",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** keep the screen greyscale at rest and let the status hues carry meaning (the Signal",
+      "**Do** write the status word inside every status pill. Colour is never the only signal.",
+      "**Do** keep job and task rows at 44px. Use tabular figures for every count, age and date.",
+      "**Do** check every view at 375px, about 900px (half-screen) and full desktop before calling",
+      "**Do** use the Floating panel shadow only on layers that float and dismiss: panel, sheet,",
+      "**Do** show focus as the 2px Burning Star Red ring, offset 2px, on every interactive element.",
+      "**Do** set folder paths and revisions in the mono face."
+    ],
+    "donts": [
+      "**Don't** change the Stella tokens in `css/style.css` or the Friz Quadrata headings without",
+      "**Don't** fill more than one button per view with Upsdell Red. Never fill an area with",
+      "**Don't** fill rows, cards or chips with category colour. Categories are dots.",
+      "**Don't** put shadows on cards, tiles or rows at rest.",
+      "**Don't** hide an action behind hover or right-click alone. Every action needs a visible,",
+      "**Don't** animate anything that isn't a change of state, and never on page load.",
+      "**Don't** set job or task titles in Friz Quadrata. Don't ship the licensed font files."
+    ]
+  }
+}

@@ -1,0 +1,18 @@
+# GitHub Pages publishes the whole repository tree by default, and a static
+# site hands its files to whoever asks — no sign-in involved. Jekyll's
+# `exclude` list is what keeps a file out of the published site (the board
+# learned this the hard way). Do NOT add .nojekyll without replacing this.
+#
+# Jekyll already skips dot-folders, so .claude/ never ships.
+exclude:
+  - tests/
+  - tools/
+  - README.md
+  - CLAUDE.md
+  - PRODUCT.md
+  - DESIGN.md
+  - firestore.rules
+  - firebase.json
+  - skills-lock.json
+  - _config.yml
+  - .gitignore

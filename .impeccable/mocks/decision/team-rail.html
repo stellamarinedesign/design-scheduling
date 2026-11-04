@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en-AU"><head><meta charset="utf-8"><title>Team rail · Home</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1440px;height:900px;overflow:hidden;background:#0e0a0a;color:#fff;font:400 14.5px/1.4 system-ui,"Segoe UI",sans-serif}
+.hd{height:52px;display:flex;align-items:center;gap:20px;padding:0 20px;background:#282827;border-bottom:3px solid #ea372e}
+.logo{width:28px;height:28px;border-radius:50%;border:2px solid #fff;display:grid;place-items:center;font:700 13px Georgia,serif}
+.ttl{font:700 15px "Friz Quadrata BT",Georgia,serif;letter-spacing:.1em;text-transform:uppercase}
+.tabs{display:flex;height:100%}.tabs a{display:flex;align-items:center;padding:0 14px;font-weight:600;color:#b0b0ab;border-bottom:3px solid transparent;margin-bottom:-3px}
+.tabs a.on{color:#fff;border-color:#ea372e}.sp{flex:1}
+.search{width:260px;height:34px;border:1px solid #454542;border-radius:8px;background:#1c1c1b;color:#b0b0ab;padding:7px 12px;font-size:13px}
+.btn{height:34px;padding:0 14px;border-radius:8px;font:600 14px system-ui,sans-serif;border:1px solid #5e5e5a;background:transparent;color:#d2d2ce}
+.btn.pri{background:#af1f24;border-color:#af1f24;color:#fff}.btn.sm{height:28px;padding:0 10px;font-size:13px}
+.wrap{display:grid;grid-template-columns:280px 1fr;height:845px}
+.rail{background:#1c1c1b;border-right:1px solid #454542;padding:16px 12px}
+.lbl{font:700 11px/1.2 system-ui,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#b0b0ab}
+.person{display:grid;grid-template-columns:30px 1fr;gap:4px 10px;padding:10px;border-radius:8px;margin-top:6px}
+.person.on{background:#282827}
+.av{grid-row:span 2;width:30px;height:30px;border-radius:50%;background:#333331;display:grid;place-items:center;font:700 11px system-ui}
+.nm{font-weight:600;display:flex;justify-content:space-between}.nm em{font-style:normal;font-weight:400;color:#b0b0ab;font-size:13px}
+.cts{display:flex;gap:6px;flex-wrap:wrap}
+.c{border-radius:999px;padding:0 8px;font-size:13px;line-height:20px;font-variant-numeric:tabular-nums}
+.c-prog{background:#172033;color:#8ab4ff}.c-chk{background:#251c45;color:#c4b5fd}.c-wait{background:#2b1f08;color:#f2b84b}.c-fix{background:#2b100e;color:#ff7369}
+.quiet{color:#f2b84b}
+.main{padding:18px 24px;overflow:hidden}
+h1{font:700 19px "Friz Quadrata BT",Georgia,serif;margin-bottom:12px}
+h2{font:700 16px "Friz Quadrata BT",Georgia,serif;margin:0 0 8px}
+.needs{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px}
+.card{background:#282827;border:1px solid #454542;border-radius:11px;padding:12px 14px}
+.card .ti{font-weight:600;margin:6px 0 2px}.card .mt{color:#b0b0ab;font-size:13px;margin-bottom:10px}
+.acts{display:flex;gap:8px}
+.blocks{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.blk{background:#282827;border:1px solid #454542;border-radius:11px;overflow:hidden}
+.bh{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid #454542}
+.bh .av{grid-row:auto;width:24px;height:24px;font-size:11px}.bh b{font-weight:600}.bh span{color:#b0b0ab;font-size:13px;margin-left:auto}
+.cat{display:flex;align-items:center;gap:6px;padding:8px 14px 2px}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.row{display:grid;grid-template-columns:118px 1fr 40px;align-items:center;min-height:44px;padding:6px 14px}
+.pill{justify-self:start;border-radius:999px;padding:2px 10px;font-size:13px;white-space:nowrap}
+.t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.t small{display:block;font-weight:400;color:#b0b0ab;font-size:13px}
+.age{text-align:right;color:#b0b0ab;font-size:13px;font-variant-numeric:tabular-nums}
+</style></head><body>
+<header class="hd"><div class="logo">S</div><span class="ttl">Design Scheduling</span>
+<nav class="tabs"><a class="on">Home</a><a>Categories</a><a>Team</a><a>Log</a></nav><div class="sp"></div>
+<div class="search">Search jobs and tasks · Ctrl K</div><button class="btn pri">+ New job</button></header>
+<div class="wrap">
+<aside class="rail"><span class="lbl">Crew</span>
+<div class="person on"><div class="av">ALL</div><div class="nm">Everyone <em>9 active</em></div><div class="cts"><span class="c c-prog">5 in progress</span><span class="c c-chk">2 check</span><span class="c c-wait">1</span><span class="c c-fix">1</span></div></div>
+<div class="person"><div class="av">YO</div><div class="nm">You <em>today</em></div><div class="cts"><span class="c c-prog">2</span><span class="c c-wait">1 waiting</span></div></div>
+<div class="person"><div class="av">AL</div><div class="nm">Alex <em>1d</em></div><div class="cts"><span class="c c-prog">1</span><span class="c c-chk">1 check</span></div></div>
+<div class="person"><div class="av">JO</div><div class="nm">Jordan <em>2d</em></div><div class="cts"><span class="c c-prog">1</span><span class="c c-fix">1 fix</span></div></div>
+<div class="person"><div class="av">SA</div><div class="nm">Sam <em class="quiet">quiet 8d</em></div><div class="cts"><span class="c c-chk">1 check</span></div></div>
+<div style="margin-top:22px"><span class="lbl">Gathering dust</span>
+<div class="person"><div class="av" style="background:#2b1f08;color:#f2b84b">4</div><div class="nm">Untouched 14d+</div><div class="cts" style="color:#b0b0ab;font-size:13px">Oldest: Davit BOM levels, 31d</div></div></div>
+</aside>
+<main class="main"><h1>Home</h1>
+<h2>Needs you</h2>
+<div class="needs">
+<div class="card"><span class="c c-chk">Ready for check</span><div class="ti">Watertight door hinge update</div><div class="mt">Sam · Doors · 3h ago</div><div class="acts"><button class="btn pri sm">Approve</button><button class="btn sm">Send back</button></div></div>
+<div class="card"><span class="c c-chk">Ready for check</span><div class="ti">Premium helm chair backrest</div><div class="mt">Alex · Helm Chairs · 1d ago</div><div class="acts"><button class="btn sm">Approve</button><button class="btn sm">Send back</button></div></div>
+<div class="card"><span class="c c-wait">Waiting on you</span><div class="ti">Plinth range rebuild</div><div class="mt">Blocked by: GA check · 6d</div><div class="acts"><button class="btn sm">Open GA check</button></div></div>
+</div>
+<div class="blocks">
+<section class="blk"><div class="bh"><div class="av">YO</div><b>You</b><span>3 active</span></div>
+<div class="cat"><i class="dot" style="background:#e39b4b"></i><span class="lbl">Davits</span></div>
+<div class="row"><span class="pill c-prog">In progress</span><div class="t">450kg SS davit: R3 extension</div><span class="age">2d</span></div>
+<div class="row"><span class="pill c-wait">Waiting</span><div class="t">Plinth range rebuild<small>Blocked by: GA check</small></div><span class="age">6d</span></div>
+<div class="cat"><i class="dot" style="background:#4fb8a8"></i><span class="lbl">Rotary Lifters</span></div>
+<div class="row"><span class="pill c-prog">In progress</span><div class="t">Rotary lifter design guide</div><span class="age">5d</span></div>
+</section>
+<section class="blk"><div class="bh"><div class="av">AL</div><b>Alex</b><span>2 active</span></div>
+<div class="cat"><i class="dot" style="background:#8f8de6"></i><span class="lbl">Helm Chairs</span></div>
+<div class="row"><span class="pill c-chk">Ready for check</span><div class="t">Premium helm chair backrest</div><span class="age">1d</span></div>
+<div class="cat"><i class="dot" style="background:#5aa5e0"></i><span class="lbl">Watermakers</span></div>
+<div class="row"><span class="pill c-prog">In progress</span><div class="t">600LPH watermaker frame</div><span class="age">3d</span></div>
+</section>
+<section class="blk"><div class="bh"><div class="av">JO</div><b>Jordan</b><span>2 active</span></div>
+<div class="cat"><i class="dot" style="background:#e0675f"></i><span class="lbl">Cylinder Lifters</span></div>
+<div class="row"><span class="pill c-fix">Fix</span><div class="t">Cylinder lifter concept: 48ft cat<small>Sent back: hob curve</small></div><span class="age">2d</span></div>
+<div class="cat"><i class="dot" style="background:#d4c25a"></i><span class="lbl">Tender Launchers &amp; Chocks</span></div>
+<div class="row"><span class="pill c-prog">In progress</span><div class="t">Sliding tender chock drawings</div><span class="age">4d</span></div>
+</section>
+<section class="blk"><div class="bh"><div class="av">SA</div><b>Sam</b><span class="quiet">quiet 8d</span></div>
+<div class="cat"><i class="dot" style="background:#c47fd6"></i><span class="lbl">Doors</span></div>
+<div class="row"><span class="pill c-chk">Ready for check</span><div class="t">Watertight door hinge update</div><span class="age">3h</span></div>
+</section>
+</div></main></div>
+</body></html>
