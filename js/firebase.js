@@ -71,9 +71,18 @@ export async function getFirebase() {
     // corporate proxies mangle Firestore's streaming transport, and the SDK's
     // own fallback waits tens of seconds first — "blank screen for a minute on
     // a phone". Probing up front costs nothing where the stream is fine.
+    //
+    // A PERSISTENT CACHE, so an edit made offline survives a reload and is
+    // sent when the connection is back - which is what the offline strip
+    // promises. Without it the cache is memory only and a reload loses the
+    // edit. The multiple-tab manager lets two tabs of the app share it
+    // (Home in one, Tasks in another) instead of the second failing over.
     _fb = {
       app,
-      db: fs.initializeFirestore(app, { experimentalAutoDetectLongPolling: true }),
+      db: fs.initializeFirestore(app, {
+        experimentalAutoDetectLongPolling: true,
+        localCache: fs.persistentLocalCache({ tabManager: fs.persistentMultipleTabManager() }),
+      }),
       auth: fa.getAuth(app),
       fs,
       fa,

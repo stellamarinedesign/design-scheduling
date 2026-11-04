@@ -538,7 +538,8 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
   .hd-logo, .tabs, .hd .new-job { display: none; }
   .hd-view { display: block; margin-left: 4px; }
   .hd .ib { width: 44px; height: 44px; }
-  .view { padding: 14px 16px calc(96px + env(safe-area-inset-bottom)); }
+  /* Clear of the + button: it tops out at 72 + 56 = 128px above the bottom edge. */
+  .view { padding: 14px 16px calc(144px + env(safe-area-inset-bottom)); }
   .view-inner { gap: 24px; }
   .grid, .backlog-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .grid.one { grid-template-columns: 1fr; }

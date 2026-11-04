@@ -114,9 +114,13 @@ export function mapRow(r) {
   else if (s === 'waiting' || s === 'on hold' || s === 'blocked') status = 'waiting';
   else if (s === 'n/a' || s === 'na' || s === 'cancelled' || s === 'canceled') status = 'cancelled';
   let checked = false;
-  if (c === 'done' || c === 'checked' || c === 'yes') { status = 'done'; checked = true; }
-  else if (c === 'fix') status = 'fix';
-  else if (c === 'in progress' && status !== 'cancelled') status = 'check';
+  // Checked speaks to the review of work that went ahead. A row the Status
+  // column cancelled stays cancelled, whatever Checked says.
+  if (status !== 'cancelled') {
+    if (c === 'done' || c === 'checked' || c === 'yes') { status = 'done'; checked = true; }
+    else if (c === 'fix') status = 'fix';
+    else if (c === 'in progress') status = 'check';
+  }
   const folders = [];
   let folderError = null;
   if (r.path) {

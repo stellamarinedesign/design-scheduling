@@ -70,7 +70,8 @@ function overview(inner) {
   if (!idx.nodes.length) { inner.append(welcome()); return; }
   const masters = T.childrenOf(idx, null).filter(T.isGroupLike);
   const allOpen = T.jobsUnder(idx, null).filter((j) => S.isOpen(j.status)).length;
-  const catCount = idx.nodes.filter((n) => T.isGroupLike(n) && n.parentId && !T.isSection(idx, n)).length;
+  // Categories are what sit directly in a master category; sub-groups inside them are not counted again.
+  const catCount = masters.reduce((sum, m) => sum + T.childrenOf(idx, m.id).filter(T.isGroupLike).length, 0);
   inner.append(el('div', { class: 'view-head' },
     el('h1', { class: 'h1' }, 'Tasks'),
     el('span', { class: 'meta' }, `${allOpen} open across ${catCount} ${catCount === 1 ? 'category' : 'categories'}`),

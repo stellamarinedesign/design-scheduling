@@ -22,6 +22,8 @@ import { Store } from '../store.js';
 import { whenLabel, dayLabel, daysUntil, ageLabel } from '../dates.js';
 import { normaliseFolder, learnPrefix, fullPath, getPrefix, displayPath, leafName } from '../folders.js';
 import { statusMenu } from './tile.js';
+import * as BL from '../backlog.js';
+import { backlogPool } from './home.js';
 import { go, openTask, closePanel, routeHref } from '../router.js';
 import { promptDialog } from '../dialog.js';
 import { shortPath } from '../paths.js';
@@ -108,9 +110,8 @@ function moreMenu(anchor, n) {
   menu(anchor, [
     { label: 'Move to…', icon: 'move', onSelect: async () => (await import('./pickers.js')).moveDialog(n.id) },
     !job ? { label: 'Make it a step', icon: 'tasks', onSelect: () => A.demoteTask(n.id) } : null,
-    job || T.hasTaskChildren(state.idx, n.id) ? (n.backlogIgnored
-      ? { label: 'Show in the Backlog again', icon: 'restore', onSelect: () => A.setBacklogIgnored(n.id, false) }
-      : { label: 'Hide from the Backlog', icon: 'hide', onSelect: () => A.setBacklogIgnored(n.id, true) }) : null,
+    n.backlogIgnored ? { label: 'Show in the Backlog again', icon: 'restore', onSelect: () => A.setBacklogIgnored(n.id, false) }
+      : BL.canHideFromBacklog(state.idx, n.id, backlogPool()) ? { label: 'Hide from the Backlog', icon: 'hide', onSelect: () => A.setBacklogIgnored(n.id, true) } : null,
     'sep',
     { label: 'Archive', icon: 'archive', onSelect: () => { A.archive(n.id); closePanel(); } },
     { label: 'Delete…', icon: 'trash', danger: true, onSelect: async () => { if (await A.remove(n.id)) closePanel(); } },

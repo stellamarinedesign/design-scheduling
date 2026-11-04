@@ -34,29 +34,53 @@ const byOrder = (a, b) => (a.order ?? 0) - (b.order ?? 0) || String(a.id).locale
 export function buildIndex(nodes) {
   const byId = new Map();
   const kids = new Map();
+  const cycled = new Set();
   for (const n of nodes ?? []) byId.set(n.id, n);
+  // A PARENT CYCLE (A inside B inside A) can come from two moves made at the
+  // same moment on two devices: each was legal alone. Walked naively it never
+  // reaches the top, so every node in it vanishes from view and any walk down
+  // it never ends. A node whose chain of parents comes back to itself is put
+  // at the top instead, where it can be seen and moved somewhere sensible.
+  const inCycle = (n) => {
+    const seen = new Set([n.id]);
+    let p = n.parentId && byId.get(n.parentId);
+    while (p) {
+      if (seen.has(p.id)) return p.id === n.id;     // a loop above it, not through it: it stays where it is
+      seen.add(p.id);
+      p = p.parentId && byId.get(p.parentId);
+    }
+    return false;
+  };
   for (const n of byId.values()) {
     // A parent that is not here (archived, deleted, or never imported) leaves
     // its child at the top, rather than hiding it where nobody can reach it.
-    const key = n.parentId && byId.has(n.parentId) ? n.parentId : '';
+    const looped = n.parentId && byId.has(n.parentId) && inCycle(n);
+    if (looped) cycled.add(n.id);
+    const key = n.parentId && byId.has(n.parentId) && !looped ? n.parentId : '';
     if (!kids.has(key)) kids.set(key, []);
     kids.get(key).push(n);
   }
   for (const list of kids.values()) list.sort(byOrder);
-  return { byId, kids, nodes: [...byId.values()] };
+  return { byId, kids, cycled, nodes: [...byId.values()] };
 }
 
 /** The parent as the index sees it: null at the top, or for an orphan. */
-export const parentOf = (idx, n) => (n?.parentId && idx.byId.get(n.parentId)) || null;
+export const parentOf = (idx, n) => (n?.parentId && !idx.cycled?.has(n.id) && idx.byId.get(n.parentId)) || null;
 
 /** A parent's children in manual order. `null` is the top level. */
 export const childrenOf = (idx, id) => idx.kids.get(id ?? '') ?? [];
 
-/** Every node below one, depth first, in order. */
+/** Every node below one, depth first, in order. Never visits a node twice, whatever the data. */
 export function descendantIds(idx, id) {
   const out = [];
+  const seen = new Set([id ?? '']);
   const walk = (pid) => {
-    for (const c of childrenOf(idx, pid)) { out.push(c.id); walk(c.id); }
+    for (const c of childrenOf(idx, pid)) {
+      if (seen.has(c.id)) continue;
+      seen.add(c.id);
+      out.push(c.id);
+      walk(c.id);
+    }
   };
   walk(id);
   return out;
@@ -101,6 +125,19 @@ export function jobOf(idx, id) {
   const chain = ancestorChain(idx, id);
   for (let i = chain.length - 1; i >= 0; i--) if (isJob(idx, chain[i])) return chain[i];
   return null;
+}
+
+/**
+ * The tasks whose "last activity" moves when something happens at a node:
+ * the node itself when it is a task, and every task above it - the sub-job it
+ * sits in as well as the job. The Backlog reads lastActivityAt, and its pool
+ * holds sub-jobs too.
+ */
+export function activityTargets(idx, id) {
+  const self = idx.byId.get(id);
+  const out = ancestorChain(idx, id).filter((a) => a.kind === KIND.task).map((a) => a.id);
+  if (self?.kind === KIND.task) out.push(self.id);
+  return out;
 }
 
 /** Is this group a category (in the tree of categories) or a section inside a job? */
@@ -388,4 +425,29 @@ export const openJobCount = (idx, groupId) => jobsUnder(idx, groupId).filter((j)
 /** Every task below a node at any depth (jobs, sub-jobs and tasks; never steps). */
 export function tasksUnder(idx, id) {
   return descendantIds(idx, id).map((d) => idx.byId.get(d)).filter((n) => n.kind === KIND.task);
+}
+
+/**
+ * What comes back when one archived item is restored: it, everything below it
+ * that was archived in the same act (same archivedAt), and any archived
+ * ancestors, so it does not land orphaned at the top. Nothing else archived
+ * at that moment - "Archive all done" archives many jobs with one stamp, and
+ * restoring one must not bring back (or hide) the rest.
+ */
+export function restoreSet(item, archived) {
+  const byId = new Map(archived.map((n) => [n.id, n]));
+  const kids = new Map();
+  for (const n of archived) { if (!kids.has(n.parentId)) kids.set(n.parentId, []); kids.get(n.parentId).push(n); }
+  const ids = new Set([item.id]);
+  const walk = (id) => {
+    for (const c of kids.get(id) ?? []) {
+      if (c.archivedAt !== item.archivedAt || ids.has(c.id)) continue;
+      ids.add(c.id);
+      walk(c.id);
+    }
+  };
+  walk(item.id);
+  let p = byId.get(item.parentId);
+  while (p && !ids.has(p.id)) { ids.add(p.id); p = byId.get(p.parentId); }
+  return ids;
 }

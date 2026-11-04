@@ -145,12 +145,13 @@ export const Store = {
       const next = [...byId.values()];
       if (!lsSet('tasks', next)) throw new Error('This browser would not save it: its local storage is full or switched off.');
       this._local = next;
-      if (updates.length) {
+      if (updates.length || remove.length) {
         const all = lsGet('updates', {});
         for (const u of updates) {
           const list = all[u.taskId] ?? (all[u.taskId] = []);
           list.push({ ...u, id: newId() });
         }
+        // A deleted task takes its timeline with it.
         for (const id of remove) delete all[id];
         lsSet('updates', all);
       }
@@ -165,11 +166,34 @@ export const Store = {
       ...remove.map((id) => (b) => b.delete(doc(this._db, COL.tasks, id))),
       ...updates.map((u) => (b) => b.set(doc(collection(this._db, COL.tasks, u.taskId, COL.updates)), u)),
     ];
-    for (const part of chunk(ops, BATCH_SIZE)) {
+    // Every batch is handed to Firestore at once and only then awaited.
+    // Awaiting each in turn waited for the SERVER between batches, so an
+    // import of more than one batch stalled while offline; handed over
+    // together, they all land in the local cache now and sync when they can.
+    const commits = chunk(ops, BATCH_SIZE).map((part) => {
       const b = writeBatch(this._db);
       for (const op of part) op(b);
-      await b.commit();
+      return b.commit();
+    });
+    // A deleted task takes its timeline with it (subcollections outlive their
+    // parent document otherwise).
+    if (remove.length) commits.push(this._deleteTimelines(remove));
+    await Promise.all(commits);
+  },
+
+  /** Delete every update under these tasks, in batches. */
+  async _deleteTimelines(taskIds) {
+    const { collection, getDocs, writeBatch } = this._fs;
+    const refs = [];
+    for (const id of taskIds) {
+      const snap = await getDocs(collection(this._db, COL.tasks, id, COL.updates));
+      snap.forEach((d) => refs.push(d.ref));
     }
+    await Promise.all(chunk(refs, BATCH_SIZE).map((part) => {
+      const b = writeBatch(this._db);
+      for (const r of part) b.delete(r);
+      return b.commit();
+    }));
   },
 
   // ---- updates (the timeline) ---------------------------------------------

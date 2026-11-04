@@ -12,7 +12,7 @@ import { el, btn, prefs, isPhone } from '../ui.js';
 import { state, isMine } from '../state.js';
 import * as T from '../tree.js';
 import * as A from '../actions.js';
-import { ageDays, dayOf } from '../dates.js';
+import * as BL from '../backlog.js';
 import { tile, enableDrag, backlogDays } from './tile.js';
 import { go } from '../router.js';
 import { newMasterCategory } from './sidebar.js';
@@ -33,36 +33,8 @@ function ordered(list) {
   return [...unplaced, ...placed];
 }
 
-/** A small seeded random, so the Backlog pick holds still for a day. */
-function seeded(seedText) {
-  let h = 1779033703 ^ seedText.length;
-  for (let i = 0; i < seedText.length; i++) { h = Math.imul(h ^ seedText.charCodeAt(i), 3432918353); h = (h << 13) | (h >>> 19); }
-  let a = h >>> 0;
-  return () => {
-    a |= 0; a = (a + 0x6D2B79F5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-/** The Backlog pool: my To-do jobs and sub-jobs, untouched for N days, not hidden. */
-export function backlogPool() {
-  const days = backlogDays();
-  return state.idx.nodes.filter((n) => n.kind === T.KIND.task && n.status === 'todo' && isMine(n) && !n.backlogIgnored
-    && (T.isJob(state.idx, n) || T.hasTaskChildren(state.idx, n.id))
-    && ageDays(n.lastActivityAt) >= days);
-}
-
-/** Today's pick: weighted toward the oldest (Efraimidis–Spirakis keys on a daily seed). */
-export function todaysBacklog(pool, count = 24) {
-  const rand = seeded(dayOf());
-  return pool
-    .map((n) => ({ n, key: Math.pow(rand(), 1 / Math.max(1, ageDays(n.lastActivityAt))) }))
-    .sort((a, b) => b.key - a.key)
-    .slice(0, count)
-    .map((x) => x.n);
-}
+/** The Backlog pool for whoever is looking (the logic is backlog.js). */
+export const backlogPool = () => BL.backlogPool(state.idx, { me: state.me, days: backlogDays() });
 
 /** How many columns a grid is showing right now. */
 const columns = (grid) => getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length || 1;
@@ -143,12 +115,12 @@ export function renderHome(root) {
   } else if (backlogAll) {
     const grid = el('div', { class: 'grid' });
     [...pool].sort((a, b) => String(a.lastActivityAt).localeCompare(String(b.lastActivityAt)))
-      .forEach((t) => grid.append(backlogTile(t)));
+      .forEach((t) => grid.append(backlogTile(t, pool)));
     bsec.append(grid);
   } else {
     const rowEl = el('div', { class: 'backlog-row' });
-    const pick = todaysBacklog(pool);
-    pick.forEach((t) => rowEl.append(backlogTile(t)));
+    const pick = BL.todaysBacklog(pool);
+    pick.forEach((t) => rowEl.append(backlogTile(t, pool)));
     bsec.append(rowEl);
     // One row: as many as fit. The phone row scrolls sideways instead.
     requestAnimationFrame(() => {
@@ -160,10 +132,12 @@ export function renderHome(root) {
   inner.append(bsec);
 }
 
-function backlogTile(t) {
+function backlogTile(t, pool) {
+  // Hiding is for an item whose job (or a job above it) is in the Backlog too: it stops the doubling up.
+  const hide = BL.canHideFromBacklog(state.idx, t.id, pool);
   return tile(t, {
     path: true, variant: 'backlog',
-    menuExtra: [{ label: 'Hide from the Backlog', icon: 'hide', onSelect: () => A.setBacklogIgnored(t.id, true) }],
+    menuExtra: hide ? [{ label: 'Hide from the Backlog', icon: 'hide', onSelect: () => A.setBacklogIgnored(t.id, true) }] : [],
   });
 }
 

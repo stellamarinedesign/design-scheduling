@@ -53,7 +53,7 @@ function draw(host, root) {
             el('div', { class: 'trow-title' }, T.nameOf(n)),
             el('div', { class: 'trow-sub' }, [n.status === 'cancelled' && n.cancelled?.reason ? `Cancelled: ${n.cancelled.reason}` : null, where ? `From ${T.nameOf(where)}` : null, `archived ${whenLabel(n.archivedAt)}`, inside ? `${inside} inside` : null].filter(Boolean).join(' · ')))),
         el('div', { class: 'row' },
-          btn('Restore', () => { A.restore(n, archived); cache = archived.filter((x) => !(x.archivedAt === n.archivedAt)); draw(host, root); }, { cls: 'sm', ic: 'restore' }),
+          btn('Restore', () => { const back = A.restore(n, archived); cache = archived.filter((x) => !back.has(x.id)); draw(host, root); }, { cls: 'sm', ic: 'restore' }),
           btn('Delete…', async () => { if (await A.removeArchived(n, archived)) { cache = await Store.loadArchived(); draw(host, root); } }, { cls: 'sm ghost' }))));
     }
     if (!shown.length) rows.append(el('div', { class: 'arch-row' }, el('span', { class: 'meta' }, 'Nothing archived matches.')));

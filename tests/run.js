@@ -7,6 +7,9 @@ import * as F from '../js/folders.js';
 import * as D from '../js/dates.js';
 import * as TD from '../js/import/tiledo.js';
 import * as XL from '../js/import/excel.js';
+import * as BL from '../js/backlog.js';
+import { stepsFrom } from '../js/actions.js';
+import { state } from '../js/state.js';
 import { sampleNodes, tiledoData, tiledoArchive, excelRows } from './samples.js';
 
 const results = [];
@@ -138,6 +141,31 @@ export async function run() {
     expect(t, [{ label: 'Concept' }, { label: '3D model', children: [{ label: 'Body' }, { label: 'Head' }] }, { label: 'Drawings' }]);
     expect(T.templateToText(t), text);
   });
+  test('a parent cycle puts its members at the top; walks end; others stay put', () => {
+    const idx = T.buildIndex([
+      { id: 'A', kind: 'group', parentId: 'B', order: 1, name: 'A' },
+      { id: 'B', kind: 'group', parentId: 'A', order: 2, name: 'B' },
+      { id: 'C', kind: 'task', parentId: 'A', order: 1, title: 'C', status: 'todo' },
+    ]);
+    expect(T.childrenOf(idx, null).map((n) => n.id).sort(), ['A', 'B']);
+    expect(T.descendantIds(idx, 'A'), ['C']);
+    expect(T.parentOf(idx, idx.byId.get('A')), null);
+    expect(T.parentOf(idx, idx.byId.get('C')).id, 'A');
+    expect(T.ancestorChain(idx, 'C').map((n) => n.id), ['A']);
+  });
+  test('activity moves every task above: the sub-job as well as the job', () => {
+    const idx = T.buildIndex([...sampleNodes(), { id: 'sub', kind: 'task', parentId: 't2', order: 1, title: 'Deep task', status: 'todo' }]);
+    expect(T.activityTargets(idx, 'sub'), ['j1', 't2', 'sub']);
+    expect(T.activityTargets(idx, 's2b'), ['j1']);
+  });
+  test('restoring one item brings back only it, not everything archived at that moment', () => {
+    const stamp = '2026-11-04T05:00:00.000Z';
+    const archived = [
+      { id: 'a', parentId: 'g', archivedAt: stamp }, { id: 'a1', parentId: 'a', archivedAt: stamp },
+      { id: 'b', parentId: 'g', archivedAt: stamp },
+    ];
+    expect([...T.restoreSet(archived[0], archived)].sort(), ['a', 'a1']);
+  });
   test('an orphan (parent gone) shows at the top rather than vanishing', () => {
     const idx = T.buildIndex([{ id: 'x', kind: 'task', parentId: 'gone', order: 1, title: 'Orphan' }]);
     expect(T.childrenOf(idx, null).map((n) => n.id), ['x']);
@@ -262,7 +290,7 @@ export async function run() {
   test('cancelling records who, when, why and where it was, with a cancel event', () => {
     const r = S.changeStatus(index(), 'j2', 'cancelled', { by: BY, at: AT, reason: 'Customer cancelled' });
     const p = r.patches.find((x) => x.id === 'j2');
-    expect(p.cancelled, { by: BY, at: AT, reason: 'Customer cancelled', prevStatus: 'todo' });
+    expect(p.cancelled, { by: BY, at: AT, reason: 'Customer cancelled', prevStatus: 'todo', prevWaiting: null, prevFixNote: null });
     expect(r.updates[0].kind, 'cancel');
     expect(r.updates[0].text, 'Customer cancelled');
     expect(S.eventLabel(r.updates[0]), 'Cancelled');
@@ -288,12 +316,13 @@ export async function run() {
     const un = r.patches.find((x) => x.id === 'j2');
     ok(un && un.status === 'todo', 'j2 waited on t1, which was cancelled with j1: it unblocks');
   });
-  test('cancelling from Waiting remembers the status before the wait', () => {
+  test('cancelling from Waiting keeps the whole wait for Reopen', () => {
     const w = S.changeStatus(index(), 'j1', 'waiting', { by: BY, at: AT, note: 'Customer' });
     const idx = T.buildIndex(apply(sampleNodes(), w.patches));
     const r = S.changeStatus(idx, 'j1', 'cancelled', { by: BY, at: AT });
     const p = r.patches.find((x) => x.id === 'j1');
-    expect(p.cancelled.prevStatus, 'in_progress');
+    expect(p.cancelled.prevStatus, 'waiting');
+    expect(p.cancelled.prevWaiting.note, 'Customer');
     expect(p.waiting, null);
   });
   test('reopen returns it, and what was cancelled with it, to where they were', () => {
@@ -317,6 +346,90 @@ export async function run() {
     nodes = apply(nodes, S.changeStatus(T.buildIndex(nodes), 'j1', 'cancelled', { by: BY, at: AT }).patches);
     const r = S.changeStatus(T.buildIndex(nodes), 'j1', 'in_progress', { by: BY, at: AT });
     ok(!r.patches.some((x) => x.id === 't2'), 't2 stays cancelled');
+  });
+  // ---- fix batch before the first push (regressions) ----
+  test('removeBlockers: a job archived with both blockers in it leaves no stale blocker', () => {
+    // D (j2) waits on X (t1) and Y (t2); their job j1 is archived as a whole.
+    let nodes = sampleNodes();
+    nodes = apply(nodes, S.changeStatus(T.buildIndex(nodes), 'j2', 'waiting', { by: BY, at: AT, blockedBy: ['t1', 't2'] }).patches);
+    const r = S.removeBlockers(T.buildIndex(nodes), ['j1', 't1', 't2'], { by: BY, at: AT });
+    const d = r.patches.filter((x) => x.id === 'j2');
+    expect(d.length, 1, 'one patch for the dependent');
+    expect(d[0].status, 'todo', 'nothing left and no reason: it unblocks');
+  });
+  test('removeBlockers: an open blocker that stays is all that is left', () => {
+    let nodes = sampleNodes();
+    nodes = apply(nodes, S.changeStatus(T.buildIndex(nodes), 'j2', 'waiting', { by: BY, at: AT, blockedBy: ['t1', 't2', 'j3'] }).patches);
+    const r = S.removeBlockers(T.buildIndex(nodes), ['t1', 't2'], { by: BY, at: AT });
+    expect(r.patches[0].waiting.blockedBy, ['j3']);
+  });
+  test('editing a wait keeps its blockers without re-checking them; finished ones drop', () => {
+    let nodes = apply(sampleNodes(), [{ id: 'j4', status: 'todo' }]);
+    nodes = apply(nodes, S.changeStatus(T.buildIndex(nodes), 'j2', 'waiting', { by: BY, at: AT, blockedBy: ['j3', 'j4'] }).patches);
+    nodes = apply(nodes, [{ id: 'j3', status: 'done' }]);
+    const idx = T.buildIndex(nodes);
+    const r = S.changeStatus(idx, 'j2', 'waiting', { by: BY, at: AT, note: 'and the customer', blockedBy: ['j3', 'j4'] });
+    ok(!r.error, r.error);
+    expect(r.patches[0].waiting.blockedBy, ['j4']);
+  });
+  test('canWrite: unblocks and cascades leave out tasks this person cannot write', () => {
+    let nodes = sampleNodes();
+    nodes = apply(nodes, S.changeStatus(T.buildIndex(nodes), 'j2', 'waiting', { by: BY, at: AT, blockedBy: ['j3'] }).patches);
+    const no = () => false;
+    const r = S.changeStatus(T.buildIndex(nodes), 'j3', 'done', { by: BY, at: AT, canWrite: no });
+    ok(!r.patches.some((x) => x.id === 'j2'), 'the dependent is left to the reconcile');
+    const c = S.changeStatus(index(), 'j1', 'cancelled', { by: BY, at: AT, canWrite: (t) => t.id !== 't1' });
+    ok(!c.patches.some((x) => x.id === 't1'), 'a task we cannot write is not cancelled with it');
+  });
+  test('Close them too: never approves what waits for check, and uses the real role', () => {
+    const nodes = apply(sampleNodes(), [{ id: 't2', status: 'check' }]);
+    const r = S.closeInside(T.buildIndex(nodes), 'j1', { by: BY, at: AT, role: 'designer' });
+    ok(!r.patches.some((x) => x.id === 't2'), 'the task in check is left alone');
+    expect(r.leftInCheck, 1);
+    expect(r.patches.find((x) => x.id === 't1').status, 'done');
+    ok(!r.patches.some((x) => x.checkedBy), 'nothing approved');
+  });
+  test('the one unblock rule: a wait with a reason stays, on every path', () => {
+    let nodes = sampleNodes();
+    nodes = apply(nodes, S.changeStatus(T.buildIndex(nodes), 'j2', 'waiting', { by: BY, at: AT, blockedBy: ['j3'], note: 'Customer sign-off' }).patches);
+    const fin = S.changeStatus(T.buildIndex(nodes), 'j3', 'done', { by: BY, at: AT });
+    ok(!fin.patches.some((x) => x.id === 'j2'), 'last blocker finishing: still waiting');
+    const done = apply(nodes, [{ id: 'j3', status: 'done' }]);
+    expect(S.reconcile(T.buildIndex(done), { by: BY, at: AT }).patches.length, 0, 'reconcile: still waiting');
+    expect(S.waitingLine(T.buildIndex(done), T.buildIndex(done).byId.get('j2')), 'Waiting: Customer sign-off');
+    const rm = S.removeBlockers(T.buildIndex(nodes), ['j3'], { by: BY, at: AT });
+    expect(rm.patches[0].status, undefined, 'last blocker removed: still waiting');
+  });
+  test('reopen restores Waiting exactly: its blockers and its note', () => {
+    let nodes = apply(sampleNodes(), [{ id: 'j4', status: 'todo' }]);
+    nodes = apply(nodes, S.changeStatus(T.buildIndex(nodes), 'j2', 'waiting', { by: BY, at: AT, blockedBy: ['j4'], note: 'Sample' }).patches);
+    nodes = apply(nodes, S.changeStatus(T.buildIndex(nodes), 'j2', 'cancelled', { by: BY, at: AT }).patches);
+    const idx = T.buildIndex(nodes);
+    const t = idx.byId.get('j2');
+    expect(S.reopenTo(t), 'waiting');
+    const r = S.changeStatus(idx, 'j2', S.reopenTo(t), { by: BY, at: AT });
+    expect(r.patches[0].status, 'waiting');
+    expect(r.patches[0].waiting.blockedBy, ['j4']);
+    expect(r.patches[0].waiting.note, 'Sample');
+  });
+  test('reopen into a wait whose blockers finished meanwhile comes back unblocked', () => {
+    let nodes = sampleNodes();
+    nodes = apply(nodes, S.changeStatus(T.buildIndex(nodes), 'j2', 'waiting', { by: BY, at: AT, blockedBy: ['j3'] }).patches);
+    nodes = apply(nodes, S.changeStatus(T.buildIndex(nodes), 'j2', 'cancelled', { by: BY, at: AT }).patches);
+    nodes = apply(nodes, [{ id: 'j3', status: 'done' }]);
+    const idx = T.buildIndex(nodes);
+    const r = S.changeStatus(idx, 'j2', S.reopenTo(idx.byId.get('j2')), { by: BY, at: AT });
+    expect(r.patches[0].status, 'todo');
+    expect(r.patches[0].waiting, null);
+  });
+  test('reopen restores Fix with its send-back note', () => {
+    let nodes = apply(sampleNodes(), [{ id: 'j2', status: 'check' }]);
+    nodes = apply(nodes, S.changeStatus(T.buildIndex(nodes), 'j2', 'fix', { by: BY, at: AT, comment: 'Hole pattern off' }).patches);
+    nodes = apply(nodes, S.changeStatus(T.buildIndex(nodes), 'j2', 'cancelled', { by: BY, at: AT }).patches);
+    const idx = T.buildIndex(nodes);
+    const r = S.changeStatus(idx, 'j2', S.reopenTo(idx.byId.get('j2')), { by: BY, at: AT });
+    expect(r.patches[0].status, 'fix');
+    expect(r.patches[0].fixNote, 'Hole pattern off');
   });
   test('step states cycle To do → Doing → Done → N/a', () => {
     expect(['todo', 'doing', 'done', 'na'].map(S.nextStepState), ['doing', 'done', 'na', 'todo']);
@@ -364,6 +477,11 @@ export async function run() {
     expect(D.dayOf(new Date(2026, 10, 4, 0, 30)), '2026-11-04');
     expect(D.dayLabel('2026-11-14', new Date(2026, 0, 1)), '14 Nov');
     expect(D.dayLabel('2027-01-02', new Date(2026, 0, 1)), '2 Jan 2027');
+  });
+  test('an impossible calendar day is not one', () => {
+    expect(D.parseDay('2026-02-31'), null);
+    expect(D.parseDay('2026-13-01'), null);
+    ok(D.parseDay('2028-02-29'), 'a leap day is');
   });
   test('days until a calendar day', () => {
     expect(D.daysUntil('2026-11-06', new Date(2026, 10, 4, 23, 0)), 2);
@@ -479,6 +597,11 @@ export async function run() {
     expect(n.cancelled.reason, 'Cancelled - verbal 12/03/26');
     ok(built.updates.some((u) => u.taskId === n.id && u.kind === 'cancel'), 'a cancel event in the timeline');
   });
+  test('Checked never overrides a Cancelled status', () => {
+    expect(XL.mapRow({ model: 'X', status: 'Cancelled', statusNotes: '', notes: '', checked: 'Done', path: '' }).status, 'cancelled');
+    expect(XL.mapRow({ model: 'X', status: 'Cancelled', statusNotes: '', notes: '', checked: 'Fix', path: '' }).status, 'cancelled');
+    ok(!XL.mapRow({ model: 'X', status: 'Cancelled', statusNotes: '', notes: '', checked: 'Done', path: '' }).checked, 'not checked');
+  });
   test('note dates: Australian order, impossible days refused', () => {
     expect(XL.noteDate('verbal 3/7/2026'), new Date(2026, 6, 3).toISOString());
     expect(XL.noteDate('31/02/26'), null);
@@ -488,6 +611,33 @@ export async function run() {
     const built = XL.buildExcel(xp, { into: {}, skip: new Set(['0:0', '0:1']) }, { idx: empty, by: BY, at: AT, newId });
     expect(built.stats.jobs, 7);
     expect(built.stats.skipped, 2);
+  });
+
+  // -------------------------------------------------------------------------
+  group = 'backlog';
+  const old = '2026-09-01T00:00:00.000Z';
+  const NOW = Date.parse('2026-11-04T00:00:00.000Z');
+  const blNodes = () => apply(sampleNodes(), [
+    { id: 'j2', lastActivityAt: old }, { id: 'j3', lastActivityAt: old },
+    { id: 't2', lastActivityAt: old, status: 'todo' },
+  ]).concat([{ id: 'deep', kind: 'task', parentId: 't2', order: 1, title: 'Deep', status: 'todo', lastActivityAt: old }]);
+  test('the pool is my To-do jobs and sub-jobs, never bottom-level tasks', () => {
+    const idx = T.buildIndex(blNodes());
+    const pool = BL.backlogPool(idx, { me: BY, days: 14, now: NOW }).map((n) => n.id).sort();
+    expect(pool, ['j2', 'j3', 't2']);
+  });
+  test('Hide from the Backlog is offered only when an ancestor is in the pool too', () => {
+    const idx = T.buildIndex(apply(blNodes(), [{ id: 'j1', status: 'todo', lastActivityAt: old }]));
+    const pool = BL.backlogPool(idx, { me: BY, days: 14, now: NOW });
+    ok(BL.canHideFromBacklog(idx, 't2', pool), 't2 doubles up with its job j1');
+    ok(!BL.canHideFromBacklog(idx, 'j2', pool), 'a job with nothing above it in the pool');
+  });
+
+  group = 'writes';
+  test('steps from a template carry createdBy, which the rules check', () => {
+    const steps = stepsFrom([{ label: 'A', children: [{ label: 'A1' }] }, 'B'], 'job1', AT);
+    expect(steps.length, 3);
+    ok(steps.every((x) => x.createdBy === state.me), 'every step has createdBy');
   });
 
   return results;

@@ -18,46 +18,47 @@
   // flashes the wrong one. Same key shape as the other Stella apps.
   try { const t = localStorage.getItem('stella.design.theme'); if (t && t !== 'stella') document.documentElement.dataset.theme = t; } catch (e) {}
 </script>
-<link rel="stylesheet" href="css/style.css?v=2026-11-04.3">
-<link rel="stylesheet" href="css/themes.css?v=2026-11-04.3">
-<link rel="stylesheet" href="css/app.css?v=2026-11-04.3">
+<link rel="stylesheet" href="css/style.css?v=2026-11-04.4">
+<link rel="stylesheet" href="css/themes.css?v=2026-11-04.4">
+<link rel="stylesheet" href="css/app.css?v=2026-11-04.4">
 <!-- importmap:start - every module named with the build's ?v=, so a page is never mixed with cached modules; regenerate with: python tools/importmap.py -->
 <script type="importmap">
 {
   "imports": {
-    "./js/access.js": "./js/access.js?v=2026-11-04.3",
-    "./js/actions.js": "./js/actions.js?v=2026-11-04.3",
-    "./js/app.js": "./js/app.js?v=2026-11-04.3",
-    "./js/auth.js": "./js/auth.js?v=2026-11-04.3",
-    "./js/dates.js": "./js/dates.js?v=2026-11-04.3",
-    "./js/dialog.js": "./js/dialog.js?v=2026-11-04.3",
-    "./js/firebase.js": "./js/firebase.js?v=2026-11-04.3",
-    "./js/folders.js": "./js/folders.js?v=2026-11-04.3",
-    "./js/import/excel.js": "./js/import/excel.js?v=2026-11-04.3",
-    "./js/import/tiledo.js": "./js/import/tiledo.js?v=2026-11-04.3",
-    "./js/password.js": "./js/password.js?v=2026-11-04.3",
-    "./js/paths.js": "./js/paths.js?v=2026-11-04.3",
-    "./js/router.js": "./js/router.js?v=2026-11-04.3",
-    "./js/sample.js": "./js/sample.js?v=2026-11-04.3",
-    "./js/settings.js": "./js/settings.js?v=2026-11-04.3",
-    "./js/state.js": "./js/state.js?v=2026-11-04.3",
-    "./js/status.js": "./js/status.js?v=2026-11-04.3",
-    "./js/stella-folder.js": "./js/stella-folder.js?v=2026-11-04.3",
-    "./js/store.js": "./js/store.js?v=2026-11-04.3",
-    "./js/tree.js": "./js/tree.js?v=2026-11-04.3",
-    "./js/ui.js": "./js/ui.js?v=2026-11-04.3",
-    "./js/version.js": "./js/version.js?v=2026-11-04.3",
-    "./js/views/archive.js": "./js/views/archive.js?v=2026-11-04.3",
-    "./js/views/home.js": "./js/views/home.js?v=2026-11-04.3",
-    "./js/views/import.js": "./js/views/import.js?v=2026-11-04.3",
-    "./js/views/panel.js": "./js/views/panel.js?v=2026-11-04.3",
-    "./js/views/pickers.js": "./js/views/pickers.js?v=2026-11-04.3",
-    "./js/views/quick-add.js": "./js/views/quick-add.js?v=2026-11-04.3",
-    "./js/views/search.js": "./js/views/search.js?v=2026-11-04.3",
-    "./js/views/sidebar.js": "./js/views/sidebar.js?v=2026-11-04.3",
-    "./js/views/signin.js": "./js/views/signin.js?v=2026-11-04.3",
-    "./js/views/tasks.js": "./js/views/tasks.js?v=2026-11-04.3",
-    "./js/views/tile.js": "./js/views/tile.js?v=2026-11-04.3"
+    "./js/access.js": "./js/access.js?v=2026-11-04.4",
+    "./js/actions.js": "./js/actions.js?v=2026-11-04.4",
+    "./js/app.js": "./js/app.js?v=2026-11-04.4",
+    "./js/auth.js": "./js/auth.js?v=2026-11-04.4",
+    "./js/backlog.js": "./js/backlog.js?v=2026-11-04.4",
+    "./js/dates.js": "./js/dates.js?v=2026-11-04.4",
+    "./js/dialog.js": "./js/dialog.js?v=2026-11-04.4",
+    "./js/firebase.js": "./js/firebase.js?v=2026-11-04.4",
+    "./js/folders.js": "./js/folders.js?v=2026-11-04.4",
+    "./js/import/excel.js": "./js/import/excel.js?v=2026-11-04.4",
+    "./js/import/tiledo.js": "./js/import/tiledo.js?v=2026-11-04.4",
+    "./js/password.js": "./js/password.js?v=2026-11-04.4",
+    "./js/paths.js": "./js/paths.js?v=2026-11-04.4",
+    "./js/router.js": "./js/router.js?v=2026-11-04.4",
+    "./js/sample.js": "./js/sample.js?v=2026-11-04.4",
+    "./js/settings.js": "./js/settings.js?v=2026-11-04.4",
+    "./js/state.js": "./js/state.js?v=2026-11-04.4",
+    "./js/status.js": "./js/status.js?v=2026-11-04.4",
+    "./js/stella-folder.js": "./js/stella-folder.js?v=2026-11-04.4",
+    "./js/store.js": "./js/store.js?v=2026-11-04.4",
+    "./js/tree.js": "./js/tree.js?v=2026-11-04.4",
+    "./js/ui.js": "./js/ui.js?v=2026-11-04.4",
+    "./js/version.js": "./js/version.js?v=2026-11-04.4",
+    "./js/views/archive.js": "./js/views/archive.js?v=2026-11-04.4",
+    "./js/views/home.js": "./js/views/home.js?v=2026-11-04.4",
+    "./js/views/import.js": "./js/views/import.js?v=2026-11-04.4",
+    "./js/views/panel.js": "./js/views/panel.js?v=2026-11-04.4",
+    "./js/views/pickers.js": "./js/views/pickers.js?v=2026-11-04.4",
+    "./js/views/quick-add.js": "./js/views/quick-add.js?v=2026-11-04.4",
+    "./js/views/search.js": "./js/views/search.js?v=2026-11-04.4",
+    "./js/views/sidebar.js": "./js/views/sidebar.js?v=2026-11-04.4",
+    "./js/views/signin.js": "./js/views/signin.js?v=2026-11-04.4",
+    "./js/views/tasks.js": "./js/views/tasks.js?v=2026-11-04.4",
+    "./js/views/tile.js": "./js/views/tile.js?v=2026-11-04.4"
   }
 }
 </script>
@@ -93,6 +94,6 @@
   <button class="fab" type="button" id="fab" aria-label="New job"></button>
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-<script type="module" src="js/app.js?v=2026-11-04.3"></script>
+<script type="module" src="js/app.js?v=2026-11-04.4"></script>
 </body>
 </html>

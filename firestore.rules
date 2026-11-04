@@ -75,14 +75,22 @@ service cloud.firestore {
       function was() { return resource.data; }
       function kindIs(k) { return data().kind == k; }
       function isMine(d) { return d.get('createdBy', '') == email() || d.get('assignee', '') == email(); }
-      // Groups and steps inside a job belong to whoever owns the job: one
-      // get() on the parent. (A sub-step under a step is a level further;
-      // Phase 2 hardening decides whether designers get that far.)
+      // Groups and steps inside a job belong to whoever owns their parent: one
+      // getAfter() on it. AFTER, because a new job and its template steps are
+      // written in one batch, and plain exists()/get() cannot see a parent
+      // created in the same batch. Steps and groups carry createdBy, so a
+      // sub-step under a step the designer made passes too. (A sub-step under
+      // a step someone else made is a level further; Phase 2 hardening
+      // decides whether designers get that far.)
       function ownsParentOf(d) {
         return d.get('parentId', null) != null
-          && exists(/databases/$(database)/documents/tasks/$(d.parentId))
-          && isMine(get(/databases/$(database)/documents/tasks/$(d.parentId)).data);
+          && existsAfter(/databases/$(database)/documents/tasks/$(d.parentId))
+          && isMine(getAfter(/databases/$(database)/documents/tasks/$(d.parentId)).data);
       }
+      // Sharing with managers is the lead's decision alone.
+      function sharingKeys() { return ['shared', 'sharedEffective', 'shareLevel']; }
+      function noSharingOnCreate() { return !data().keys().hasAny(sharingKeys()); }
+      function noSharingChange() { return !data().diff(was()).affectedKeys().hasAny(sharingKeys()); }
       // Only a lead approves (check -> done) or sends back (check -> fix).
       function noReview() {
         return !(was().get('status', '') == 'check' && data().get('status', '') in ['done', 'fix'])
@@ -92,18 +100,23 @@ service cloud.firestore {
       allow read: if lead() || designer()
         || (manager() && resource.data.get('sharedEffective', false) == true);
 
-      allow create: if lead() || (designer() && data().get('checkedBy', null) == null && (
+      allow create: if lead() || (designer() && data().get('checkedBy', null) == null && noSharingOnCreate() && (
            (kindIs('task') && data().createdBy == email())
         || ((kindIs('step') || kindIs('group')) && ownsParentOf(data()))));
 
-      allow update: if lead() || (designer() && noReview() && data().kind == was().kind && (
+      // A group or step must belong to the designer's work both where it was
+      // and where it goes: checking only the old parent let a section be
+      // moved to the top or into a lead's category, or a step into someone
+      // else's job.
+      allow update: if lead() || (designer() && noReview() && noSharingChange() && data().kind == was().kind && (
            (was().kind == 'task' && isMine(was()))
-        || (was().kind in ['step', 'group'] && ownsParentOf(was()))));
+        || (was().kind in ['step', 'group'] && ownsParentOf(was()) && ownsParentOf(data()))));
 
       allow delete: if lead();
 
       // The timeline. Anyone who can read the task posts as themselves; the
-      // author may correct their own text and nothing else; nobody deletes.
+      // author may correct their own text and nothing else. Only a lead
+      // deletes, and only to take a deleted task's timeline with it.
       match /updates/{uid} {
         function task() { return get(/databases/$(database)/documents/tasks/$(id)).data; }
         allow read: if lead() || designer()
@@ -112,7 +125,7 @@ service cloud.firestore {
           || (manager() && request.resource.data.kind == 'request' && task().get('sharedEffective', false) == true));
         allow update: if signedIn() && resource.data.by == email()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text']);
-        allow delete: if false;
+        allow delete: if lead();
       }
     }
 

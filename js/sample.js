@@ -7,6 +7,7 @@ import { Store, newId } from './store.js';
 import { state } from './state.js';
 import { ORDER_GAP } from './tree.js';
 import { toast } from './ui.js';
+import { dayOf } from './dates.js';
 
 const DAY = 86400000;
 const ago = (d, h = 0) => new Date(Date.now() - d * DAY - h * 3600000).toISOString();
@@ -56,7 +57,7 @@ export async function loadSample() {
   const progs = group('Programs');
   const laser = group('Laser automation', progs, { colour: 10 });
 
-  const boom = task('350kg fixed boom rebuild', single, 'in_progress', 1, { priority: 'high', due: new Date(Date.now() + 2 * DAY).toISOString().slice(0, 10), brief: 'Rebuild the fixed boom to the **new extension style**.\n- Luff boss thickness to suit the new pin\n- Laser files and laser checklist to match\n- Revision on every drawing', folders: [{ path: 'Example Products/02 - Production/Fixed boom/R3', label: 'GA' }] });
+  const boom = task('350kg fixed boom rebuild', single, 'in_progress', 1, { priority: 'high', due: dayOf(new Date(Date.now() + 2 * DAY)), brief: 'Rebuild the fixed boom to the **new extension style**.\n- Luff boss thickness to suit the new pin\n- Laser files and laser checklist to match\n- Revision on every drawing', folders: [{ path: 'Example Products/02 - Production/Fixed boom/R3', label: 'GA' }] });
   step('Concept', boom, 'done');
   const model = step('3D model', boom, 'todo');
   step('Body', model, 'done'); step('Extension', model, 'done'); step('Head', model, 'todo');

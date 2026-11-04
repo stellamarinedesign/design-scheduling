@@ -20,7 +20,18 @@ import { nowISO } from './dates.js';
 import { toast, toastError } from './ui.js';
 import { confirmDialog, promptDialog } from './dialog.js';
 
-const ctx = () => ({ by: state.me, at: nowISO(), role: state.role });
+const ctx = () => ({ by: state.me, at: nowISO(), role: state.role, canWrite });
+
+/**
+ * Would the rules let this person write this task? The same test the
+ * Firestore rules make for a designer. A batch with one refused write fails
+ * whole, so knock-on changes (unblocks, cascades, activity times) on tasks
+ * that are not ours are left out; the reconcile, run by someone who can
+ * write them, catches the unblocks.
+ */
+export function canWrite(t) {
+  return state.role === 'lead' || t?.createdBy === state.me || t?.assignee === state.me;
+}
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 /** Write a change; a failure is said, never swallowed. */
@@ -71,7 +82,7 @@ export function stepsFrom(template, parentId, at = nowISO()) {
   const walk = (list, pid) => list.forEach((t, i) => {
     const item = typeof t === 'string' ? { label: t } : t;
     const id = Store.newId();
-    out.push({ id, kind: T.KIND.step, parentId: pid, order: (i + 1) * T.ORDER_GAP, label: item.label, state: 'todo', createdAt: at, updatedAt: at, archivedAt: null });
+    out.push({ id, kind: T.KIND.step, parentId: pid, order: (i + 1) * T.ORDER_GAP, label: item.label, state: 'todo', createdBy: state.me, createdAt: at, updatedAt: at, archivedAt: null });
     if (item.children?.length) walk(item.children, id);
   });
   walk(template ?? [], parentId);
@@ -113,7 +124,7 @@ export function createGroup({ name, parentId = null, kind = T.KIND.group }) {
   const isCategory = parent && !T.isSection(state.idx, parent) && parent.kind === T.KIND.group && !parent.parentId;
   const n = {
     id: Store.newId(), kind, parentId, order: T.newOrder(state.idx, parentId, 'end'),
-    name: String(name).trim(), createdAt: at, updatedAt: at, archivedAt: null,
+    name: String(name).trim(), createdBy: state.me, createdAt: at, updatedAt: at, archivedAt: null,
   };
   if (isCategory && kind === T.KIND.group) n.colour = nextColour();
   const problem = T.nestProblem(T.buildIndex([...state.nodes, n]), n.id, parentId);
@@ -124,7 +135,7 @@ export function createGroup({ name, parentId = null, kind = T.KIND.group }) {
 
 export function addStep(parentId, label) {
   const at = nowISO();
-  const n = { id: Store.newId(), kind: T.KIND.step, parentId, order: T.newOrder(state.idx, parentId, 'end'), label: String(label).trim(), state: 'todo', createdAt: at, updatedAt: at, archivedAt: null };
+  const n = { id: Store.newId(), kind: T.KIND.step, parentId, order: T.newOrder(state.idx, parentId, 'end'), label: String(label).trim(), state: 'todo', createdBy: state.me, createdAt: at, updatedAt: at, archivedAt: null };
   write({ set: [n], patch: touchJob(parentId, at) });
   return n.id;
 }
@@ -140,10 +151,16 @@ export function applyTemplate(jobId) {
   toast(`Added ${plural(t.template.length, 'step')} from ${T.nameOf(t.from)}`);
 }
 
-/** Activity on the job that holds a node: what keeps it out of the Backlog. */
-function touchJob(id, at) {
-  const job = T.jobOf(state.idx, id) ?? (node(id)?.kind === T.KIND.task ? node(id) : null);
-  return job ? [{ id: job.id, lastActivityAt: at, updatedAt: at }] : [];
+/**
+ * Activity at a node moves the "last activity" of every task above it - the
+ * sub-job it sits in as well as the job - which is what keeps them out of the
+ * Backlog. `self` includes the node itself when it is a task. Only tasks this
+ * person may write: one refused write would fail the whole batch.
+ */
+function touchJob(id, at, { self = true } = {}) {
+  return T.activityTargets(state.idx, id)
+    .filter((t) => (self || t !== id) && canWrite(node(t)))
+    .map((t) => ({ id: t, lastActivityAt: at, updatedAt: at }));
 }
 
 // ---------------------------------------------------------------------------
@@ -176,7 +193,8 @@ export async function setStatus(id, to, { comment, note, blockedBy, reason } = {
   if (to === 'cancelled' && reason === undefined) {
     // Finished like Done, recorded apart: say why, for later (optional).
     const inside = T.cascadeTargets(state.idx, id);
-    const what = [inside.tasks.length && plural(inside.tasks.length, 'open task'), inside.steps.length && plural(inside.steps.length, 'open step')].filter(Boolean).join(' and ');
+    const tasks = inside.tasks.filter((x) => canWrite(node(x))).length;
+    const what = [tasks && plural(tasks, 'open task'), inside.steps.length && plural(inside.steps.length, 'open step')].filter(Boolean).join(' and ');
     reason = await promptDialog({
       title: `Cancel ${t.title}?`, label: 'Reason (optional)', value: 'Customer cancelled', required: false,
       ok: 'Mark cancelled', dismiss: 'Keep it',
@@ -189,24 +207,26 @@ export async function setStatus(id, to, { comment, note, blockedBy, reason } = {
   if (to === 'done') {
     const open = T.cascadeTargets(state.idx, id);
     if (open.tasks.length || open.steps.length) {
-      const what = [open.tasks.length && plural(open.tasks.length, 'open task'), open.steps.length && plural(open.steps.length, 'open step')].filter(Boolean).join(' and ');
-      const ans = await confirmDialog({
+      // Tasks waiting for check are never closed from here: that would approve
+      // them without anyone checking. They are named and left as they are.
+      const inCheck = open.tasks.filter((x) => node(x)?.status === 'check').length;
+      const closable = open.tasks.length - inCheck;
+      const what = [closable && plural(closable, 'open task'), open.steps.length && plural(open.steps.length, 'open step')].filter(Boolean).join(' and ');
+      const ans = !what ? 'alt' : await confirmDialog({
         title: 'Close what is still open inside?',
-        body: `${t.title} still has ${what}.`,
+        body: `${t.title} still has ${what}.${inCheck ? ` ${plural(inCheck, 'task')} waiting for check ${inCheck === 1 ? 'stays' : 'stay'} as ${inCheck === 1 ? 'it is' : 'they are'}.` : ''}`,
         ok: 'Close them too', alt: 'Leave them open', cancel: 'Cancel',
       });
       if (!ans) return;
       if (ans === 'ok') {
+        const closed = S.closeInside(state.idx, id, c);
         const override = { [id]: 'done' };
-        for (const tid of open.tasks) override[tid] = 'done';
-        for (const tid of open.tasks) {
-          const r = S.changeStatus(state.idx, tid, 'done', { ...c, role: 'lead' });
-          if (!r.error) { extra.patches.push(r.patches[0]); extra.updates.push(r.updates[0]); }
-        }
-        const more = S.unblockFor(state.idx, open.tasks, { ...c, statusOverride: override });
+        for (const tid of closed.tasks) override[tid] = 'done';
+        extra.patches.push(...closed.patches);
+        extra.updates.push(...closed.updates);
+        const more = S.unblockFor(state.idx, closed.tasks, { ...c, statusOverride: override });
         extra.patches.push(...more.patches);
         extra.updates.push(...more.updates);
-        for (const sid of open.steps) extra.patches.push({ id: sid, state: 'done', updatedAt: c.at });
       }
     }
   }
@@ -237,9 +257,7 @@ export const reopen = (id) => { const t = node(id); if (t) setStatus(id, S.reope
 export function postUpdate(id, text) {
   const r = S.postUpdate(state.idx, id, text, ctx());
   if (r.error) { toast(r.error, { warn: true }); return false; }
-  const job = T.jobOf(state.idx, id);
-  const patches = [...r.patches];
-  if (job && job.id !== id) patches.push({ id: job.id, lastActivityAt: r.patches[0].lastActivityAt });
+  const patches = [...r.patches, ...touchJob(id, r.patches[0].lastActivityAt, { self: false })];
   write({ patch: patches, updates: r.updates });
   if (r.patches[0].status === 'in_progress') toast('Posted, and started');
   return true;
@@ -257,7 +275,7 @@ export function updateFields(id, fields, { message = null, undo = false } = {}) 
   const patch = { id, ...fields, updatedAt: at };
   if (n.kind === T.KIND.task) patch.lastActivityAt = at;
   const inverse = inverseOf([patch]);
-  write({ patch: [patch, ...(n.kind === T.KIND.task ? [] : touchJob(id, at))] });
+  write({ patch: [patch, ...touchJob(id, at, { self: false })] });
   if (message) toast(message, undo ? { action: 'Undo', onAction: () => write({ patch: inverse }) } : {});
 }
 
@@ -333,13 +351,11 @@ export function archive(ids, { quiet = false } = {}) {
   const all = new Set();
   for (const id of list) { all.add(id); for (const d of T.descendantIds(state.idx, id)) all.add(d); }
   const patches = [...all].map((id) => ({ id, archivedAt: at }));
-  const updates = [];
-  for (const id of all) {
-    if (node(id)?.kind !== T.KIND.task) continue;
-    const r = S.removeBlocker(state.idx, id, ctx());
-    patches.push(...r.patches.filter((p) => !all.has(p.id)));
-    updates.push(...r.updates.filter((u) => !all.has(u.taskId)));
-  }
+  // Every blocker in what is archived comes off its dependents in one go.
+  const blockers = [...all].filter((id) => node(id)?.kind === T.KIND.task);
+  const r = S.removeBlockers(state.idx, blockers, ctx());
+  patches.push(...r.patches);
+  const updates = [...r.updates];
   const merged = mergePatches(patches);
   const inverse = inverseOf(merged);
   const name = T.nameOf(node(list[0]));          // before the write: after it, the node has gone from the live tree
@@ -353,19 +369,10 @@ export function archive(ids, { quiet = false } = {}) {
 
 /** Bring an archived node back, with the rest of what was archived with it, and its archived ancestors. */
 export function restore(item, archived) {
-  const byId = new Map(archived.map((n) => [n.id, n]));
-  const stamp = item.archivedAt;
-  const ids = new Set([item.id]);
-  // Everything archived in the same act, below it.
-  const kids = new Map();
-  for (const n of archived) { if (!kids.has(n.parentId)) kids.set(n.parentId, []); kids.get(n.parentId).push(n); }
-  const walk = (id) => { for (const c of kids.get(id) ?? []) if (c.archivedAt === stamp) { ids.add(c.id); walk(c.id); } };
-  walk(item.id);
-  // Ancestors that are archived too, so it does not land orphaned at the top.
-  let p = byId.get(item.parentId);
-  while (p) { ids.add(p.id); p = byId.get(p.parentId); }
+  const ids = T.restoreSet(item, archived);
   write({ patch: [...ids].map((id) => ({ id, archivedAt: null })) });
   toast(`Restored ${T.nameOf(item)}`);
+  return ids;
 }
 
 /** Delete for good, after a confirm that starts on Cancel. */
@@ -380,15 +387,8 @@ export async function remove(id) {
   });
   if (!ok) return false;
   const all = [id, ...below];
-  const patches = [];
-  const updates = [];
-  for (const x of all) {
-    if (node(x)?.kind !== T.KIND.task) continue;
-    const r = S.removeBlocker(state.idx, x, ctx());
-    patches.push(...r.patches.filter((p) => !all.includes(p.id)));
-    updates.push(...r.updates.filter((u) => !all.includes(u.taskId)));
-  }
-  write({ remove: all, patch: mergePatches(patches), updates });
+  const r = S.removeBlockers(state.idx, all.filter((x) => node(x)?.kind === T.KIND.task), ctx());
+  write({ remove: all, patch: r.patches, updates: r.updates });
   toast(`Deleted ${T.nameOf(n)}`);
   return true;
 }
@@ -420,8 +420,7 @@ export function setBacklogIgnored(id, on) {
  * refuse the rest; whoever can write it will catch it).
  */
 export function reconcileOnLoad() {
-  const canWrite = (t) => state.role === 'lead' || t.createdBy === state.me || t.assignee === state.me;
-  const r = S.reconcile(state.idx, { ...ctx(), canWrite });
+  const r = S.reconcile(state.idx, ctx());
   if (r.patches.length) write({ patch: r.patches, updates: r.updates });
   return r.patches.length;
 }

@@ -25,7 +25,10 @@ export function parseDay(s) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s ?? ''));
   if (!m) return null;
   const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  return Number.isNaN(d.getTime()) ? null : d;
+  // Date() rolls 2026-02-31 over into March; a calendar day that does not
+  // exist is not one.
+  if (Number.isNaN(d.getTime()) || d.getMonth() !== Number(m[2]) - 1 || d.getDate() !== Number(m[3])) return null;
+  return d;
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
