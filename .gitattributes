@@ -1,0 +1,5 @@
+# Normalise text files in the repo. The Impeccable launcher is a bash script:
+# checked out with CRLF line endings (Git's Windows default) it stops running,
+# and with it the design hook. Keep it LF everywhere.
+* text=auto
+.claude/skills/impeccable/scripts/impeccable text eol=lf
