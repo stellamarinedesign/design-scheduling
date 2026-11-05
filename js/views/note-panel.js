@@ -220,7 +220,7 @@ async function linkJob(n) {
 
 /**
  * Make job from note: the title (the note's first line), where it goes (the
- * note's category to start with), who has it, and the category's steps.
+ * note's category to start with), who has it, and the category's tasks template.
  */
 function makeJob(n) {
   let place = n.groupId && state.idx.byId.get(n.groupId) ? n.groupId : null;
@@ -240,7 +240,7 @@ function makeJob(n) {
       const tpl = p ? T.stepsTemplateOf(state.idx, p.id) : null;
       tplLine.hidden = !tpl;
       tplLine.textContent = '';
-      if (tpl) tplLine.append(tplBox, el('span', {}, `Take the steps from ${T.nameOf(tpl.from)} (${tpl.template.length})`));
+      if (tpl) tplLine.append(tplBox, el('span', {}, `Start with the ${T.nameOf(tpl.from)} tasks (${tpl.template.length})`));
     };
     placeBtn.addEventListener('click', async () => {
       const dest = await placeDialog({

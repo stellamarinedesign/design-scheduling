@@ -198,7 +198,9 @@ export function buildTiledo(p, plan, { idx, by, at, newId, archiveDone = true })
       for (const c of childrenOfItem(p, item.id)) place(c, id, modeOf(p, plan, c.id), archivedAt);
       return;
     }
-    // A job, or a task inside one.
+    // A job, or a task inside one. A task inside one has nobody on it: it is
+    // part of its job, as TileDo's checklist-like children were (one kind of
+    // task, 2026-11-06). The job is the importer's.
     const asJob = mode !== 'task';
     let arch = archivedAt ?? (item.archived ? (item.archivedAt ?? at) : null);
     if (!arch && asJob && archiveDone && item.status === 'done') arch = at;
@@ -209,9 +211,10 @@ export function buildTiledo(p, plan, { idx, by, at, newId, archiveDone = true })
       kind: KIND.task,
       title: item.title,
       brief: item.notes.trim(),
-      status: item.status,
+      // Part of its job, it is never checked on its own: a TileDo Review is under way.
+      status: !asJob && item.status === 'check' ? 'in_progress' : item.status,
       priority: item.priority,
-      assignee: by,
+      assignee: asJob ? by : null,
       createdBy: by,
       lastActivityAt: item.created ?? at,
       due: null,

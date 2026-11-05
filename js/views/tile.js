@@ -9,10 +9,12 @@
 // one-tap Start. Every action in the ⋯ menu is also reachable without hover,
 // and Move to… is the touch path for everything drag does.
 //
-// THE CHECK CONTROL (decided 2026-11-04, live test run): steps and subtasks
-// (any task that is not a job) carry the same box. A click goes forward, a
-// right-click, long-press or Shift+F10 goes back, and ticking one done starts
-// the next (actions.js tick).
+// THE CHECK CONTROL (decided 2026-11-04, live test run): every task that is
+// not a job carries the same box. A click goes forward, a right-click,
+// long-press or Shift+F10 goes back, and ticking one done starts the next
+// (actions.js tick). A task with nobody on it is part of its job: its box
+// goes To do → In progress → Done for whoever may edit the job; with tasks
+// inside, it shows how they stand and is not ticked itself.
 
 import { el, icon, iconBtn, btn, pill, dot, avatar, bar, menu, canDrag, withMenu } from '../ui.js';
 import { state, node, personName } from '../state.js';
@@ -51,32 +53,32 @@ export function subtext(t) {
   if (t.status === 'fix' && t.fixNote) return { text: `Sent back: ${t.fixNote}`, cls: 'fix' };
   if (t.status === 'waiting') return { text: S.waitingLine(state.idx, t), cls: 'wait' };
   if (S.isOpen(t.status)) {
-    const n = T.nextStep(state.idx, t.id);
+    const n = T.nextTask(state.idx, t.id);
     if (n) return { text: `Next: ${T.nameOf(n)}`, cls: '' };
   }
   return null;
 }
 
-/** What the check control shows for a subtask's status. */
+/** What the check control shows for a task's status. */
 const BOX = { todo: 'todo', in_progress: 'doing', fix: 'fix', waiting: 'wait', check: 'check', done: 'done', cancelled: 'na' };
 
 /**
- * The check control on a step or subtask. A step that holds steps or tasks
- * shows how they stand and is not ticked itself (tree.stepFinished).
+ * The check control on a task inside a job. One with nobody on it and tasks
+ * inside shows how they stand and is not ticked itself (tree.shownStatus).
  */
 export function checkBox(n) {
   const { idx } = state;
   const name = T.nameOf(n);
-  const step = n.kind === T.KIND.step;
-  if (step && T.childrenOf(idx, n.id).some((k) => k.kind === T.KIND.step || k.kind === T.KIND.task)) {
+  if (T.isContainer(idx, n)) {
     const p = T.progress(idx, n.id);
-    const st = T.stepFinished(idx, n) ? 'done' : p.done ? 'doing' : 'todo';
+    const st = BOX[T.shownStatus(idx, n)] ?? 'todo';
     return el('button', { class: `tick ${st}`, type: 'button', disabled: true, 'aria-label': `${name}: ${p.done} of ${p.total} done` }, el('i', {}, st === 'done' ? icon('check', 14) : null));
   }
-  const now = step ? S.STEP_LABEL[n.state ?? 'todo'] : S.LABEL[n.status ?? 'todo'];
-  const fwd = step ? S.STEP_LABEL[S.nextStepState(n.state ?? 'todo')] : S.LABEL[S.taskForward(n, state.role)];
-  const back = step ? S.STEP_LABEL[S.stepBack(n.state ?? 'todo')] : S.LABEL[S.taskBack(n, state.role, state.me)];
-  const st = step ? (n.state ?? 'todo') : (BOX[n.status] ?? 'todo');
+  const light = T.isLight(idx, n);
+  const now = S.LABEL[n.status ?? 'todo'];
+  const fwd = S.LABEL[S.taskForward(n, state.role, light)];
+  const back = S.LABEL[S.taskBack(n, state.role, state.me, light)];
+  const st = BOX[n.status] ?? 'todo';
   const b = el('button', {
     class: `tick ${st}`, type: 'button',
     'aria-label': `${name}: ${now}${fwd ? `. Click for ${fwd}` : ''}`,
@@ -88,21 +90,27 @@ export function checkBox(n) {
   return withMenu(b, () => A.tick(n.id, -1));
 }
 
-/** Status changes offered from a pill. Approve/send back only for the lead. */
+/**
+ * Status changes offered from a pill. Approve/send back only for the lead. A
+ * task part of its job offers To do, In progress, Done, Waiting and Cancel -
+ * Done to whoever may edit the job - and no check of its own.
+ */
 export function statusMenu(anchor, t) {
   const lead = state.role === 'lead';
   if (t.status === 'cancelled') {
     menu(anchor, [{ heading: 'Cancelled' }, { label: `Reopen · back to ${S.LABEL[S.reopenTo(t)]}`, icon: 'restore', onSelect: () => A.reopen(t.id) }], { label: 'Set status' });
     return;
   }
-  // Done (and, from check, Fix) is the lead's alone: not offered, rather than
-  // offered and refused. From check, In progress is a Take back, for whoever
-  // submitted it.
+  const light = T.isLight(state.idx, t);
+  // Done (and, from check, Fix) is the lead's alone on a task with someone
+  // on it: not offered, rather than offered and refused. From check, In
+  // progress is a Take back, for whoever submitted it.
   const offered = (s) => (s !== t.status || s === 'waiting')
-    && (lead || (s !== 'done' && !(t.status === 'check' && s === 'fix')))
-    && !(t.status === 'check' && s === 'in_progress' && !lead && !S.canTakeBack(t, state.me));
+    && (!light || S.LIGHT_STATUSES.includes(s))
+    && (lead || light || (s !== 'done' && !(t.status === 'check' && s === 'fix')))
+    && !(t.status === 'check' && s === 'in_progress' && !lead && !light && !S.canTakeBack(t, state.me));
   const items = S.STATUSES.filter(offered).map((s) => {
-    const takeBack = t.status === 'check' && s === 'in_progress';
+    const takeBack = t.status === 'check' && s === 'in_progress' && !light;
     let label = S.LABEL[s];
     if (takeBack) label = 'Take back…';
     if (t.status === 'check' && s === 'done') label = 'Approve';
@@ -142,14 +150,17 @@ export function assignMenu(anchor, t, { at = null } = {}) {
 export function taskMenu(anchor, t, { extra = [], at = null } = {}) {
   const lead = state.role === 'lead';
   const can = A.canWrite(t);
+  const light = T.isLight(state.idx, t);
+  // A task part of its job with tasks inside shows their state: nothing to set on it.
+  const derived = T.isContainer(state.idx, t);
   const items = [
     ...extra,
     ...(extra.length ? ['sep'] : []),
     { label: 'Open', icon: 'open', onSelect: () => openTask(t.id) },
     'sep',
-    can && (t.status === 'todo' || t.status === 'fix') ? { label: 'Start', icon: 'play', onSelect: () => A.start(t.id) } : null,
-    lead && S.isOpen(t.status) && t.status !== 'check' ? { label: 'Mark done', icon: 'check', onSelect: () => A.setStatus(t.id, 'done') } : null,
-    !lead && can && ['in_progress', 'fix'].includes(t.status) ? { label: 'Submit for check', icon: 'check', onSelect: () => A.setStatus(t.id, 'check') } : null,
+    can && !derived && (t.status === 'todo' || t.status === 'fix') ? { label: 'Start', icon: 'play', onSelect: () => A.start(t.id) } : null,
+    (lead || (light && can)) && !derived && S.isOpen(t.status) && t.status !== 'check' ? { label: 'Mark done', icon: 'check', onSelect: () => A.setStatus(t.id, 'done') } : null,
+    !lead && !light && can && ['in_progress', 'fix'].includes(t.status) ? { label: 'Submit for check', icon: 'check', onSelect: () => A.setStatus(t.id, 'check') } : null,
     S.canTakeBack(t, state.me) ? { label: 'Take back from check…', icon: 'undo', onSelect: () => A.takeBack(t.id) } : null,
     can && t.status !== 'waiting' && S.isOpen(t.status) ? { label: 'Waiting…', icon: 'hide', onSelect: () => A.setStatus(t.id, 'waiting') } : null,
     can && S.isOpen(t.status) ? { label: 'Cancel…', icon: 'close', onSelect: () => A.setStatus(t.id, 'cancelled') } : null,
@@ -258,8 +269,8 @@ export const band = (status, count) => el('div', { class: 'band' }, el('span', {
  * - The thing dragged lifts (it dims in place) and a gap the size of it
  *   shows where it will land; a drop INTO is outlined instead.
  * - The tree decides what is allowed (T.nestProblem): nothing goes into
- *   itself or its own descendants, steps stay in jobs, products in
- *   categories. A refused place shows no gap and takes no drop.
+ *   itself or its own descendants, products stay in categories. A refused
+ *   place shows no gap and takes no drop.
  * Touch never sees this: it has Move to… in the same menus.
  * `validate: false` skips the tree check (Home's own order is not the tree).
  */

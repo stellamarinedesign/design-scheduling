@@ -4,7 +4,8 @@
 // place used.
 //
 // WHO IT IS FOR (Phase 2): the lead picks a person, defaulting to themself -
-// or, inside a job, to whoever has that job. A designer's "Add task" is
+// or, inside a job, to nobody: a task there with nobody on it is part of the
+// job (one kind of task, 2026-11-06). A designer's "Add task" is
 // always their own, and lands in their group under "From designers" for the
 // lead to file (team.js); there is no place to choose.
 
@@ -38,11 +39,14 @@ export function openQuickAdd({ parentId, capture = false, own = state.role !== '
     const tplLine = el('label', { class: 'check-line' });
     const tplBox = el('input', { type: 'checkbox', checked: true });
 
-    // For whom: you, or a designer. Inside a job, whoever has the job, until you choose.
+    // For whom: you, or a designer. Inside a job, nobody until you choose: a
+    // task there with nobody on it is part of the job (2026-11-06), and
+    // giving it someone puts it on their list with a check of its own.
     const people = assignable(state.access);
+    const nobody = el('option', { value: '' }, 'Nobody yet');
     const forSel = el('select', { class: 'sel', id: 'qaFor' },
       [state.me, ...people.filter((p) => p !== state.me)].map((p) => el('option', { value: p }, personName(p))),
-      el('option', { value: '' }, 'Nobody yet'));
+      nobody);
     let forTouched = false;
     forSel.addEventListener('change', () => { forTouched = true; });
     const forField = el('div', { class: 'field' }, el('label', { for: 'qaFor' }, 'For'), forSel);
@@ -58,11 +62,9 @@ export function openQuickAdd({ parentId, capture = false, own = state.role !== '
       const tpl = !inJob && p ? T.stepsTemplateOf(state.idx, p.id) : null;
       tplLine.hidden = !tpl;
       tplLine.textContent = '';
-      if (tpl) tplLine.append(tplBox, `Start with the ${T.nameOf(tpl.from)} steps (${tpl.template.length})`);
-      if (!forTouched) {
-        const owner = inJob ? T.ownerTask(state.idx, p.id)?.assignee : null;
-        forSel.value = owner && [...forSel.options].some((o) => o.value === owner) ? owner : state.me;
-      }
+      if (tpl) tplLine.append(tplBox, `Start with the ${T.nameOf(tpl.from)} tasks (${tpl.template.length})`);
+      nobody.textContent = inJob ? 'Nobody: part of the job' : 'Nobody yet';
+      if (!forTouched) forSel.value = inJob ? '' : state.me;
     };
     placeBtn.addEventListener('click', async () => {
       const dest = await placeDialog({ title: 'Put it in…', includeJobs: true, current: place, allow: () => null, topLabel: 'Not in a category' });

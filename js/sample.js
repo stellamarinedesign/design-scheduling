@@ -40,6 +40,9 @@ export async function loadSample() {
     });
     return id;
   };
+  // Written as STEPS, the way data was stored before steps merged into tasks
+  // (2026-11-06), on purpose: loading the sample shows the lead's "Convert
+  // steps into tasks" ask, so the migration (migrate.js) can be tried here.
   const step = (label, parentId, st = 'todo') => {
     const id = newId();
     nodes.push({ id, kind: 'step', parentId, order: next(parentId), label, state: st, createdAt: ago(20), updatedAt: ago(2), archivedAt: null });

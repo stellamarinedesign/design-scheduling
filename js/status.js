@@ -7,17 +7,20 @@
 // - STARTING IS ONE TAP, and posting an update on a To-do task starts it. The
 //   owner's TileDo data had 1 of 124 open tasks marked in progress because
 //   changing status cost too much; Home is only true if this costs nothing.
-// - ONLY A LEAD MARKS ANYTHING DONE (decided 2026-11-04), by any route: that
-//   closes the check → in progress → done way round review. Only a lead
-//   sends back, and a send-back always says why. Whoever submitted work may
-//   TAKE IT BACK from Ready for check to In progress, with an optional note.
-//   The Firestore rules enforce the same, so the UI never offers what the
-//   rules refuse.
+// - ONLY A LEAD MARKS A JOB, OR A TASK WITH AN ASSIGNEE, DONE (decided
+//   2026-11-04; narrowed 2026-11-06 when steps merged into tasks), by any
+//   route: that closes the check → in progress → done way round review. Only
+//   a lead sends back, and a send-back always says why. Whoever submitted
+//   work may TAKE IT BACK from Ready for check to In progress, with an
+//   optional note. A task inside a job with NOBODY ON IT is part of its job
+//   (tree.isLight): anyone who may edit the job ticks it Done, and it never
+//   goes for check on its own - the job does. The Firestore rules enforce the
+//   same, so the UI never offers what the rules refuse.
 // - WAITING REMEMBERS where it came from (`waiting.prevStatus`), so leaving it
 //   restores that status instead of guessing.
 // - CANCELLED IS FINISHED LIKE DONE, RECORDED APART (decided 2026-11-04). It
 //   leaves every active list, unblocks what waits on it, and cancels the open
-//   tasks and steps inside it; but it keeps `cancelled: {by, at, reason,
+//   tasks inside it; but it keeps `cancelled: {by, at, reason,
 //   prevStatus}` and a `cancel` timeline event, and Reopen puts it - and what
 //   was cancelled with it - back where it was.
 // - A WAITING TASK CAN BE BLOCKED BY OTHER TASKS (`waiting.blockedBy`). When the
@@ -30,7 +33,7 @@
 // Everything here is pure: it reads an index (tree.js) and returns patches and
 // updates for the store to write in one batch.
 
-import { ancestorChain, descendantIds, childrenOf, nameOf, KIND } from './tree.js';
+import { ancestorChain, descendantIds, childrenOf, nameOf, KIND, isLight, isContainer } from './tree.js';
 
 export const STATUSES = ['todo', 'in_progress', 'waiting', 'check', 'fix', 'done', 'cancelled'];
 
@@ -50,16 +53,22 @@ export const BAND_ORDER = ['in_progress', 'fix', 'check', 'waiting', 'todo'];
 export const isOpen = (s) => s !== 'done' && s !== 'cancelled';
 export const isFinished = (s) => s === 'done' || s === 'cancelled';
 
-export const STEP_STATES = ['todo', 'doing', 'done', 'na'];
-export const STEP_LABEL = { todo: 'To do', doing: 'Doing', done: 'Done', na: 'N/a' };
-/** Tap to cycle: To do → Doing → Done → N/a → To do. */
-export const nextStepState = (s) => STEP_STATES[(STEP_STATES.indexOf(s) + 1) % STEP_STATES.length];
+/**
+ * The statuses a task part of its job can take: no check and no send-back,
+ * since its job goes for check, not it. Cancelled is what N/a was.
+ */
+export const LIGHT_STATUSES = ['todo', 'in_progress', 'waiting', 'done', 'cancelled'];
 
-/** Null when the change is allowed, a sentence when it is not. */
-export function changeProblem(from, to, role = 'lead') {
+/**
+ * Null when the change is allowed, a sentence when it is not. `light`: the
+ * task is part of its job (tree.isLight), which anyone who may edit the job
+ * ticks Done, and which is never checked on its own.
+ */
+export function changeProblem(from, to, role = 'lead', light = false) {
   if (!STATUSES.includes(to)) return `Not a status: ${to}`;
   if (from === to && to !== 'waiting') return null;
-  if (role !== 'lead') {
+  if (light && (to === 'check' || to === 'fix')) return 'A task with nobody on it is ticked done, not checked: its job goes for check. Assign someone to give it a check of its own.';
+  if (role !== 'lead' && !light) {
     if (to === 'done') return from === 'check' ? 'Only the Design lead can approve.' : 'Only the Design lead marks work done. Submit it for check instead.';
     if (from === 'check' && to === 'fix') return 'Only the Design lead can send back.';
   }
@@ -70,93 +79,76 @@ export function changeProblem(from, to, role = 'lead') {
 export const canTakeBack = (t, me) => t?.status === 'check' && Boolean(me) && t.submittedBy === me;
 
 // ---------------------------------------------------------------------------
-// the checkbox on steps and subtasks (decided 2026-11-04, live test run)
+// the check control on every task inside a job (decided 2026-11-04, live
+// test run; one control since steps merged into tasks, 2026-11-06)
 // ---------------------------------------------------------------------------
 
-/** A step's checkbox, right-click: backwards. Doing → To do, Done → Doing, N/a → Done. */
-export const stepBack = (s) => ({ doing: 'todo', done: 'doing', na: 'done' }[s ?? 'todo'] ?? null);
-
 /**
- * A subtask's checkbox, click: To do → In progress → Done for the lead; →
- * Ready for check for everyone else, who never reach Done. Fix restarts.
- * Waiting, Done and Cancelled are changed from the task itself, so null.
+ * The check control, click. A task part of its job: To do → In progress →
+ * Done, for anyone who may edit the job. A task with an assignee: To do →
+ * In progress → Done for the lead; → Ready for check for everyone else, who
+ * never reach Done. Fix restarts. Waiting, Done and Cancelled are changed
+ * from the task itself, so null.
  */
-export function taskForward(t, role) {
+export function taskForward(t, role, light = false) {
   switch (t?.status ?? 'todo') {
     case 'todo': case 'fix': return 'in_progress';
-    case 'in_progress': return role === 'lead' ? 'done' : 'check';
-    case 'check': return role === 'lead' ? 'done' : null;
+    case 'in_progress': return role === 'lead' || light ? 'done' : 'check';
+    case 'check': return role === 'lead' || light ? 'done' : null;
     default: return null;
   }
 }
 
 /**
- * A subtask's checkbox, right-click or long-press: backwards. In progress →
+ * The check control, right-click or long-press: backwards. In progress →
  * To do; Ready for check → In progress is a Take back, so only whoever
  * submitted it; Done → In progress only for the lead, since nobody else could
- * put it back to Done.
+ * put it back to Done - except on a task part of its job, which whoever
+ * ticked it Done may untick. A cancelled task part of its job reopens (as
+ * N/a → Done did).
  */
-export function taskBack(t, role, me) {
+export function taskBack(t, role, me, light = false) {
   switch (t?.status ?? 'todo') {
-    case 'done': return role === 'lead' ? 'in_progress' : null;
+    case 'done': return role === 'lead' || light ? 'in_progress' : null;
     case 'in_progress': return 'todo';
-    case 'check': return canTakeBack(t, me) ? 'in_progress' : null;
+    case 'check': return canTakeBack(t, me) || light ? 'in_progress' : null;
+    case 'fix': return light ? 'in_progress' : null;
+    case 'cancelled': return light ? reopenTo(t) : null;
     default: return null;
   }
 }
 
-// A step with steps or subtasks inside is a container: its own tick is
-// derived (tree.stepFinished), the same rule tree.progress uses.
-const stepKids = (idx, id) => childrenOf(idx, id).filter((k) => k.kind === KIND.step || k.kind === KIND.task);
-
 /**
- * AUTO-ADVANCE for steps: ticking a step Done moves the next To-do step at
- * the same level to Doing - into a step's sub-steps when it has them. Finished
- * steps (Done, N/a) are passed over; a step already Doing ends the search.
- * @returns {string|null} the step to start
- */
-export function nextStepToStart(idx, stepId) {
-  const s = idx.byId.get(stepId);
-  if (!s) return null;
-  const firstOpen = (list) => {
-    for (const c of list) {
-      if (c.kind !== KIND.step) continue;
-      const kids = stepKids(idx, c.id);
-      if (kids.length) {
-        const inner = firstOpen(kids);
-        if (inner !== undefined) return inner;
-        continue;
-      }
-      const st = c.state ?? 'todo';
-      if (st === 'done' || st === 'na') continue;
-      return st === 'todo' ? c.id : null;
-    }
-    return undefined;
-  };
-  const siblings = childrenOf(idx, s.parentId);
-  return firstOpen(siblings.slice(siblings.findIndex((c) => c.id === stepId) + 1)) ?? null;
-}
-
-/**
- * AUTO-ADVANCE for subtasks: ticking one Done (or Ready for check) starts the
- * next To-do sibling subtask - only if it is nobody's yet or has the same
- * assignee, so nobody's work is started for them. Finished and submitted
- * siblings are passed over; one already under way (or waiting) ends the
- * search, as for steps.
- * @returns {string|null} the subtask to start
+ * AUTO-ADVANCE: ticking a task Done (or Ready for check) starts the next
+ * To-do task at its level - into a light task's insides when it has them -
+ * only if that one is nobody's or has the same assignee, so nobody's work is
+ * started for them. Finished and submitted ones are passed over; one already
+ * under way (or waiting) ends the search. Sections are not crossed.
+ * @returns {string|null} the task to start
  */
 export function nextTaskToStart(idx, taskId) {
   const t = idx.byId.get(taskId);
   if (!t) return null;
+  const who = t.assignee ?? null;
+  // undefined: nothing open in this list, look on; null: stop; an id: start it.
+  const look = (list) => {
+    for (const c of list) {
+      if (c.kind !== KIND.task) continue;
+      if (isContainer(idx, c)) {
+        if (c.status === 'cancelled') continue;
+        const inner = look(childrenOf(idx, c.id));
+        if (inner !== undefined) return inner;
+        continue;
+      }
+      const st = c.status ?? 'todo';
+      if (st === 'done' || st === 'cancelled' || st === 'check') continue;
+      if (st !== 'todo') return null;
+      return !c.assignee || c.assignee === who ? c.id : null;
+    }
+    return undefined;
+  };
   const siblings = childrenOf(idx, t.parentId);
-  for (const c of siblings.slice(siblings.findIndex((x) => x.id === taskId) + 1)) {
-    if (c.kind !== KIND.task) continue;
-    const st = c.status ?? 'todo';
-    if (st === 'done' || st === 'cancelled' || st === 'check') continue;
-    if (st !== 'todo') return null;
-    return !c.assignee || c.assignee === t.assignee ? c.id : null;
-  }
-  return null;
+  return look(siblings.slice(siblings.findIndex((x) => x.id === taskId) + 1)) ?? null;
 }
 
 /** The kind of timeline entry a change posts. */
@@ -372,13 +364,12 @@ export function reopenFields(idx, t) {
   return fields;
 }
 
-const isLeafStep = (idx, n) => n.kind === KIND.step
-  && !childrenOf(idx, n.id).some((k) => k.kind === KIND.step || k.kind === KIND.task);
-
 /**
  * Cancelling a job cancels what is still open inside it: open tasks become
- * Cancelled (marked as cancelled with it), open leaf steps become N/a. Done
- * work stays done. Each carries `withId`, so Reopen can put it back.
+ * Cancelled, marked as cancelled with it. Done work stays done. Each carries
+ * `withId`, so Reopen can put it back. Only a task with an assignee gets a
+ * `cancel` update in its own timeline: one part of its job gets none, as a
+ * step did not (a job of thirty ticks would write thirty more).
  */
 export function cancelInside(idx, id, { by, at, reason = '', canWrite = () => true } = {}) {
   const patches = [];
@@ -386,17 +377,13 @@ export function cancelInside(idx, id, { by, at, reason = '', canWrite = () => tr
   const tasks = [];
   for (const d of descendantIds(idx, id)) {
     const n = idx.byId.get(d);
-    if (n.kind === KIND.task && isOpen(n.status)) {
-      if (!canWrite(n)) continue;
-      patches.push({
-        id: d, status: 'cancelled', waiting: null, fixNote: null, updatedAt: at, lastActivityAt: at, statusAt: at,
-        cancelled: cancelRecord(n, { by, at, reason, withId: id }),
-      });
-      updates.push({ taskId: d, at, by, kind: 'cancel', from: n.status, to: 'cancelled', text: reason ? `${reason} (cancelled with its job)` : 'Cancelled with its job' });
-      tasks.push(d);
-    } else if (isLeafStep(idx, n) && n.state !== 'done' && n.state !== 'na') {
-      patches.push({ id: d, state: 'na', cancelledFrom: { state: n.state ?? 'todo', withId: id }, updatedAt: at });
-    }
+    if (n.kind !== KIND.task || !isOpen(n.status) || !canWrite(n)) continue;
+    patches.push({
+      id: d, status: 'cancelled', waiting: null, fixNote: null, updatedAt: at, lastActivityAt: at, statusAt: at,
+      cancelled: cancelRecord(n, { by, at, reason, withId: id }),
+    });
+    if (!isLight(idx, n)) updates.push({ taskId: d, at, by, kind: 'cancel', from: n.status, to: 'cancelled', text: reason ? `${reason} (cancelled with its job)` : 'Cancelled with its job' });
+    tasks.push(d);
   }
   return { patches, updates, tasks };
 }
@@ -407,23 +394,20 @@ export function reopenInside(idx, id, { by, at, canWrite = () => true } = {}) {
   const updates = [];
   for (const d of descendantIds(idx, id)) {
     const n = idx.byId.get(d);
-    if (n.kind === KIND.task && n.status === 'cancelled' && n.cancelled?.withId === id) {
-      if (!canWrite(n)) continue;
-      const f = reopenFields(idx, n);
-      patches.push({ id: d, ...f, updatedAt: at, lastActivityAt: at, statusAt: at });
-      updates.push({ taskId: d, at, by, kind: 'reopen', from: 'cancelled', to: f.status, text: 'Reopened with its job' });
-    } else if (n.kind === KIND.step && n.cancelledFrom?.withId === id) {
-      patches.push({ id: d, state: n.cancelledFrom.state ?? 'todo', cancelledFrom: null, updatedAt: at });
-    }
+    if (n.kind !== KIND.task || n.status !== 'cancelled' || n.cancelled?.withId !== id || !canWrite(n)) continue;
+    const f = reopenFields(idx, n);
+    patches.push({ id: d, ...f, updatedAt: at, lastActivityAt: at, statusAt: at });
+    if (!isLight(idx, n)) updates.push({ taskId: d, at, by, kind: 'reopen', from: 'cancelled', to: f.status, text: 'Reopened with its job' });
   }
   return { patches, updates };
 }
 
 /**
- * "Close them too", when a job is marked done: its open tasks become Done and
- * its open leaf steps tick. Tasks waiting for check are left as they are —
- * closing them would approve them without anyone checking — and so are tasks
- * this person cannot write. The role is the real one, never assumed.
+ * "Close them too", when a job is marked done: its open tasks become Done.
+ * Tasks waiting for check are left as they are - closing them would approve
+ * them without anyone checking - and so are tasks this person cannot write.
+ * The role is the real one, never assumed. Only a task with an assignee gets
+ * a timeline entry for it, as with cancelling.
  */
 export function closeInside(idx, id, { by, at, role, canWrite = () => true } = {}) {
   const patches = [];
@@ -432,17 +416,14 @@ export function closeInside(idx, id, { by, at, role, canWrite = () => true } = {
   let leftInCheck = 0;
   for (const d of descendantIds(idx, id)) {
     const n = idx.byId.get(d);
-    if (n.kind === KIND.task && isOpen(n.status)) {
-      if (n.status === 'check') { leftInCheck += 1; continue; }
-      if (!canWrite(n)) continue;
-      const r = changeStatus(idx, d, 'done', { by, at, role });
-      if (r.error) continue;
-      patches.push(r.patches[0]);
-      updates.push(r.updates[0]);
-      tasks.push(d);
-    } else if (isLeafStep(idx, n) && n.state !== 'done' && n.state !== 'na') {
-      patches.push({ id: d, state: 'done', updatedAt: at });
-    }
+    if (n.kind !== KIND.task || !isOpen(n.status)) continue;
+    if (n.status === 'check') { leftInCheck += 1; continue; }
+    if (!canWrite(n)) continue;
+    const r = changeStatus(idx, d, 'done', { by, at, role });
+    if (r.error) continue;
+    patches.push(r.patches[0]);
+    if (!isLight(idx, n)) updates.push(r.updates[0]);
+    tasks.push(d);
   }
   return { patches, updates, tasks, leftInCheck };
 }
@@ -457,7 +438,7 @@ export function changeStatus(idx, id, to, { by, at, note = '', blockedBy = [], c
   const t = idx.byId.get(id);
   if (!t || t.kind !== KIND.task) return { error: 'That task has gone.' };
   const from = t.status ?? 'todo';
-  const problem = changeProblem(from, to, role);
+  const problem = changeProblem(from, to, role, isLight(idx, t));
   if (problem) return { error: problem };
   if (from === to && to !== 'waiting') return { patches: [], updates: [] };
 

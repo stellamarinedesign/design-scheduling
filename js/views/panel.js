@@ -5,16 +5,24 @@
 // widens it to the whole main area for deep work; the choice is kept.
 //
 // Top to bottom: the breadcrumb; the title, edited in place, with the status
-// and a compact row of properties; then CHILDREN FIRST - its tasks and steps
-// as tiles, or a list (remembered per node), each with the check control;
-// then the review box (Approve and Send back, or the action for where it
-// is), Brief, Folders and the Updates timeline.
+// and a compact row of properties; then CHILDREN FIRST - its tasks, as tiles
+// or a list (remembered per node), each with the check control; then the
+// review box (Approve and Send back, or the action for where it is), Brief,
+// Folders and the Updates timeline.
+//
+// ONE KIND OF TASK (2026-11-06): inside a job everything is a task, added
+// from one "Add a task" box (Enter adds, focus stays). TILES shows the direct
+// children only - a section is a tile too, with how many are open, and
+// opening it drills in; LIST shows the whole tree, nested, sections as
+// headings. A task with nobody on it is part of its job: ticked, never
+// checked; assigning someone (the lead, "Assign to…") gives it a check of
+// its own.
 //
 // Clicking a child drills the panel into it, in the same layout. The
 // breadcrumb navigates the panel; a category crumb closes it and reveals the
 // category in the Tasks list. ←, Esc and browser Back go up one level, and
-// the URL (?t=<id>) follows the node. A step, or a section inside a job,
-// opens here too: its own children, and no timeline (it has none).
+// the URL (?t=<id>) follows the node. A section inside a job opens here too:
+// its own children, and no timeline (it has none).
 //
 // Enter saves a field; Esc cancels it. A field being edited is never redrawn
 // under the cursor (app.js asks `panelEditing()` first).
@@ -61,11 +69,14 @@ const isPlace = (n) => T.isGroupLike(n) && !T.isSection(state.idx, n);
 
 /**
  * May this person change what the panel shows? The same test the rules make:
- * the lead anything; a designer their own tasks, and the steps and sections
- * inside them. Anyone who can open it can still post an update.
+ * the lead anything; a designer their own tasks, and the tasks with nobody
+ * on them and the sections inside those. Anyone who can open it can still
+ * post an update.
  */
-const editable = (n) => (n?.kind === T.KIND.task ? A.canWrite(n) : A.canWriteStep(n));
+const editable = (n) => A.canEdit(n);
 const lead = () => state.role === 'lead';
+const light = (n) => T.isLight(state.idx, n);
+const derived = (n) => T.isContainer(state.idx, n);
 
 /** One level up, if the panel can show it: null at a job. */
 const upNode = (n) => { const p = T.parentOf(state.idx, n); return p && !isPlace(p) ? p : null; };
@@ -190,7 +201,7 @@ function bar(n) {
   if (isPhone()) {
     return el('div', { class: 'panel-bar' },
       iconBtn('back', up ? `Up to ${T.nameOf(up)}` : 'Close', panelUp),
-      n?.kind === T.KIND.task ? pill(n.status, { onClick: (e) => statusMenu(e.currentTarget, n) }) : null,
+      n?.kind === T.KIND.task ? statusPillOf(n) : null,
       el('span', { class: 'bar-title', 'aria-hidden': 'true' }, n ? T.nameOf(n) : ''),
       n ? iconBtn('more', 'More actions', (e) => moreMenu(e.currentTarget, n)) : null);
   }
@@ -206,13 +217,11 @@ function bar(n) {
 }
 
 function moreMenu(anchor, n) {
-  if (n.kind === T.KIND.step) { stepMenu(anchor, n); return; }
   if (n.kind !== T.KIND.task) { sectionMenu(anchor, n); return; }
   const job = T.isJob(state.idx, n);
   const items = [
     lead() ? { label: 'Assign to…', icon: 'user', onSelect: () => assignMenu(anchor, n) } : null,
     lead() ? { label: 'Move to…', icon: 'move', onSelect: async () => (await import('./pickers.js')).moveDialog(n.id) } : null,
-    lead() && !job ? { label: 'Make it a step', icon: 'tasks', onSelect: () => A.demoteTask(n.id) } : null,
     lead() && job ? { label: 'Turn into a category', icon: 'folderPlus', onSelect: () => A.turnIntoCategory(n.id) } : null,
     lead() && n.backlogIgnored ? { label: 'Show in the Backlog again', icon: 'restore', onSelect: () => A.setBacklogIgnored(n.id, false) }
       : lead() && BL.canHideFromBacklog(state.idx, n.id, backlogPool()) ? { label: 'Hide from the Backlog', icon: 'hide', onSelect: () => A.setBacklogIgnored(n.id, true) } : null,
@@ -230,9 +239,23 @@ function moreMenu(anchor, n) {
 // title, status and the compact properties row
 // ---------------------------------------------------------------------------
 
-/** The name, edited in place: a task's title, a step's label, a section's name. */
+/**
+ * The status pill: the status menu for whoever may change it. A task part of
+ * its job with tasks inside shows their state, worked out, with nothing to set.
+ */
+function statusPillOf(n) {
+  if (derived(n)) {
+    const p = T.progress(state.idx, n.id);
+    const shown = pill(T.shownStatus(state.idx, n));
+    shown.title = `From the tasks inside: ${p.done} of ${p.total} done`;
+    return shown;
+  }
+  return pill(n.status, editable(n) ? { onClick: (e) => statusMenu(e.currentTarget, n) } : {});
+}
+
+/** The name, edited in place: a task's title, a section's name. */
 function titleField(n) {
-  const key = n.kind === T.KIND.task ? 'title' : n.kind === T.KIND.step ? 'label' : 'name';
+  const key = n.kind === T.KIND.task ? 'title' : 'name';
   const was = n[key] ?? '';
   const title = el('textarea', { class: 'title-edit', rows: '1', 'aria-label': n.kind === T.KIND.task ? 'Title' : 'Name', spellcheck: 'true', maxlength: '300', readonly: !editable(n) });
   title.value = was;
@@ -269,14 +292,22 @@ function top(n) {
 
   // One compact row: each value carries its own small label, and wraps on a phone.
   const pc = (label, ...v) => el('div', { class: 'pc' }, el('span', { class: 'pc-lbl', 'aria-hidden': 'true' }, label), ...v);
-  // Only the lead gives work to someone; everyone sees who has it.
-  const who = [n.assignee ? face(n.assignee) : null, el('span', { class: n.assignee ? '' : 'pv-muted' }, personName(n.assignee))];
+  // Only the lead gives work to someone; everyone sees who has it. A task
+  // inside a job with nobody on it is part of the job, and says so: giving
+  // it someone puts it on their list, with a check of its own.
+  const part = light(n);
+  const whoText = part ? 'Part of the job' : personName(n.assignee);
+  const who = [n.assignee ? face(n.assignee) : null, el('span', { class: n.assignee ? '' : 'pv-muted' }, whoText)];
   const prio = { high: 'High', normal: 'Normal', low: 'Low' }[n.priority] ?? 'Normal';
   const prioText = el('span', { class: n.priority === 'high' ? 'warn-text' : n.priority === 'low' ? 'pv-muted' : '' }, prio);
   wrap.append(el('div', { class: 'props' },
-    pill(n.status, can ? { onClick: (e) => statusMenu(e.currentTarget, n) } : {}),
+    statusPillOf(n),
     pc('Who', lead()
-      ? el('button', { class: 'pv-btn', type: 'button', 'aria-haspopup': 'menu', 'aria-label': `Assignee: ${personName(n.assignee)}. Change`, onclick: (e) => assignMenu(e.currentTarget, n) }, ...who)
+      ? el('button', {
+        class: 'pv-btn', type: 'button', 'aria-haspopup': 'menu', 'aria-label': `Assignee: ${whoText}. Change`,
+        title: part ? 'Assign someone to put it on their list, with a check of its own' : null,
+        onclick: (e) => assignMenu(e.currentTarget, n),
+      }, ...who)
       : el('span', { class: 'pv-static' }, ...who)),
     pc('Priority', can
       ? el('button', { class: 'pv-btn', type: 'button', 'aria-haspopup': 'menu', 'aria-label': `Priority: ${prio}`, onclick: (e) => priorityMenu(e.currentTarget, n) }, prioText)
@@ -294,23 +325,13 @@ function top(n) {
   return wrap;
 }
 
-/** A step's or a section's top: its name, and what it is. */
+/** A section's top: its name, and what it is. */
 function nodeTop(n) {
   const wrap = el('div', { class: 'panel-top' });
   if (isPhone()) wrap.append(crumbs(n));
   wrap.append(titleField(n));
   const job = T.jobOf(state.idx, n.id);
-  if (n.kind === T.KIND.step) {
-    const box = checkBox(n);
-    const inside = containerStep(n);
-    const p = inside ? T.progress(state.idx, n.id) : null;
-    wrap.append(el('div', { class: 'props' },
-      el('div', { class: 'pc' }, box, el('span', {}, inside ? `${p.done} of ${p.total} done` : S.STEP_LABEL[n.state ?? 'todo'])),
-      el('span', { class: 'meta wrap' }, `A step${job ? ` of ${job.title}` : ''}: a tick, with no status or updates of its own.`),
-      lead() ? btn('Make it a task', () => A.promoteStep(n.id), { cls: 'sm ghost', ic: 'tasks', title: 'Its own status, assignee and updates' }) : null));
-  } else {
-    wrap.append(el('div', { class: 'props' }, el('span', { class: 'meta wrap' }, `A section${job ? ` of ${job.title}` : ''}: a heading for its tasks and steps.`)));
-  }
+  wrap.append(el('div', { class: 'props' }, el('span', { class: 'meta wrap' }, `A section${job ? ` of ${job.title}` : ''}: a heading for its tasks.`)));
   return wrap;
 }
 
@@ -338,6 +359,18 @@ function blockChips(n) {
 /** The primary action for where this task is. At most one red button. */
 function contextAction(n) {
   if (!A.canWrite(n)) return readOnlyAction(n);
+  if (derived(n)) {
+    const p = T.progress(state.idx, n.id);
+    return el('div', { class: 'meta wrap' }, `Its state comes from the tasks inside it: ${p.done} of ${p.total} done. Tick those.`);
+  }
+  // Part of its job: ticked Done by whoever may edit the job, never submitted
+  // (one left in check or sent back from before goes back to In progress).
+  if (light(n) && ['in_progress', 'check', 'fix'].includes(n.status)) {
+    return el('div', { class: 'acts row' },
+      btn('Mark done', () => A.setStatus(n.id, 'done'), { cls: 'primary', ic: 'check' }),
+      n.status === 'in_progress' ? btn('Waiting…', () => A.setStatus(n.id, 'waiting'), { cls: 'ghost' })
+        : btn('Back to In progress', () => A.setStatus(n.id, 'in_progress')));
+  }
   const lead = state.role === 'lead';
   const since = (iso) => (iso ? ` · ${whenLabel(iso)}` : '');
   switch (n.status) {
@@ -405,7 +438,9 @@ function readOnlyAction(n) {
   const head = { check: 'Ready for check', fix: 'Sent back', waiting: 'Waiting', cancelled: 'Cancelled', done: 'Done' }[n.status];
   const body = n.status === 'fix' ? n.fixNote : n.status === 'waiting' ? S.waitingLine(state.idx, n) : n.status === 'cancelled' ? n.cancelled?.reason : '';
   let whose = 'Nobody has it yet, and only the Design lead changes it.';
-  if (n.assignee) {
+  const job = light(n) ? T.jobOf(state.idx, n.id) : null;
+  if (job) whose = `It is part of ${job.title}: whoever has that job, or the Design lead, ticks it.`;
+  else if (n.assignee) {
     whose = state.access.leads.includes(n.assignee)
       ? `${personName(n.assignee)} has it.`
       : `${personName(n.assignee)} has it. Only they or the Design lead change it.`;
@@ -471,23 +506,14 @@ function briefSection(n) {
 }
 
 // ---------------------------------------------------------------------------
-// children first: tasks and steps as tiles or a list
+// children first: tasks as tiles or a list
 // ---------------------------------------------------------------------------
 
 /** What sits inside a node, in its manual order. */
 const kidsOf = (id) => T.childrenOf(state.idx, id).filter((c) => c.kind !== T.KIND.product);
 
-/** A step that holds steps or tasks: its tick is theirs, worked out (tree.stepFinished). */
-const containerStep = (s) => T.childrenOf(state.idx, s.id).some((k) => k.kind === T.KIND.step || k.kind === T.KIND.task);
-
-/** A step's state as shown: its own, or its insides' for a step that holds some. */
-function stepShown(s) {
-  if (!containerStep(s)) return s.state ?? 'todo';
-  return T.stepFinished(state.idx, s) ? 'done' : T.progress(state.idx, s.id).done ? 'doing' : 'todo';
-}
-
-/** Finished, as far as a tile cares: done or not needed, cancelled. */
-const finishedKid = (c) => (c.kind === T.KIND.step ? ['done', 'na'].includes(stepShown(c)) : !S.isOpen(c.status));
+/** A task's status as shown: its own, or its insides' for one part of its job with tasks inside. */
+const shownOf = (c) => T.shownStatus(state.idx, c);
 
 const viewOf = (n) => (prefs.get(`panelView.${n.id}`, 'tiles') === 'list' ? 'list' : 'tiles');
 
@@ -498,7 +524,7 @@ function childrenSection(n) {
   const kids = kidsOf(n.id);
   const set = (v) => { prefs.set(`panelView.${n.id}`, v); renderPanel(rootEl, n.id); rootEl.querySelector(`[data-fk="view-${v}"]`)?.focus(); };
   const segBtn = (v, text, ic) => el('button', { type: 'button', 'aria-pressed': String(mode === v), title: text, dataset: { fk: `view-${v}` }, onclick: () => set(v) }, icon(ic, 14), el('span', {}, text));
-  const word = n.kind === T.KIND.step ? 'Inside this step' : n.kind === T.KIND.task ? 'Tasks and steps' : 'In this section';
+  const word = n.kind === T.KIND.task ? 'Tasks' : 'In this section';
   const sec = el('section', { class: 'psec kids', 'aria-label': word });
   sec.append(el('div', { class: 'psec-head' },
     el('h2', { class: 'lbl' }, word),
@@ -507,10 +533,10 @@ function childrenSection(n) {
     kids.length ? el('div', { class: 'seg', role: 'group', 'aria-label': 'Show as' }, segBtn('tiles', 'Tiles', 'grid'), segBtn('list', 'List', 'list')) : null));
 
   if (!kids.length) {
-    const tpl = n.kind === T.KIND.task && T.isJob(idx, n) ? T.stepsTemplateOf(idx, n.id) : null;
+    const tpl = n.kind === T.KIND.task && T.isJob(idx, n) && editable(n) ? T.stepsTemplateOf(idx, n.id) : null;
     sec.append(el('div', { class: 'empty' },
-      el('span', {}, n.kind === T.KIND.step ? 'No sub-steps yet.' : 'Nothing inside yet.'),
-      tpl ? btn(`Add the ${T.nameOf(tpl.from)} steps`, () => A.applyTemplate(n.id), { cls: 'sm' }) : null));
+      el('span', {}, 'Nothing inside yet.'),
+      tpl ? btn(`Add the ${T.nameOf(tpl.from)} tasks`, () => A.applyTemplate(n.id), { cls: 'sm' }) : null));
   } else {
     const holder = mode === 'list' ? el('div', { class: 'steps' }) : tilesOf(n.id);
     if (mode === 'list') listInto(holder, n.id, 0);
@@ -525,95 +551,91 @@ function childrenSection(n) {
   return sec;
 }
 
-/** Tiles, with each section inside as a block of its own tiles. */
+/** Tiles: the direct children only, one tile each - a section's tile drills into it. */
 function tilesOf(parentId) {
-  const out = el('div', { class: 'kid-blocks' });
-  let grid = null;
-  for (const c of kidsOf(parentId)) {
-    if (T.isGroupLike(c)) { grid = null; out.append(sectionBlock(c)); continue; }
-    if (!grid) { grid = el('div', { class: 'kgrid' }); out.append(grid); }
-    grid.append(kidTile(c));
+  const grid = el('div', { class: 'kgrid' });
+  for (const c of kidsOf(parentId)) grid.append(T.isGroupLike(c) ? sectionTile(c) : kidTile(c));
+  return grid;
+}
+
+/** The tasks inside a section, through the sections in it: how many are still open. */
+function openIn(id) {
+  let open = 0;
+  for (const c of T.childrenOf(state.idx, id)) {
+    if (c.kind === T.KIND.task) open += S.isOpen(shownOf(c)) ? 1 : 0;
+    else if (c.kind === T.KIND.group) open += openIn(c.id);
   }
-  return out;
+  return open;
 }
 
-function sectionBlock(g) {
+/** A section as a tile: its name and how many are open; opening it drills in, and things drag into it. */
+function sectionTile(g) {
   const name = T.nameOf(g);
-  const open = T.childrenOf(state.idx, g.id).filter((c) => c.kind === T.KIND.task && S.isOpen(c.status)).length;
-  const head = el('div', { class: 'kid-sec-head', dataset: { dropInto: g.id } },
-    icon('folder', 16),
-    el('button', { class: 'kid-sec-name', type: 'button', onclick: () => openTask(g.id), title: 'Open this section' }, name),
-    open ? el('span', { class: 'meta' }, `${open} open`) : null,
-    el('span', { class: 'sp' }),
-    iconBtn('more', `${name} actions`, (e) => sectionMenu(e.currentTarget, g), 'sm'));
-  withMenu(head, (at) => sectionMenu(head.querySelector('.ib') ?? head, g, { at }));
-  return el('section', { class: 'kid-sec', 'aria-label': name, dataset: { id: g.id } },
-    head,
-    kidsOf(g.id).length ? tilesOf(g.id) : el('p', { class: 'meta' }, 'Empty. Drag tasks in, or add one from its ⋯.'));
+  const open = openIn(g.id);
+  const prog = T.progress(state.idx, g.id);
+  const a = el('article', {
+    class: `ktile section${prog.total && !open ? ' finished' : ''}`,
+    dataset: { id: g.id, dropInto: g.id }, draggable: canDrag() ? 'true' : null,
+  },
+  el('button', { class: 'open-link', type: 'button', dataset: { fk: `open-${g.id}` }, 'aria-label': `Open the section ${name}`, title: name, onclick: () => openTask(g.id) }),
+  el('div', { class: 'ktile-top' },
+    el('span', { class: 'ktile-ic', 'aria-hidden': 'true' }, icon('folder', 16)),
+    el('div', { class: 'ktile-title' }, name),
+    iconBtn('more', `${name} actions`, (e) => { e.stopPropagation(); sectionMenu(e.currentTarget, g); }, 'sm')),
+  el('div', { class: 'ktile-foot' },
+    el('span', { class: 'meta' }, prog.total ? (open ? `${open} open` : 'All done') : 'Empty'),
+    prog.total ? el('span', { class: 'meta' }, `${prog.done}/${prog.total}`) : null));
+  return withMenu(a, (at) => sectionMenu(a.querySelector('.ktile-top .ib') ?? a, g, { at }));
 }
 
-/** A child as a tile: the check control, the name, and the facts that matter. */
+/** A child task as a tile: the check control, the name, and the facts that matter. */
 function kidTile(c) {
-  const step = c.kind === T.KIND.step;
   const name = T.nameOf(c);
-  const shown = step ? stepShown(c) : c.status;
-  const inside = step ? containerStep(c) : false;
+  const shown = shownOf(c);
   const prog = T.progress(state.idx, c.id);
-  const sub = step ? null : subtext(c);
-  const struck = step ? shown === 'na' : c.status === 'cancelled';
+  const sub = subtext(c);
+  // The pill only when the status says something the tile does not already:
+  // a cancelled one's subtext says "Cancelled 4 Nov · why".
   const facts = [
-    !step && !['todo', 'done'].includes(c.status) ? pill(c.status, { onClick: (e) => { e.stopPropagation(); statusMenu(e.currentTarget, c); } }) : null,
-    step && !inside && shown === 'doing' ? pill('in_progress', { label: 'Doing' }) : null,
-    step && !inside && shown === 'na' ? el('span', { class: 'pill na' }, 'N/a') : null,
+    !['todo', 'done', 'cancelled'].includes(shown) ? pill(shown, derived(c) || !editable(c) ? {} : { onClick: (e) => { e.stopPropagation(); statusMenu(e.currentTarget, c); } }) : null,
     prog.total ? el('span', { class: 'meta' }, `${prog.done}/${prog.total}`) : null,
-    step ? null : whoBadge(c.assignee),
+    whoBadge(c.assignee),
   ].filter(Boolean);
   const a = el('article', {
-    class: `ktile${step ? ' step' : ''}${finishedKid(c) ? ' finished' : ''}${struck ? ' struck' : ''}`,
+    class: `ktile${S.isOpen(shown) ? '' : ' finished'}${shown === 'cancelled' ? ' struck' : ''}`,
     dataset: { id: c.id }, draggable: canDrag() ? 'true' : null,
   },
   el('button', { class: 'open-link', type: 'button', dataset: { fk: `open-${c.id}` }, 'aria-label': `Open ${name}`, title: name, onclick: () => openTask(c.id) }),
   el('div', { class: 'ktile-top' },
     checkBox(c),
     el('div', { class: 'ktile-title' }, name),
-    iconBtn('more', `More actions for ${name}`, (e) => { e.stopPropagation(); kidMenu(e.currentTarget, c); }, 'sm')),
+    iconBtn('more', `More actions for ${name}`, (e) => { e.stopPropagation(); taskMenu(e.currentTarget, c); }, 'sm')),
   sub ? el('div', { class: `ktile-sub ${sub.cls}`.trim() }, sub.text) : null,
   facts.length ? el('div', { class: 'ktile-foot' }, ...facts) : null);
-  return withMenu(a, (at) => kidMenu(a.querySelector('.ktile-top .ib') ?? a, c, { at }));
+  return withMenu(a, (at) => taskMenu(a.querySelector('.ktile-top .ib') ?? a, c, { at }));
 }
 
-/** The list: one row each, sub-steps and sections nested in place. */
+/** The list: the whole tree, one row each, the tasks inside tasks nested in place and sections as headings. */
 function listInto(list, pid, depth) {
   for (const c of kidsOf(pid)) {
     const name = T.nameOf(c);
-    if (c.kind === T.KIND.step) {
-      const inside = containerStep(c);
-      const st = stepShown(c);
-      const p = inside ? T.progress(state.idx, c.id) : null;
-      const r = el('div', { class: 'srow', style: { '--depth': depth }, dataset: { id: c.id }, draggable: canDrag() ? 'true' : null },
-        checkBox(c),
-        el('button', { class: `srow-label ${inside ? 'parent' : ''} ${st}`.trim(), type: 'button', onclick: () => openTask(c.id), dataset: { fk: `open-${c.id}` } }, name),
-        el('span', { class: 'srow-end' },
-          inside ? el('span', { class: 'meta' }, `${p.done} of ${p.total}`) : null,
-          !inside && st === 'doing' ? pill('in_progress', { label: 'Doing' }) : null,
-          !inside && st === 'na' ? el('span', { class: 'pill na' }, 'N/a') : null,
-          iconBtn('more', `${name} actions`, (e) => stepMenu(e.currentTarget, c), 'sm')));
-      list.append(withMenu(r, (at) => stepMenu(r.querySelector('.srow-end .ib') ?? r, c, { at })));
-      if (inside) listInto(list, c.id, depth + 1);
-    } else if (c.kind === T.KIND.task) {
+    if (c.kind === T.KIND.task) {
       const p = T.progress(state.idx, c.id);
-      const r = el('div', { class: `srow${c.status === 'cancelled' ? ' muted' : ''}`, style: { '--depth': depth }, dataset: { id: c.id }, draggable: canDrag() ? 'true' : null },
+      const shown = shownOf(c);
+      const inside = p.total > 0;
+      const r = el('div', { class: `srow${shown === 'cancelled' ? ' muted' : ''}`, style: { '--depth': depth }, dataset: { id: c.id }, draggable: canDrag() ? 'true' : null },
         checkBox(c),
         el('span', { class: 'srow-main' },
-          face(c.assignee || state.me),
-          el('button', { class: `srow-label task${S.isOpen(c.status) ? '' : ' done'}`, type: 'button', onclick: () => openTask(c.id), dataset: { fk: `open-${c.id}` } }, name)),
+          c.assignee ? face(c.assignee) : null,
+          el('button', { class: `srow-label${inside ? ' parent' : ''}${S.isOpen(shown) ? '' : ' done'}`, type: 'button', onclick: () => openTask(c.id), dataset: { fk: `open-${c.id}` } }, name)),
         el('span', { class: 'srow-end' },
-          p.total ? el('span', { class: 'meta' }, `${p.done}/${p.total}`) : null,
-          pill(c.status, { onClick: (e) => statusMenu(e.currentTarget, c) }),
+          inside ? el('span', { class: 'meta' }, `${p.done}/${p.total}`) : null,
+          shown !== 'todo' && shown !== 'done' ? pill(shown, derived(c) || !editable(c) ? {} : { onClick: (e) => statusMenu(e.currentTarget, c) }) : null,
           iconBtn('more', `More actions for ${name}`, (e) => taskMenu(e.currentTarget, c), 'sm')));
       list.append(withMenu(r, (at) => taskMenu(r.querySelector('.srow-end .ib:last-child') ?? r, c, { at })));
+      if (T.childrenOf(state.idx, c.id).length) listInto(list, c.id, depth + 1);
     } else if (c.kind === T.KIND.group) {
-      const r = el('div', { class: 'srow section', style: { '--depth': depth }, dataset: { id: c.id, dropInto: c.id } },
+      const r = el('div', { class: 'srow section', style: { '--depth': depth }, dataset: { id: c.id, dropInto: c.id }, draggable: canDrag() ? 'true' : null },
         el('span', { class: 'srow-ic' }, icon('folder', 16)),
         el('button', { class: 'srow-label', type: 'button', onclick: () => openTask(c.id), dataset: { fk: `open-${c.id}` } }, name),
         el('span', { class: 'srow-end' }, iconBtn('more', `${name} actions`, (e) => sectionMenu(e.currentTarget, c), 'sm')));
@@ -623,12 +645,23 @@ function listInto(list, pid, depth) {
   }
 }
 
-/** Add a step (typed straight in), a task or a section. */
+/**
+ * One box: "Add a task", typed straight in. Enter adds it and the box keeps
+ * focus for the next (data-keep: renderPanel puts it back after the redraw
+ * the write brings). Inside a job a new task has nobody on it - part of the
+ * job, until someone is assigned. "Section" adds a heading.
+ */
 function addControls(n) {
-  const input = el('input', { class: 'input', type: 'text', placeholder: n.kind === T.KIND.step ? 'Add a sub-step' : 'Add a step', 'aria-label': 'Add a step', maxlength: '200', dataset: { keep: `add-${n.id}` } });
+  const input = el('input', { class: 'input', type: 'text', placeholder: 'Add a task', 'aria-label': 'Add a task', maxlength: '200', dataset: { keep: `add-${n.id}` } });
   // Cleared before the write: the redraw it brings may come at once, and the
-  // box it puts back must be empty, ready for the next step.
-  const add = () => { const v = input.value.trim(); if (!v) return; input.value = ''; A.addStep(n.id, v); requestAnimationFrame(() => rootEl.querySelector('.kids .add-line .input')?.focus()); };
+  // box it puts back must be empty, ready for the next task.
+  const add = () => {
+    const v = input.value.trim();
+    if (!v) return;
+    input.value = '';
+    A.createTask({ title: v, parentId: n.id, useTemplate: false });
+    requestAnimationFrame(() => rootEl.querySelector('.kids .add-line .input')?.focus());
+  };
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); add(); }
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); input.value = ''; input.blur(); }
@@ -636,40 +669,11 @@ function addControls(n) {
   const sections = n.kind === T.KIND.task || T.isSection(state.idx, n);
   return el('div', { class: 'add-wrap' },
     el('div', { class: 'add-line' }, input, btn('Add', add, { cls: 'sm' })),
-    el('div', { class: 'row' },
-      btn('Task', async () => {
-        const t = await promptDialog({ title: 'New task', label: 'Title', ok: 'Add', body: 'A real task: its own status, assignee and updates.' });
-        if (t) A.createTask({ title: t, parentId: n.id });
-      }, { cls: 'sm ghost', ic: 'plus', title: 'A real task inside this one, with its own status and updates' }),
-      sections ? btn('Section', async () => {
-        const name = await promptDialog({ title: 'New section', label: 'Name', ok: 'Add', placeholder: 'e.g. Laser', body: 'A heading inside the job, to group its tasks and steps.' });
+    sections ? el('div', { class: 'row' },
+      btn('Section', async () => {
+        const name = await promptDialog({ title: 'New section', label: 'Name', ok: 'Add', placeholder: 'e.g. Laser', body: 'A heading inside the job, to group its tasks.' });
         if (name) A.createGroup({ name, parentId: n.id });
-      }, { cls: 'sm ghost', ic: 'folderPlus', title: 'A heading to group tasks and steps' }) : null));
-}
-
-function kidMenu(anchor, c, { at = null } = {}) {
-  if (c.kind === T.KIND.step) stepMenu(anchor, c, { at });
-  else taskMenu(anchor, c, { at });
-}
-
-function stepMenu(anchor, s, { at = null } = {}) {
-  const inside = containerStep(s);
-  const can = editable(s);
-  const items = [
-    { label: 'Open', icon: 'open', onSelect: () => openTask(s.id) },
-    'sep',
-    ...(inside || !can ? [] : [{ heading: 'Step' }, ...S.STEP_STATES.map((v) => ({ label: S.STEP_LABEL[v], checked: (s.state ?? 'todo') === v, onSelect: () => A.setStepState(s.id, v) })), 'sep']),
-    can ? { label: 'Add sub-steps', icon: 'plus', onSelect: async () => {
-      const v = await promptDialog({ title: `Sub-steps of ${s.label}`, label: 'One a line', multiline: true, ok: 'Add', placeholder: 'Body\nExtension\nHead' });
-      if (v) for (const line of v.split(/\r?\n/).map((x) => x.trim()).filter(Boolean)) A.addStep(s.id, line);
-    } } : null,
-    lead() ? { label: 'Make it a task', icon: 'tasks', onSelect: () => A.promoteStep(s.id) } : null,
-    lead() ? { label: 'Move to…', icon: 'move', onSelect: async () => (await import('./pickers.js')).moveDialog(s.id) } : null,
-    can ? { label: 'Rename', icon: 'edit', onSelect: () => A.rename(s.id) } : null,
-    lead() ? { label: 'Delete…', icon: 'trash', danger: true, onSelect: async () => { const out = openId === s.id ? leaveTo(s) : null; if (await A.remove(s.id)) out?.(); } } : null,
-  ].filter(Boolean);
-  while (items[items.length - 1] === 'sep') items.pop();
-  menu(anchor, items, { label: `${s.label} actions`, at });
+      }, { cls: 'sm ghost', ic: 'folderPlus', title: 'A heading to group tasks' })) : null);
 }
 
 function sectionMenu(anchor, g, { at = null } = {}) {
@@ -939,9 +943,11 @@ function footer(n) {
 function dock(n) {
   if (!isPhone()) return el('div', { class: 'panel-dock', hidden: true });
   const focusCompose = () => { const ta = rootEl.querySelector('.compose-input'); ta?.scrollIntoView({ block: 'center' }); ta?.focus(); };
-  const primary = !A.canWrite(n) ? null : {
+  // Part of its job: ticked Done by whoever may edit the job, never submitted.
+  const closes = state.role === 'lead' || light(n);
+  const primary = !A.canWrite(n) || derived(n) ? null : {
     todo: ['Start', () => A.start(n.id)],
-    in_progress: state.role === 'lead' ? ['Mark done', () => A.setStatus(n.id, 'done')] : ['Submit for check', () => A.setStatus(n.id, 'check')],
+    in_progress: closes ? ['Mark done', () => A.setStatus(n.id, 'done')] : ['Submit for check', () => A.setStatus(n.id, 'check')],
     check: state.role === 'lead' ? ['Approve', () => A.setStatus(n.id, 'done')]
       : S.canTakeBack(n, state.me) ? ['Take back', () => A.takeBack(n.id), 'secondary'] : null,
     fix: ['Submit for check', () => A.setStatus(n.id, 'check')],

@@ -13,7 +13,8 @@ import * as TM from '../js/team.js';
 import * as NT from '../js/notes.js';
 import * as PH from '../js/photos.js';
 import * as SH from '../js/sharing.js';
-import { sampleNodes, tiledoData, tiledoArchive, excelRows } from './samples.js';
+import * as M from '../js/migrate.js';
+import { sampleNodes, sampleStepNodes, tiledoData, tiledoArchive, excelRows } from './samples.js';
 
 const results = [];
 let group = '';
@@ -60,7 +61,7 @@ export async function run() {
     const idx = index();
     ok(T.isJob(idx, idx.byId.get('j1')), 'j1 is a job');
     ok(T.isJob(idx, idx.byId.get('j3')), 'j3 in a sub-group is a job');
-    ok(!T.isJob(idx, idx.byId.get('t1')), 't1 under a step is a task');
+    ok(!T.isJob(idx, idx.byId.get('t1')), 't1 under a task is a task');
     ok(!T.isJob(idx, idx.byId.get('t2')), 't2 in a section is a task');
   });
   test('category path skips the master and stops at the job', () => {
@@ -69,7 +70,7 @@ export async function run() {
     expect(T.pathText(idx, 't2'), 'Alpha Units');
     expect(T.pathText(idx, 'j3', { skipMaster: false }), 'Production › Alpha Units › Small range');
   });
-  test('colour and steps template come from the nearest group', () => {
+  test('colour and tasks template come from the nearest group', () => {
     const idx = index();
     expect(T.colourOf(idx, 'j3'), 2);
     expect(T.colourOf(idx, 'j4'), 5);
@@ -82,17 +83,36 @@ export async function run() {
     ok(T.isSection(idx, idx.byId.get('sec')), 'sec is a section');
     ok(!T.isSection(idx, idx.byId.get('g-alpha-sub')), 'sub-category is not');
   });
-  test('progress counts leaf steps and subtasks, N/a left out', () => {
-    // Concept done; 3D model → Body done, Head todo, subtask t1 open; Approval N/a; section → t2 todo.
-    expect(T.progress(index(), 'j1'), { done: 2, total: 5 });
+  test('progress: through tasks part of the job, a task someone has once, cancelled left out', () => {
+    // Concept done; 3D model → Body done, Head todo, t1 (the lead's) open; Approval cancelled; section → t2 todo.
+    expect(T.progress(index(), 'j1'), { done: 2, total: 5 }, 'the same numbers the steps gave');
   });
-  test('next step is the first open leaf, depth first', () => {
-    expect(T.nameOf(T.nextStep(index(), 'j1')), 'Head');
+  test('the next task is the first open one, depth first, inside tasks part of the job', () => {
+    expect(T.nameOf(T.nextTask(index(), 'j1')), 'Head');
   });
-  test('cascade targets: open tasks and open leaf steps inside', () => {
+  test('cascade targets: every open task inside', () => {
     const c = T.cascadeTargets(index(), 'j1');
-    expect(c.tasks.sort(), ['t1', 't2']);
-    expect(c.steps.sort(), ['s2b']);
+    expect(c.tasks.sort(), ['s2', 's2b', 't1', 't2']);
+  });
+  // ---- one kind of task (decided 2026-11-06) ----
+  test('a task inside a job with nobody on it is part of the job; a job never is', () => {
+    const idx = index();
+    ok(T.isLight(idx, idx.byId.get('s1')), 'Concept is part of j1');
+    ok(T.isLight(idx, idx.byId.get('s2a')), 'and so is a task inside it');
+    ok(!T.isLight(idx, idx.byId.get('t1')), 'a task someone has is a task of its own');
+    ok(!T.isLight(idx, idx.byId.get('j2')), "a job with nobody on it is the lead's, not part of anything");
+    ok(T.isContainer(idx, idx.byId.get('s2')), '3D model holds tasks');
+    ok(!T.isContainer(idx, idx.byId.get('s1')), 'Concept holds none');
+  });
+  test('its state comes from inside: done when all is finished, in progress when anything is under way', () => {
+    const shown = (patches) => { const idx = T.buildIndex(apply(sampleNodes(), patches)); return T.shownStatus(idx, idx.byId.get('s2')); };
+    expect(shown([]), 'in_progress', 'Body done, t1 under way');
+    expect(shown([{ id: 's2a', status: 'todo' }, { id: 't1', status: 'todo' }]), 'todo', 'nothing started');
+    expect(shown([{ id: 's2b', status: 'done' }, { id: 't1', status: 'cancelled' }]), 'done', 'done or cancelled, all of it');
+    expect(shown([{ id: 's2a', status: 'cancelled' }, { id: 's2b', status: 'cancelled' }, { id: 't1', status: 'cancelled' }]), 'cancelled');
+    expect(shown([{ id: 's2', status: 'cancelled' }]), 'cancelled', 'its own Cancelled stands');
+    const idx = index();
+    expect(T.shownStatus(idx, idx.byId.get('t1')), 'in_progress', 'a task someone has shows its own');
   });
   test('renumber returns only what changes', () => {
     const list = [{ id: 'a', order: 1024 }, { id: 'b', order: 5 }, { id: 'c', order: 3072 }];
@@ -127,10 +147,10 @@ export async function run() {
     const after = T.buildIndex(apply(sampleNodes(), r.patches));
     expect(T.childrenOf(after, 'g-alpha').map((n) => n.id), ['j1', 'j2', 'j4', 'g-alpha-sub']);
   });
-  test('steps only live inside a job; products only in a category', () => {
+  test('a task moves anywhere (into a category it is a job); products only in a category', () => {
     const idx = T.buildIndex([...sampleNodes(), { id: 'p1', kind: 'product', parentId: 'g-beta', order: 9000, name: 'Model X' }]);
-    ok(T.nestProblem(idx, 's1', 'g-beta'), 'step into category refused');
-    ok(!T.nestProblem(idx, 's1', 'j2'), 'step into another job allowed');
+    ok(!T.nestProblem(idx, 's1', 'g-beta'), 'a task part of a job into a category: it becomes a job');
+    ok(!T.nestProblem(idx, 's1', 'j2'), 'into another job allowed');
     ok(T.nestProblem(idx, 'p1', 'j1'), 'product into a job refused');
     ok(!T.nestProblem(idx, 'j2', 'p1'), 'job into a product allowed');
   });
@@ -138,7 +158,7 @@ export async function run() {
     expect(T.openJobCount(index(), 'g-alpha'), 3);
     expect(T.openJobCount(index(), 'g-beta'), 0);
   });
-  test('steps template text round-trips with sub-steps', () => {
+  test('tasks template text round-trips with the tasks inside them', () => {
     const text = 'Concept\n3D model\n  Body\n  Head\nDrawings';
     const t = T.templateFromText(text);
     expect(t, [{ label: 'Concept' }, { label: '3D model', children: [{ label: 'Body' }, { label: 'Head' }] }, { label: 'Drawings' }]);
@@ -159,7 +179,7 @@ export async function run() {
   test('activity moves every task above: the sub-job as well as the job', () => {
     const idx = T.buildIndex([...sampleNodes(), { id: 'sub', kind: 'task', parentId: 't2', order: 1, title: 'Deep task', status: 'todo' }]);
     expect(T.activityTargets(idx, 'sub'), ['j1', 't2', 'sub']);
-    expect(T.activityTargets(idx, 's2b'), ['j1']);
+    expect(T.activityTargets(idx, 's2b'), ['j1', 's2b'], 'not the task part of the job it sits in: only jobs and tasks of their own need it');
   });
   test('restoring one item brings back only it, not everything archived at that moment', () => {
     const stamp = '2026-11-04T05:00:00.000Z';
@@ -298,7 +318,7 @@ export async function run() {
     expect(r.updates[0].text, 'Customer cancelled');
     expect(S.eventLabel(r.updates[0]), 'Cancelled');
   });
-  test('cancelling a job cancels its open tasks and steps; done stays done', () => {
+  test('cancelling a job cancels every open task inside it; done stays done', () => {
     const nodes = apply(sampleNodes(), [{ id: 't2', status: 'done' }]);
     const r = S.changeStatus(T.buildIndex(nodes), 'j1', 'cancelled', { by: BY, at: AT, reason: 'Dropped' });
     const byId = Object.fromEntries(r.patches.map((x) => [x.id, x]));
@@ -306,10 +326,10 @@ export async function run() {
     expect(byId.t1.cancelled.withId, 'j1');
     expect(byId.t1.cancelled.prevStatus, 'in_progress');
     ok(!byId.t2, 'the done task is left alone');
-    expect(byId.s2b.state, 'na', 'open leaf step becomes N/a');
-    expect(byId.s2b.cancelledFrom, { state: 'todo', withId: 'j1' });
-    ok(!byId.s1 && !byId.s2a, 'done steps are left alone');
-    ok(!byId.s2, 'a step with sub-steps is derived, not written');
+    expect([byId.s2b.status, byId.s2b.cancelled.withId, byId.s2b.cancelled.prevStatus], ['cancelled', 'j1', 'todo'], 'a task part of the job: cancelled with it, as N/a was');
+    ok(!byId.s1 && !byId.s2a && !byId.s3, 'done ones, and one cancelled before, are left alone');
+    ok(r.updates.some((u) => u.taskId === 't1' && u.kind === 'cancel'), 'a task someone has gets a timeline entry');
+    ok(!r.updates.some((u) => u.taskId === 's2b'), 'a task part of the job does not: thirty ticks would write thirty');
   });
   test('cancelled counts as finished for blocking, the job and what went with it', () => {
     let nodes = sampleNodes();
@@ -339,7 +359,8 @@ export async function run() {
     const byId = Object.fromEntries(r.patches.map((x) => [x.id, x]));
     expect(byId.j1.cancelled, null);
     expect(byId.t1.status, 'in_progress');
-    expect(byId.s2b.state, 'todo');
+    expect(byId.s2b.status, 'todo');
+    ok(!byId.s3, 'cancelled before the job was: stays cancelled');
     expect(r.updates[0].kind, 'reopen');
     expect(S.eventLabel(r.updates[0]), 'Reopened · In progress');
   });
@@ -350,8 +371,8 @@ export async function run() {
     const r = S.changeStatus(T.buildIndex(nodes), 'j1', 'in_progress', { by: BY, at: AT });
     ok(!r.patches.some((x) => x.id === 't2'), 't2 stays cancelled');
   });
-  // ---- only a Design lead marks anything Done (decided 2026-11-04) ----
-  test('a designer cannot mark anything done, from any status', () => {
+  // ---- only a Design lead marks a job, or a task with an assignee, Done (2026-11-04, narrowed 2026-11-06) ----
+  test('a designer cannot mark a job done, from any status', () => {
     for (const from of ['todo', 'in_progress', 'waiting', 'fix', 'check']) {
       const nodes = apply(sampleNodes(), [{ id: 'j2', status: from, waiting: from === 'waiting' ? { note: 'x', since: AT, prevStatus: 'todo', blockedBy: [] } : null }]);
       const r = S.changeStatus(T.buildIndex(nodes), 'j2', 'done', { by: BY, at: AT, role: 'designer' });
@@ -382,9 +403,25 @@ export async function run() {
     expect(r.updates[0].text, 'forgot a part');
     expect(S.eventLabel(r.updates[0]), 'Taken back from check');
   });
-  test('Close them too as a designer closes no tasks (only a lead marks done)', () => {
+  test('Close them too as a designer closes only the tasks part of the job, never one someone has', () => {
     const r = S.closeInside(index(), 'j1', { by: BY, at: AT, role: 'designer' });
-    expect(r.tasks, []);
+    expect(r.tasks.sort(), ['s2', 's2b']);
+  });
+  test('a designer ticks a task part of the job Done; never one someone has, never a job', () => {
+    const DS = 'designer@example.test';
+    const idx = index();
+    const r = S.changeStatus(idx, 's2b', 'done', { by: DS, at: AT, role: 'designer' });
+    ok(!r.error, r.error);
+    expect([r.patches[0].status, r.patches[0].doneAt], ['done', AT]);
+    ok(!S.changeStatus(idx, 's2b', 'cancelled', { by: DS, at: AT, role: 'designer' }).error, 'and may cancel it');
+    ok(S.changeStatus(idx, 't1', 'done', { by: DS, at: AT, role: 'designer' }).error, 'a task with an assignee: refused');
+    ok(S.changeStatus(idx, 'j2', 'done', { by: DS, at: AT, role: 'designer' }).error, 'a job: refused');
+  });
+  test('a task part of the job never goes for check on its own', () => {
+    const idx = index();
+    ok(S.changeStatus(idx, 's2b', 'check', { by: BY, at: AT, role: 'lead' }).error, 'not even the lead submits one');
+    ok(!S.changeStatus(idx, 't1', 'check', { by: BY, at: AT, role: 'designer' }).error, 'one someone has does');
+    ok(S.changeProblem('in_progress', 'fix', 'lead', true), 'nor is one sent back');
   });
   test('a designer cannot reopen something straight into Done', () => {
     let nodes = apply(sampleNodes(), [{ id: 'j4', status: 'done' }]);
@@ -478,22 +515,27 @@ export async function run() {
     expect(r.patches[0].status, 'fix');
     expect(r.patches[0].fixNote, 'Hole pattern off');
   });
-  test('step states cycle To do → Doing → Done → N/a', () => {
-    expect(['todo', 'doing', 'done', 'na'].map(S.nextStepState), ['doing', 'done', 'na', 'todo']);
+  test('the box on a task part of the job: To do → In progress → Done, for a designer too', () => {
+    for (const role of ['lead', 'designer']) {
+      const f = (status) => S.taskForward({ status }, role, true);
+      expect(['todo', 'in_progress', 'waiting', 'done', 'cancelled'].map(f), ['in_progress', 'done', null, null, null], role);
+    }
   });
-  test('a step checkbox goes backwards: Doing → To do, Done → Doing, N/a → Done', () => {
-    expect(['doing', 'done', 'na', 'todo'].map(S.stepBack), ['todo', 'doing', 'done', null]);
+  test('backwards on a task part of the job: Done → In progress → To do; Cancelled comes back', () => {
+    const me = 'designer@example.test';
+    expect(['done', 'in_progress', 'todo'].map((status) => S.taskBack({ status }, 'designer', me, true)), ['in_progress', 'todo', null]);
+    expect(S.taskBack({ status: 'cancelled', cancelled: { prevStatus: 'in_progress' } }, 'designer', me, true), 'in_progress', 'as N/a → Done did, it reopens where it was');
   });
-  test('a subtask checkbox: the lead goes To do → In progress → Done', () => {
+  test('a task checkbox: the lead goes To do → In progress → Done', () => {
     const f = (status) => S.taskForward({ status }, 'lead');
     expect(['todo', 'in_progress', 'check', 'fix'].map(f), ['in_progress', 'done', 'done', 'in_progress']);
     expect(['waiting', 'done', 'cancelled'].map(f), [null, null, null], 'those change from the task itself');
   });
-  test('a subtask checkbox: a designer goes To do → In progress → Ready for check, never Done', () => {
+  test('a task checkbox: a designer goes To do → In progress → Ready for check, never Done', () => {
     const f = (status) => S.taskForward({ status }, 'designer');
     expect(['todo', 'in_progress', 'check', 'fix'].map(f), ['in_progress', 'check', null, 'in_progress']);
   });
-  test('a subtask checkbox backwards: Done → In progress (lead only), In progress → To do, check → Take back', () => {
+  test('a task checkbox backwards: Done → In progress (lead only), In progress → To do, check → Take back', () => {
     const me = 'designer@example.test';
     expect(S.taskBack({ status: 'done' }, 'lead', BY), 'in_progress');
     expect(S.taskBack({ status: 'done' }, 'designer', me), null, 'nobody else could put it back to Done');
@@ -503,41 +545,41 @@ export async function run() {
     expect(S.taskBack({ status: 'check', submittedBy: 'other@example.test' }, 'lead', BY), null, 'the lead sends back instead');
     expect(['todo', 'waiting', 'fix', 'cancelled'].map((status) => S.taskBack({ status }, 'lead', BY)), [null, null, null, null]);
   });
-  test('auto-advance: a step ticked Done starts the next To-do step at its level', () => {
+  test('auto-advance: a task part of the job ticked Done starts the next To-do one at its level', () => {
     const nodes = [
       { id: 'j', kind: 'task', parentId: 'g-alpha', order: 1, title: 'J', status: 'in_progress' },
-      { id: 'a', kind: 'step', parentId: 'j', order: 1, label: 'A', state: 'done' },
-      { id: 'b', kind: 'step', parentId: 'j', order: 2, label: 'B', state: 'na' },
-      { id: 'c', kind: 'step', parentId: 'j', order: 3, label: 'C', state: 'todo' },
-      { id: 'd', kind: 'step', parentId: 'j', order: 4, label: 'D', state: 'todo' },
+      { id: 'a', kind: 'task', parentId: 'j', order: 1, title: 'A', status: 'done', assignee: null },
+      { id: 'b', kind: 'task', parentId: 'j', order: 2, title: 'B', status: 'cancelled', assignee: null },
+      { id: 'c', kind: 'task', parentId: 'j', order: 3, title: 'C', status: 'todo', assignee: null },
+      { id: 'd', kind: 'task', parentId: 'j', order: 4, title: 'D', status: 'todo', assignee: null },
     ];
     const idx = T.buildIndex(nodes);
-    expect(S.nextStepToStart(idx, 'a'), 'c', 'N/a and Done steps are passed over');
-    expect(S.nextStepToStart(idx, 'c'), 'd');
-    expect(S.nextStepToStart(idx, 'd'), null, 'the last step starts nothing');
-    const busy = T.buildIndex(apply(nodes, [{ id: 'c', state: 'doing' }]));
-    expect(S.nextStepToStart(busy, 'a'), null, 'a step already Doing ends the search');
+    expect(S.nextTaskToStart(idx, 'a'), 'c', 'Cancelled and Done are passed over');
+    expect(S.nextTaskToStart(idx, 'c'), 'd');
+    expect(S.nextTaskToStart(idx, 'd'), null, 'the last starts nothing');
+    const busy = T.buildIndex(apply(nodes, [{ id: 'c', status: 'in_progress' }]));
+    expect(S.nextTaskToStart(busy, 'a'), null, 'one already under way ends the search');
   });
-  test("auto-advance: into the next step's sub-steps, and never out of its own level", () => {
-    const idx = T.buildIndex(apply(sampleNodes(), [{ id: 's2a', state: 'todo' }]));
-    expect(S.nextStepToStart(idx, 's1'), 's2a', 'the next step has sub-steps: its first To-do one');
+  test('auto-advance: into the insides of the next one when it holds tasks, never out of its own level', () => {
+    const idx = T.buildIndex(apply(sampleNodes(), [{ id: 's2a', status: 'todo' }]));
+    expect(S.nextTaskToStart(idx, 's1'), 's2a', 'the next holds tasks: its first To-do one');
     const idx2 = T.buildIndex(sampleNodes());
-    expect(S.nextStepToStart(idx2, 's1'), 's2b', 'Body is done, so Head');
-    expect(S.nextStepToStart(idx2, 's2b'), null, 'the subtask after it is not a step, and the level ends there');
+    expect(S.nextTaskToStart(idx2, 's1'), 's2b', 'Body is done, so Head');
+    expect(S.nextTaskToStart(idx2, 's2b'), null, 'the one after it is under way: the search ends there');
   });
-  test("auto-advance: a subtask ticked Done starts the next To-do subtask, only if nobody else's", () => {
+  test("auto-advance: a task ticked Done starts the next To-do task, only if nobody else's", () => {
     const me = 'designer@example.test';
     const nodes = [
       { id: 'j', kind: 'task', parentId: 'g-alpha', order: 1, title: 'J', status: 'in_progress', assignee: me },
       { id: 'a', kind: 'task', parentId: 'j', order: 1, title: 'A', status: 'done', assignee: me },
-      { id: 'x', kind: 'step', parentId: 'j', order: 2, label: 'X', state: 'todo' },
+      { id: 'x', kind: 'task', parentId: 'j', order: 2, title: 'X', status: 'done', assignee: null },
       { id: 'b', kind: 'task', parentId: 'j', order: 3, title: 'B', status: 'check', assignee: me },
       { id: 'c', kind: 'task', parentId: 'j', order: 4, title: 'C', status: 'todo', assignee: me },
       { id: 'd', kind: 'task', parentId: 'j', order: 5, title: 'D', status: 'todo', assignee: 'other@example.test' },
       { id: 'e', kind: 'task', parentId: 'j', order: 6, title: 'E', status: 'todo', assignee: null },
     ];
     const idx = T.buildIndex(nodes);
-    expect(S.nextTaskToStart(idx, 'a'), 'c', 'steps and submitted subtasks are passed over');
+    expect(S.nextTaskToStart(idx, 'a'), 'c', 'done and submitted tasks are passed over');
     expect(S.nextTaskToStart(idx, 'c'), null, "the next one is someone else's: left alone");
     expect(S.nextTaskToStart(idx, 'd'), 'e', "nobody's yet: started");
     expect(S.nextTaskToStart(idx, 'e'), null);
@@ -649,6 +691,15 @@ export async function run() {
     expect(wait.waiting.prevStatus, 'in_progress');
     expect(wait.parentId, job.id, 'subtree kept under its job');
     expect(built.views[job.id], 'list', 'TileDo view choice carried');
+    expect([job.assignee, wait.assignee], [BY, null], 'the job is the importer\'s; what is inside it has nobody on it, part of the job');
+  });
+  test('a TileDo Review inside a job comes in under way: a task part of its job is never checked on its own', () => {
+    const q = TD.parseTiledo(JSON.stringify({ tasks: [
+      { id: 'r1', title: 'Job', stage: 'todo', parent_id: null, order: 0 },
+      { id: 'r2', title: 'Inner review', stage: 'review', parent_id: 'r1', order: 0 },
+    ] }));
+    const built = TD.buildTiledo(q, { r1: { as: 'job', into: null } }, { idx: empty, by: BY, at: AT, newId });
+    expect(built.nodes.find((x) => x.title === 'Inner review').status, 'in_progress');
   });
   test('done jobs can go straight to the archive; archive.json stays archived', () => {
     const plan = TD.defaultPlan(p, []);
@@ -725,7 +776,7 @@ export async function run() {
 
   // -------------------------------------------------------------------------
   group = 'convert';
-  test('a job becomes a category: details stashed, steps and subtasks become its jobs', () => {
+  test('a job becomes a category: details stashed, its tasks become its jobs', () => {
     const nodes = apply(sampleNodes(), [{ id: 'j1', brief: 'The brief', revision: 'R2', assignee: BY }]);
     const r = C.toCategory(T.buildIndex(nodes), 'j1', { by: BY, at: AT, colour: 7 });
     ok(!r.error, r.error);
@@ -737,8 +788,9 @@ export async function run() {
     expect(p.jobStash.brief, 'The brief');
     expect(p.status, null, 'hidden while it is a category');
     const idx = T.buildIndex(apply(nodes, r.patches));
-    ok(T.isJob(idx, idx.byId.get('s2')), 'the step "3D model" is now a job');
-    expect(idx.byId.get('t1').parentId, 's2', 'the subtask under it stays inside that new job');
+    ok(T.isJob(idx, idx.byId.get('s2')), '"3D model", part of the job, is now a job');
+    expect(idx.byId.get('s2').assignee, BY, 'and goes to whoever had the job');
+    expect(idx.byId.get('t1').parentId, 's2', 'the task under it stays inside that new job');
     ok(!T.isSection(idx, idx.byId.get('sec')), 'its section is now a sub-category');
     expect(r.updates[0].kind, 'convert');
     expect(S.eventLabel(r.updates[0]), 'Turned into a category');
@@ -753,13 +805,14 @@ export async function run() {
     ok(C.toCategory(index(), 't1', { by: BY, at: AT }).error, 'a subtask is refused');
     ok(C.toCategory(index(), 'g-alpha', { by: BY, at: AT }).error, 'a category is refused');
   });
-  test('a category becomes a job: its jobs become subtasks, sub-categories sections', () => {
+  test('a category becomes a job: its jobs become tasks inside it, sub-categories sections', () => {
     const r = C.toJob(index(), 'g-alpha', { by: BY, at: AT });
     ok(!r.error, r.error);
     const p = r.patches[0];
     expect([p.kind, p.title, p.status, p.assignee], ['task', 'Alpha Units', 'todo', BY]);
     const idx = T.buildIndex(apply(sampleNodes(), r.patches));
-    ok(!T.isJob(idx, idx.byId.get('j1')), 'j1 is a subtask now');
+    ok(!T.isJob(idx, idx.byId.get('j1')), 'j1 is a task inside it now');
+    ok(T.isLight(idx, idx.byId.get('j1')), 'with nobody on it, part of the new job');
     ok(T.isSection(idx, idx.byId.get('g-alpha-sub')), 'its sub-category is a section now');
     expect(S.eventLabel(r.updates[0]), 'Turned into a job');
   });
@@ -780,29 +833,19 @@ export async function run() {
       [was.kind, was.title, was.status, was.brief, was.due, was.priority, was.assignee]);
     expect(after.jobStash, null);
     const kids = T.childrenOf(T.buildIndex(apply(mid, b.patches)), 'j1');
-    expect(kids.filter((c) => c.kind === 'task' && ['s1', 's2'].includes(c.id)).map((c) => c.id), ['s1', 's2'], 'the step-jobs are subtasks now, not steps again');
-    expect(kids.filter((c) => c.kind === 'step').map((c) => c.id), ['s3'], 'the N/a step was kept hidden and is a step again');
+    expect(kids.filter((c) => c.kind === 'task').map((c) => c.id), ['s1', 's2', 's3'], 'its jobs are tasks inside it again, in their order');
   });
-  test('converted steps: Done → Done, Doing → In progress, To do → To do, in their order', () => {
-    const nodes = apply(sampleNodes(), [{ id: 's1', state: 'doing' }, { id: 's2b', state: 'doing' }]);
-    const doneStep = { id: 's0', kind: 'step', parentId: 'j1', order: 512, label: 'Brief agreed', state: 'done' };
-    const r = C.toCategory(T.buildIndex([...nodes, doneStep]), 'j1', { by: BY, at: AT, colour: 2 });
-    const byId = Object.fromEntries(r.patches.map((x) => [x.id, x]));
-    expect([byId.s0.kind, byId.s0.status, byId.s0.title], ['task', 'done', 'Brief agreed']);
-    expect([byId.s1.kind, byId.s1.status], ['task', 'in_progress']);
-    expect([byId.s2.kind, byId.s2.status], ['task', 'todo']);
-    ok(byId.s0.doneAt, 'a done step-job has a done time');
-    ok(!byId.s3, 'the N/a step is not a job');
-    ok(!byId.s2a && !byId.s2b, 'sub-steps are left as steps');
-    const idx = T.buildIndex(apply([...nodes, doneStep], r.patches));
-    expect(T.childrenOf(idx, 'j1').filter((c) => c.kind === 'task').map((c) => c.id), ['s0', 's1', 's2'], 'same order');
-    expect(T.childrenOf(idx, 's2').filter((c) => c.kind === 'step').map((c) => c.state), ['done', 'doing'], 'the new job keeps its sub-steps as steps');
-    ok(r.updates.some((u) => u.taskId === 's1' && u.kind === 'convert'), 'each step-job notes where it came from');
-  });
-  test('a subtask under an N/a step is lifted out to the category, not hidden', () => {
-    const nodes = [...sampleNodes(), { id: 'tna', kind: 'task', parentId: 's3', order: 1, title: 'Under N/a', status: 'todo' }];
-    const r = C.toCategory(T.buildIndex(nodes), 'j1', { by: BY, at: AT });
-    expect(r.patches.find((x) => x.id === 'tna').parentId, 'j1');
+  test('its tasks become jobs as they are: status, order, and a cancelled one in the Cancelled strip', () => {
+    const nodes = apply(sampleNodes(), [{ id: 'j1', assignee: 'alex@example.test' }, { id: 's1', status: 'in_progress' }]);
+    const r = C.toCategory(T.buildIndex(nodes), 'j1', { by: BY, at: AT, colour: 2 });
+    const idx = T.buildIndex(apply(nodes, r.patches));
+    expect(T.childrenOf(idx, 'j1').filter((c) => c.kind === 'task').map((c) => [c.id, c.status, c.assignee]),
+      [['s1', 'in_progress', 'alex@example.test'], ['s2', 'todo', 'alex@example.test'], ['s3', 'cancelled', 'alex@example.test']]);
+    ok(T.isJob(idx, idx.byId.get('s3')), 'the cancelled one (what N/a was) is a job too, not hidden');
+    expect(idx.byId.get('t1').assignee, BY, 'a task someone has keeps them');
+    expect(T.childrenOf(idx, 's2').filter((c) => c.kind === 'task').map((c) => c.id), ['s2a', 's2b', 't1'], 'what was inside stays inside');
+    const lead = C.toCategory(index(), 'j1', { by: BY, at: AT, colour: 2 });
+    ok(!lead.patches.some((x) => x.id === 's1'), 'a job of the lead\'s own: its tasks stay with nobody, the lead\'s');
   });
 
   // -------------------------------------------------------------------------
@@ -812,11 +855,15 @@ export async function run() {
   const blNodes = () => apply(sampleNodes(), [
     { id: 'j2', lastActivityAt: old }, { id: 'j3', lastActivityAt: old },
     { id: 't2', lastActivityAt: old, status: 'todo' },
-  ]).concat([{ id: 'deep', kind: 'task', parentId: 't2', order: 1, title: 'Deep', status: 'todo', lastActivityAt: old }]);
-  test('the pool is my To-do jobs and sub-jobs, never bottom-level tasks', () => {
+    // Old and To do, holding tasks, but part of its job: never in the pool.
+    { id: 's2', lastActivityAt: old }, { id: 's2a', status: 'todo', lastActivityAt: old },
+  ]).concat([{ id: 'deep', kind: 'task', parentId: 't2', order: 1, title: 'Deep', status: 'todo', lastActivityAt: old, assignee: BY }]);
+  test('the pool is my To-do jobs and sub-jobs, never bottom-level tasks or tasks part of a job', () => {
     const idx = T.buildIndex(blNodes());
     const pool = BL.backlogPool(idx, { me: BY, days: 14, now: NOW }).map((n) => n.id).sort();
     expect(pool, ['j2', 'j3', 't2']);
+    const other = BL.backlogPool(idx, { me: 'alex@example.test', days: 14, now: NOW }).map((n) => n.id).sort();
+    expect(other, ['j2', 'j3'], 'jobs with nobody on them, as before (only the lead\'s Home shows it); not the lead\'s own sub-job');
   });
   test('Hide from the Backlog is offered only when an ancestor is in the pool too', () => {
     const idx = T.buildIndex(apply(blNodes(), [{ id: 'j1', status: 'todo', lastActivityAt: old }]));
@@ -839,10 +886,10 @@ export async function run() {
     { id: 't1', assignee: DA, status: 'in_progress' },
     { id: 't2', assignee: DB, status: 'todo' },
   ]);
-  test('ownerTask: the task a step or section sits in, through sub-steps', () => {
+  test('ownerTask: a task is its own; a section belongs to the task it sits in', () => {
     const idx = index();
-    expect(T.ownerTask(idx, 's2b').id, 'j1', 'a sub-step belongs to its job');
-    expect(T.ownerTask(idx, 'sec').id, 'j1', 'a section too');
+    expect(T.ownerTask(idx, 's2b').id, 's2b', 'a task part of the job is a task');
+    expect(T.ownerTask(idx, 'sec').id, 'j1', 'a section belongs to its job');
     expect(T.ownerTask(idx, 't1').id, 't1', 'a task is its own');
     expect(T.ownerTask(idx, 'g-alpha'), null, 'a category belongs to no task');
   });
@@ -886,9 +933,14 @@ export async function run() {
     expect(TM.inboxRepairs(idxOf(grp({ name: 'A former designer' })), { designers: [], people: {}, at: AT }),
       [{ id: TM.inboxId(DA), inboxOf: DA, name: prefix, updatedAt: AT }], 'no name yet: the address, better than nobody');
   });
-  test('Ready for checking: every task in check, the longest waiting first', () => {
-    const idx = T.buildIndex(apply(teamNodes(), [{ id: 't2', status: 'check', submittedAt: ago(5) }]));
+  test('Ready for checking: every task in check, the longest waiting first; never one part of a job', () => {
+    const idx = T.buildIndex(apply(teamNodes(), [{ id: 't2', status: 'check', submittedAt: ago(5) }, { id: 's2b', status: 'check', submittedAt: ago(9) }]));
     expect(TM.checkQueue(idx).map((t) => t.id), ['t2', 'j2']);
+  });
+  test('the lead\'s Team column: unassigned means jobs, not the tasks part of them', () => {
+    const idx = T.buildIndex(apply(sampleNodes(), [{ id: 's2b', status: 'in_progress' }, { id: 't1', assignee: DA }]));
+    const ids = TM.teamColumn(idx, BY, { includeUnassigned: true }).flatMap((g) => g.rows.map((t) => t.id)).sort();
+    expect(ids, ['j1', 'j2', 'j3', 't2'], 's2b, part of j1, is not a row of its own');
   });
   test('time in a status: statusAt, else the stamp the status kept', () => {
     expect(TM.statusSince({ status: 'in_progress', statusAt: ago(3), lastActivityAt: ago(1) }), ago(3));
@@ -921,8 +973,30 @@ export async function run() {
       { id: 'j1', assignee: BY }, { id: 't1', assignee: BY, status: 'in_progress' }, { id: 't2', assignee: DB, status: 'todo' },
     ]));
     const p = TM.reassignPatches(idx, 'j1', DA, { at: AT });
-    expect(p.map((x) => [x.id, x.assignee]), [['j1', DA], ['t1', DA]]);
-    expect(TM.reassignPatches(idx, 's1', DA, { at: AT }), [], 'a step has nobody to assign');
+    expect(p.map((x) => [x.id, x.assignee]), [['j1', DA], ['t1', DA]], 'the tasks part of the job go with it as they are, nobody on them');
+    const fromNobody = TM.reassignPatches(T.buildIndex(apply(sampleNodes(), [{ id: 'j1', assignee: null }])), 'j1', DA, { at: AT });
+    expect(fromNobody.map((x) => x.id), ['j1'], 'a job of the lead\'s given out: its tasks with nobody on them are not promoted');
+  });
+  test('promote: assigning a task part of the job makes it a task of their own; its status stays', () => {
+    const idx = index();
+    const p = TM.reassignPatches(idx, 's2b', DA, { at: AT });
+    expect(p, [{ id: 's2b', assignee: DA, updatedAt: AT, lastActivityAt: AT }]);
+    const after = T.buildIndex(apply(sampleNodes(), p));
+    ok(!T.isLight(after, after.byId.get('s2b')), 'its own now');
+    expect(TM.myTaskGroups(after, DA, { now: T0 }).find((g) => g.key === 'todo').rows.map((t) => t.id), ['s2b'], 'on their list');
+    const box = TM.reassignPatches(idx, 's2', DA, { at: AT })[0];
+    expect([box.status, box.statusAt], ['in_progress', AT], 'one holding tasks starts from the state they gave it');
+  });
+  test('demote: unassigning a task inside a job makes it part of the job; check and send-back go back to In progress', () => {
+    const idx = T.buildIndex(apply(sampleNodes(), [{ id: 't1', assignee: DA, status: 'check', submittedBy: DA }, { id: 't2', assignee: DA, status: 'fix', fixNote: 'Holes' }]));
+    const p = TM.reassignPatches(idx, 't1', null, { at: AT })[0];
+    expect([p.assignee, p.status, p.submittedBy], [null, 'in_progress', null]);
+    const q = TM.reassignPatches(idx, 't2', null, { at: AT })[0];
+    expect([q.status, q.fixNote], ['in_progress', null]);
+    const waiting = T.buildIndex(apply(sampleNodes(), [{ id: 't1', status: 'waiting' }]));
+    ok(!('status' in TM.reassignPatches(waiting, 't1', null, { at: AT })[0]), 'any other status stays');
+    const job = TM.reassignPatches(T.buildIndex(apply(sampleNodes(), [{ id: 'j2', assignee: DA, status: 'check' }])), 'j2', null, { at: AT })[0];
+    ok(!('status' in job), 'a job unassigned is the lead\'s, and keeps its check');
   });
   test('a designer\'s list: theirs only, grouped by what to do next, done only this month', () => {
     const idx = T.buildIndex(apply(teamNodes(), [{ id: 'j4', assignee: DA, doneAt: ago(1) }]));
@@ -952,14 +1026,14 @@ export async function run() {
     const w = TM.nextLine(idx, { id: 'x', status: 'waiting', waiting: { since: ago(6) } }, { now: T0, waitingLine: () => 'Waiting: supplier sample' });
     expect(w.text, 'Waiting on: supplier sample · 6d');
   });
-  test('the steps strip: a segment per top-level step or subtask, sections looked into', () => {
-    expect(TM.stepStrip(index(), 'j1'), ['done', 'doing', 'na', 'todo']);
+  test('the strip: a segment per top-level task, sections looked into, one holding tasks as they stand', () => {
+    expect(TM.stageStrip(index(), 'j1'), ['done', 'doing', 'na', 'todo']);
   });
-  test('one action per row: Start, Post update, Submit once every step is done, else Open', () => {
+  test('one action per row: Start, Post update, Submit once everything inside is done, else Open', () => {
     const idx = index();
     expect(TM.rowAction(idx, { ...idx.byId.get('j2'), status: 'todo' }), 'start');
-    expect(TM.rowAction(idx, idx.byId.get('j1')), 'update', 'steps still open');
-    const allDone = T.buildIndex(apply(sampleNodes(), [{ id: 's2b', state: 'done' }, { id: 't1', status: 'done' }, { id: 't2', status: 'done' }]));
+    expect(TM.rowAction(idx, idx.byId.get('j1')), 'update', 'tasks still open');
+    const allDone = T.buildIndex(apply(sampleNodes(), [{ id: 's2b', status: 'done' }, { id: 't1', status: 'done' }, { id: 't2', status: 'done' }]));
     expect(TM.rowAction(allDone, allDone.byId.get('j1')), 'submit');
     expect(TM.rowAction(idx, { ...idx.byId.get('j2'), status: 'fix' }), 'open');
   });
@@ -1106,18 +1180,22 @@ export async function run() {
     expect(SH.inherited(idx, 'j2').level, 'stage', 'what it would get without its own choice');
     expect(SH.choiceOf({ shared: true }), null, 'only the three words count');
   });
-  test('the flags: on shared jobs, on a stage job\'s steps through sections, never into a subtask', () => {
-    const idx = shared([{ id: 'g-alpha', shared: 'stage' }, { id: 'g-beta', shared: 'status' }]);
+  test('the flags: on shared jobs; for stage, on the top-level tasks and inside those with nobody on them', () => {
+    const withKid = [...sampleNodes(), { id: 'kid', kind: 'task', parentId: 't1', order: 1, title: 'Inside the lead\'s own', status: 'todo', assignee: null }];
+    const share = [{ id: 'g-alpha', shared: 'stage' }, { id: 'g-beta', shared: 'status' }];
+    const idx = T.buildIndex(apply(withKid, share));
     const p = SH.sharePatches(idx);
     const by = Object.fromEntries(p.map((x) => [x.id, x.shareLevel]));
-    expect(Object.keys(by).sort(), ['j1', 'j2', 'j3', 'j4', 's1', 's2', 's2a', 's2b', 's3'].sort());
-    expect([by.j1, by.s2a, by.j4], ['stage', 'stage', 'status']);
-    ok(!('t1' in by) && !('t2' in by) && !('sec' in by), 'subtasks and sections are not flagged');
-    const after = T.buildIndex(apply(sampleNodes(), [{ id: 'g-alpha', shared: 'stage' }, { id: 'g-beta', shared: 'status' }, ...p]));
+    expect(Object.keys(by).sort(), ['j1', 'j2', 'j3', 'j4', 's1', 's2', 's2a', 's2b', 's3', 't1', 't2'].sort());
+    expect([by.j1, by.s2a, by.t2, by.j4], ['stage', 'stage', 'stage', 'status']);
+    ok(!('kid' in by), 'never inside a task someone has');
+    ok(!('sec' in by), 'sections are groups, which managers read anyway');
+    const after = T.buildIndex(apply(withKid, [...share, ...p]));
     expect(SH.sharePatches(after), [], 'idempotent');
     const unshared = T.buildIndex(apply(after.nodes, [{ id: 'g-alpha', shared: null }]));
     const off = SH.sharePatches(unshared);
-    expect(off.map((x) => [x.id, x.sharedEffective]).sort(), [['j1', false], ['j2', false], ['j3', false], ['s1', false], ['s2', false], ['s2a', false], ['s2b', false], ['s3', false]].sort(), 'turned off where it went');
+    expect(off.map((x) => x.id).sort(), ['j1', 'j2', 'j3', 's1', 's2', 's2a', 's2b', 's3', 't1', 't2'].sort(), 'turned off where it went');
+    ok(off.every((x) => x.sharedEffective === false));
     expect(SH.sharePatches(index()), [], 'nothing shared, nothing written');
   });
   test('outside words: Ready for check is Being checked; a send-back is still In progress', () => {
@@ -1148,16 +1226,21 @@ export async function run() {
     const secs = SH.byCategory(idx, ['j4', 'j3', 'j1'].map((id) => idx.byId.get(id)));
     expect(secs.map((s) => [s.id, s.items.map((x) => [x.job.id, x.sub])]), [['g-alpha', [['j3', 'Small range'], ['j1', '']]], ['g-beta', [['j4', '']]]]);
   });
-  test('the stage: the current step, its state, and how far, from the steps the reader can see', () => {
+  test('the stage: the current task, its state, and how far, from the tasks the reader can see', () => {
     const lead = index();
     expect(SH.stageOf(lead, lead.byId.get('j1')).line, 'Head (next) · 2 of 5');
-    // A manager reads the steps, not the subtasks.
-    const mgr = T.buildIndex(sampleNodes().filter((n) => !['t1', 't2'].includes(n.id)));
+    // A manager reads the categories, the job, and its stage tasks: what the lead's app flags.
+    const seen = new Set(['j1', ...SH.stageNodes(lead, 'j1')]);
+    const mgr = T.buildIndex(sampleNodes().filter((n) => n.kind === 'group' || seen.has(n.id)));
     const st = SH.stageOf(mgr, mgr.byId.get('j1'));
-    expect([st.line, st.strip], ['Head (next) · 2 of 3', ['done', 'doing', 'na']]);
+    expect([st.line, st.strip], ['Head (next) · 2 of 5', ['done', 'doing', 'na', 'todo']], 'the same as the lead sees');
     const waiting = T.buildIndex(apply(mgr.nodes, [{ id: 'j1', status: 'waiting' }]));
-    expect(SH.stageOf(waiting, waiting.byId.get('j1')).line, 'Head (waiting) · 2 of 3');
-    expect(SH.stageOf(lead, lead.byId.get('j2')), null, 'no steps, no stage');
+    expect(SH.stageOf(waiting, waiting.byId.get('j1')).line, 'Head (waiting) · 2 of 5');
+    const doing = T.buildIndex(apply(mgr.nodes, [{ id: 's2b', status: 'in_progress' }]));
+    expect(SH.stageOf(doing, doing.byId.get('j1')).line, 'Head (under way) · 2 of 5');
+    const theirs = T.buildIndex(apply(mgr.nodes, [{ id: 's2b', status: 'done' }, { id: 't1', status: 'check' }]));
+    expect(SH.stageOf(theirs, theirs.byId.get('j1')).line, 'Swap pins to standard (being checked) · 3 of 5', 'a task someone has reads its status from outside');
+    expect(SH.stageOf(lead, lead.byId.get('j2')), null, 'nothing inside, no stage');
   });
   test('a manager\'s note: the update in full, the job\'s copy short, one more open', () => {
     const job = { id: 'j1', requestOpen: 1 };
@@ -1172,13 +1255,82 @@ export async function run() {
     expect(S.eventLabel({ kind: 'request', requestKind: 'customer', cancels: true }), 'Update from customer · customer cancelled');
   });
 
+  // -------------------------------------------------------------------------
+  group = 'steps into tasks (migration)';
+  const LEAD_AT = '2026-11-06T00:00:00.000Z';
+  const stepIdx = () => T.buildIndex(sampleStepNodes());
+  test('every step becomes a task in its place, nobody on it, label to title, state to status', () => {
+    const steps = sampleStepNodes().filter(M.isStep);
+    const set = M.convertSteps(sampleStepNodes(), { by: BY, at: LEAD_AT });
+    expect(set.map((x) => x.id).sort(), steps.map((x) => x.id).sort(), 'only the steps, each once');
+    const byId = Object.fromEntries(set.map((x) => [x.id, x]));
+    expect(['s1', 's2', 's2a', 's2b', 's3'].map((id) => byId[id].status), ['done', 'todo', 'done', 'todo', 'cancelled']);
+    const doing = M.stepAsTask({ id: 'x', kind: 'step', parentId: 'j1', order: 1, label: 'Doing one', state: 'doing', updatedAt: AT }, { by: BY, at: LEAD_AT });
+    expect(doing.status, 'in_progress', 'Doing is In progress');
+    const s1 = byId.s1;
+    expect([s1.kind, s1.title, s1.assignee, s1.parentId, s1.order], ['task', 'Concept', null, 'j1', 1024]);
+    ok(!('label' in s1) && !('state' in s1), 'written whole: the step\'s own fields go');
+    const at = sampleStepNodes().find((x) => x.id === 's1').updatedAt;
+    expect([s1.statusAt, s1.doneAt, s1.lastActivityAt], [at, at, at], 'its times from when it was last changed');
+    ok(['brief', 'folders', 'waiting', 'due', 'priority', 'archivedAt', 'cancelled'].every((k) => k in s1), 'every task field written');
+  });
+  test('an N/a step is cancelled by the lead, "Was N/a", from To do; one that went with its job remembers it', () => {
+    const set = M.convertSteps(sampleStepNodes(), { by: BY, at: LEAD_AT });
+    const s3 = set.find((x) => x.id === 's3');
+    const was = sampleStepNodes().find((x) => x.id === 's3');
+    expect(s3.cancelled, { by: BY, at: was.updatedAt, reason: 'Was N/a', prevStatus: 'todo', prevWaiting: null, prevFixNote: null });
+    const withJob = M.stepAsTask({ id: 'y', kind: 'step', parentId: 'j1', order: 1, label: 'Y', state: 'na', cancelledFrom: { state: 'doing', withId: 'j1' }, updatedAt: AT }, { by: BY, at: LEAD_AT });
+    expect([withJob.cancelled.prevStatus, withJob.cancelled.withId], ['in_progress', 'j1'], 'so reopening the job brings it back where it was');
+    ok(!('cancelledFrom' in withJob));
+  });
+  test('converted, the tree reads as before: the same progress, strip and next task', () => {
+    const before = stepIdx();
+    const nodes = apply(sampleStepNodes(), M.convertSteps(sampleStepNodes(), { by: BY, at: LEAD_AT }));
+    const idx = T.buildIndex(nodes);
+    expect(T.progress(idx, 'j1'), { done: 2, total: 5 });
+    expect(TM.stageStrip(idx, 'j1'), ['done', 'doing', 'na', 'todo']);
+    expect(T.nameOf(T.nextTask(idx, 'j1')), 'Head');
+    ok(before.byId.get('s1').kind === 'step' && idx.byId.get('s1').kind === 'task');
+    ok(!idx.nodes.some(M.isStep), 'no step left');
+  });
+  test('archived steps convert too, and stay archived; everything else is left alone', () => {
+    const nodes = [...sampleStepNodes(), { id: 'old', kind: 'step', parentId: 'j4', order: 1, label: 'Old', state: 'done', archivedAt: AT }];
+    const set = M.convertSteps(nodes, { by: BY, at: LEAD_AT });
+    expect(set.find((x) => x.id === 'old').archivedAt, AT);
+    ok(!set.some((x) => ['j1', 't1', 'g-alpha', 'sec'].includes(x.id)), 'tasks and groups are not rewritten');
+    expect(M.convertSteps(apply(nodes, set), { by: BY, at: LEAD_AT }), [], 'run again, it finds nothing');
+  });
+  test('until it has run, a step is read as the task it becomes', () => {
+    const raw = sampleStepNodes().find((x) => x.id === 's2b');
+    const read = M.readNode(raw);
+    expect([read.kind, read.title, read.status, read.assignee, read.legacyStep], ['task', 'Head', 'todo', null, true]);
+    expect(M.readNode(sampleStepNodes().find((x) => x.id === 'j1')).legacyStep, undefined, 'a task is read as it is');
+    const idx = T.buildIndex(sampleStepNodes().map(M.readNode));
+    expect(T.progress(idx, 'j1'), { done: 2, total: 5 });
+    ok(T.isLight(idx, idx.byId.get('s2b')), 'part of its job, as it will be');
+  });
+  test('a change to a step not yet converted is written as a step; what a step cannot hold is refused', () => {
+    const raw = sampleStepNodes().find((x) => x.id === 's2b');
+    expect(M.stepPatch(raw, { id: 's2b', status: 'done', updatedAt: AT, lastActivityAt: AT, statusAt: AT, doneAt: AT }).patch, { id: 's2b', state: 'done', updatedAt: AT }, 'a tick is its state');
+    expect(M.stepPatch(raw, { id: 's2b', status: 'in_progress', waiting: null }).patch, { id: 's2b', state: 'doing' });
+    expect(M.stepPatch(raw, { id: 's2b', title: 'Head plate' }).patch, { id: 's2b', label: 'Head plate' }, 'a new name is its label');
+    expect(M.stepPatch(raw, { id: 's2b', status: 'cancelled', cancelled: { by: BY, at: AT, reason: '', prevStatus: 'todo', withId: 'j1' } }).patch,
+      { id: 's2b', state: 'na', cancelledFrom: { state: 'todo', withId: 'j1' } }, 'cancelled with its job: N/a, remembering it');
+    expect(M.stepPatch(raw, { id: 's2b', archivedAt: AT, parentId: 'j2', order: 5 }).patch, { id: 's2b', archivedAt: AT, parentId: 'j2', order: 5 }, 'moved and archived as it is');
+    expect(M.stepPatch(raw, { id: 's2b', lastActivityAt: AT, updatedAt: AT }).patch, null, 'activity alone: nothing to write on a step');
+    for (const p of [{ status: 'waiting' }, { status: 'check' }, { assignee: 'alex@example.test' }, { brief: 'x' }, { folders: [] }]) {
+      ok(M.stepPatch(raw, { id: 's2b', ...p }).error, `refused: ${Object.keys(p)[0]}`);
+    }
+  });
+
   group = 'writes';
-  test('steps from a template carry createdBy, which the rules check', () => {
+  test('a template makes tasks with nobody on them - part of the job - every field written', () => {
     let k = 0;
-    const steps = T.stepsFromTemplate([{ label: 'A', children: [{ label: 'A1' }] }, 'B'], 'job1', { at: AT, by: BY, newId: () => `s${++k}` });
-    expect(steps.length, 3);
-    ok(steps.every((x) => x.createdBy === BY), 'every step has createdBy');
-    expect(steps.find((x) => x.label === 'A1').parentId, steps.find((x) => x.label === 'A').id);
+    const tasks = T.tasksFromTemplate([{ label: 'A', children: [{ label: 'A1' }] }, 'B'], 'job1', { at: AT, by: BY, newId: () => `s${++k}` });
+    expect(tasks.length, 3);
+    ok(tasks.every((x) => x.kind === 'task' && x.assignee === null && x.status === 'todo' && x.archivedAt === null), 'tasks, nobody on them');
+    ok(tasks.every((x) => x.createdBy === BY), 'every one has createdBy');
+    expect(tasks.find((x) => x.title === 'A1').parentId, tasks.find((x) => x.title === 'A').id);
   });
   test('the tests page stays pure: no store, no Firebase', () => {
     const loaded = performance.getEntriesByType('resource').map((e) => e.name);

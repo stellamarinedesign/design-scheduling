@@ -3,12 +3,19 @@
 // One live query fills `nodes`; the index is rebuilt from it on every change
 // (a few hundred nodes is nothing) and every view is derived from it.
 
-import { buildIndex } from './tree.js';
+import { buildIndex, isJob } from './tree.js';
 import { nameFor } from './team.js';
 import { mergeNotes } from './notes.js';
+import { readNode, isStep } from './migrate.js';
 
 export const state = {
   nodes: [],
+  // The live nodes as they are stored, and the steps among them not yet
+  // converted into tasks (migrate.js): the lead's app counts them and offers
+  // to convert them, with a backup of `raw` first. `nodes` and the tree read
+  // each step as the task it will become.
+  raw: [],
+  rawSteps: [],
   idx: buildIndex([]),
   ready: false,       // the first snapshot has arrived
   error: null,        // the live query failed (offline first load, permissions)
@@ -28,8 +35,10 @@ const subs = new Set();
 export const subscribe = (fn) => { subs.add(fn); return () => subs.delete(fn); };
 
 export function setNodes(nodes, meta = {}) {
-  state.nodes = nodes;
-  state.idx = buildIndex(nodes);
+  state.raw = nodes;
+  state.rawSteps = nodes.filter(isStep);
+  state.nodes = state.rawSteps.length ? nodes.map(readNode) : nodes;
+  state.idx = buildIndex(state.nodes);
   state.ready = true;
   state.error = null;
   for (const fn of subs) fn(meta);
@@ -66,9 +75,11 @@ export function personName(email) {
 export const realName = (email) => nameFor(state.people, email);
 
 /**
- * Is this mine? Assigned to me; for the lead, also assigned to nobody (the
- * lead's own work, as in Phase 1). A designer's work is only what is theirs.
+ * Is this mine? Assigned to me; for the lead, also a JOB assigned to nobody
+ * (the lead's own work, as in Phase 1). A task inside a job with nobody on it
+ * is part of that job, not anyone's on its own. A designer's work is only
+ * what is theirs.
  */
-export const isMine = (n) => n.assignee === state.me || (!n.assignee && state.role === 'lead');
+export const isMine = (n) => n.assignee === state.me || (!n.assignee && state.role === 'lead' && isJob(state.idx, n));
 
 export const isLead = () => state.role === 'lead';

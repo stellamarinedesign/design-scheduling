@@ -16,7 +16,7 @@ import { state, node, isMine, personName, realName, noteOf, setLog } from './sta
 import { Store } from './store.js';
 import * as T from './tree.js';
 import * as S from './status.js';
-import { nowISO } from './dates.js';
+import { nowISO, dayOf } from './dates.js';
 import { toast, toastError } from './ui.js';
 import * as C from './convert.js';
 import { confirmDialog, promptDialog } from './dialog.js';
@@ -25,23 +25,76 @@ import * as NT from './notes.js';
 import { mergeNotes } from './notes.js';
 import * as PH from './photos.js';
 import * as SH from './sharing.js';
+import * as M from './migrate.js';
 import { openNote, openTask } from './router.js';
 
 const ctx = () => ({ by: state.me, at: nowISO(), role: state.role, canWrite });
 
+const mineDoc = (n) => Boolean(n) && (n.createdBy === state.me || n.assignee === state.me);
+
+/**
+ * The rules' walk for a designer (firestore.rules, ownsParentOf): is the
+ * node's parent theirs, or - through sections and tasks with nobody on them
+ * - the task above that, at most four levels up? That is "inside work they
+ * can edit": a job of theirs, or a task in someone's job assigned to them.
+ */
+function ownsParentOf(n) {
+  let p = n?.parentId ? node(n.parentId) : null;
+  if (!p) return false;
+  if (mineDoc(p)) return true;
+  for (let level = 2; level <= 4; level++) {
+    const through = p.parentId && (p.kind === T.KIND.group || p.kind === T.KIND.step || (p.kind === T.KIND.task && !p.assignee));
+    if (!through) return false;
+    p = node(p.parentId);
+    if (!p) return false;
+    if (p.kind === T.KIND.task && mineDoc(p)) return true;
+  }
+  return false;
+}
+
 /**
  * Would the rules let this person write this task? The same test the
- * Firestore rules make for a designer. A batch with one refused write fails
- * whole, so knock-on changes (unblocks, cascades, activity times) on tasks
- * that are not ours are left out; the reconcile, run by someone who can
- * write them, catches the unblocks.
+ * Firestore rules make for a designer: their own tasks (made by them or
+ * assigned to them), and a task with nobody on it inside work of theirs -
+ * which, being part of the job, they may also tick Done. A batch with one
+ * refused write fails whole, so knock-on changes (unblocks, cascades,
+ * activity times) on tasks that are not ours are left out; the reconcile,
+ * run by someone who can write them, catches the unblocks.
  */
 export function canWrite(t) {
   if (state.role === 'lead') return true;
   if (state.role !== 'designer' || !t) return false;
-  return t.createdBy === state.me || t.assignee === state.me;
+  if (T.isLight(state.idx, t)) return ownsParentOf(t);
+  return mineDoc(t);
 }
+
+/**
+ * May this person change a node that is not a task (a section inside a
+ * job)? The rules' test: it sits inside work of theirs.
+ */
+export const canEdit = (n) => (n?.kind === T.KIND.task ? canWrite(n)
+  : state.role === 'lead' || (state.role === 'designer' && ownsParentOf(n)));
+
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/**
+ * A change that touches steps not converted yet (migrate.js) is written in
+ * a step's own terms. Null when it can be; the sentence when a step cannot
+ * hold it.
+ */
+function asStepWrites(c) {
+  if (!state.rawSteps.length || !c.patch?.length) return null;
+  const out = [];
+  for (const p of c.patch) {
+    const n = node(p.id);
+    if (!n?.legacyStep) { out.push(p); continue; }
+    const r = M.stepPatch(state.rawSteps.find((s) => s.id === p.id), p);
+    if (r.error) return r.error;
+    if (r.patch) out.push(r.patch);
+  }
+  c.patch = out;
+  return null;
+}
 
 /**
  * Write a change; a failure is said, never swallowed. Whoever makes activity
@@ -53,7 +106,10 @@ export function write(change, what = 'That did not save') {
   const c = { ...change };
   if (c.patch) c.patch = c.patch.map(stamp);
   if (c.set) c.set = c.set.map((n) => (n.kind === T.KIND.task ? stamp(n) : n));
-  const p = Store.commit(c);
+  const refused = asStepWrites(c);
+  // Refused before it is sent, but said the same way as a refusal from the
+  // server: after the toast the action shows, in place of it.
+  const p = refused ? Promise.reject(new Error(refused)) : Store.commit(c);
   p.catch((e) => toastError(e, what));
   return p;
 }
@@ -81,20 +137,14 @@ function mergePatches(list) {
 
 /** A task node with every field written, so queries and rules see real values. */
 export function taskNode({ id = Store.newId(), parentId = null, order, title, brief = '', at = nowISO(), status = 'todo', assignee = state.me }) {
-  return {
-    id, kind: T.KIND.task, parentId, order,
-    title: String(title).trim(), brief: String(brief ?? '').trim(),
-    status, waiting: null, priority: 'normal',
-    assignee: assignee ?? null, createdBy: state.me,
-    createdAt: at, updatedAt: at, lastActivityAt: at, statusAt: at,
-    due: null, revision: null, folders: [],
-    checkedBy: null, checkedAt: null, doneAt: null, cancelled: null,
-    homeOrder: null, backlogIgnored: false, archivedAt: null,
-  };
+  return T.blankTask({ id, parentId, order, title, brief, at, by: state.me, status, assignee });
 }
 
-/** Step nodes from a template, under a parent. */
-export const stepsFrom = (template, parentId, at = nowISO()) => T.stepsFromTemplate(template, parentId, { at, by: state.me, newId: Store.newId });
+/** Tasks from a template, under a parent: nobody on them, part of the job. */
+export const fromTemplate = (template, parentId, at = nowISO()) => T.tasksFromTemplate(template, parentId, { at, by: state.me, newId: Store.newId });
+
+/** How many tasks a template makes, the ones inside others included. */
+const templateCount = (list) => (list ?? []).reduce((s, t) => s + 1 + templateCount(typeof t === 'string' ? [] : t.children), 0);
 
 /** The colour least used so far, so categories spread across the ten. */
 function nextColour() {
@@ -106,17 +156,18 @@ function nextColour() {
 }
 
 /**
- * A new job (or a task, when the parent is a task or step). Takes the steps
- * template of its nearest group unless told not to.
+ * A new job (or a task, when the parent is a task or a section in a job).
+ * A job takes the tasks template of its nearest group unless told not to.
  * @returns {string} the new id
  */
 export function createTask({ title, parentId = null, brief = '', useTemplate = true, assignee }) {
   const at = nowISO();
   const parent = parentId ? node(parentId) : null;
   const inJob = parent && (parent.kind === T.KIND.task || parent.kind === T.KIND.step || T.isSection(state.idx, parent));
-  // Who it is for: as asked; inside a job, whoever has that job (the work
-  // follows it); otherwise whoever adds it.
-  let who = assignee !== undefined ? assignee : inJob ? (T.ownerTask(state.idx, parentId)?.assignee ?? state.me) : state.me;
+  // Who it is for: as asked; inside a job, nobody - it is part of the job,
+  // ticked by whoever has it, until someone is assigned (2026-11-06);
+  // otherwise whoever adds it.
+  let who = assignee !== undefined ? assignee : inJob ? null : state.me;
   // A designer adds work for themselves or for nobody yet; handing it to
   // someone else is the lead's (the rules refuse it).
   if (state.role !== 'lead' && who && who !== state.me) who = state.me;
@@ -129,9 +180,10 @@ export function createTask({ title, parentId = null, brief = '', useTemplate = t
   const set = [n];
   if (useTemplate && !inJob && parentId) {
     const t = T.stepsTemplateOf(state.idx, parentId);
-    if (t) set.push(...stepsFrom(t.template, n.id, at));
+    if (t) set.push(...fromTemplate(t.template, n.id, at));
   }
-  write({ set, updates: inJob ? [] : [{ taskId: n.id, at, by: state.me, kind: 'create', text: '' }] });
+  // A task added inside a job is activity on the job (and the tasks above it).
+  write({ set, patch: inJob && parent ? touchJob(parentId, at) : [], updates: inJob ? [] : [{ taskId: n.id, at, by: state.me, kind: 'create', text: '' }] });
   return n.id;
 }
 
@@ -151,22 +203,15 @@ export function createGroup({ name, parentId = null, kind = T.KIND.group }) {
   return n.id;
 }
 
-export function addStep(parentId, label) {
-  const at = nowISO();
-  const n = { id: Store.newId(), kind: T.KIND.step, parentId, order: T.newOrder(state.idx, parentId, 'end'), label: String(label).trim(), state: 'todo', createdBy: state.me, createdAt: at, updatedAt: at, archivedAt: null };
-  write({ set: [n], patch: touchJob(parentId, at) });
-  return n.id;
-}
-
-/** Steps from the nearest template, added to a job that has none yet. */
+/** Tasks from the nearest template, added to a job that has nothing inside yet. */
 export function applyTemplate(jobId) {
   const t = T.stepsTemplateOf(state.idx, jobId);
   if (!t) return;
   const at = nowISO();
   const base = T.newOrder(state.idx, jobId, 'start');
-  const steps = stepsFrom(t.template, jobId, at).map((s) => (s.parentId === jobId ? { ...s, order: base - (t.template.length * T.ORDER_GAP) + s.order } : s));
-  write({ set: steps, patch: touchJob(jobId, at) });
-  toast(`Added ${plural(t.template.length, 'step')} from ${T.nameOf(t.from)}`);
+  const tasks = fromTemplate(t.template, jobId, at).map((s) => (s.parentId === jobId ? { ...s, order: base - (t.template.length * T.ORDER_GAP) + s.order } : s));
+  write({ set: tasks, patch: touchJob(jobId, at) });
+  toast(`Added ${plural(templateCount(t.template), 'task')} from ${T.nameOf(t.from)}`);
 }
 
 /**
@@ -212,7 +257,7 @@ export async function setStatus(id, to, { comment, note, blockedBy, reason, adva
     // Finished like Done, recorded apart: say why, for later (optional).
     const inside = T.cascadeTargets(state.idx, id);
     const tasks = inside.tasks.filter((x) => canWrite(node(x))).length;
-    const what = [tasks && plural(tasks, 'open task'), inside.steps.length && plural(inside.steps.length, 'open step')].filter(Boolean).join(' and ');
+    const what = tasks ? plural(tasks, 'open task') : '';
     reason = await promptDialog({
       title: `Cancel ${t.title}?`, label: 'Reason (optional)', value: 'Customer cancelled', required: false,
       ok: 'Mark cancelled', dismiss: 'Keep it',
@@ -224,12 +269,12 @@ export async function setStatus(id, to, { comment, note, blockedBy, reason, adva
   const extra = { patches: [], updates: [] };
   if (to === 'done') {
     const open = T.cascadeTargets(state.idx, id);
-    if (open.tasks.length || open.steps.length) {
+    if (open.tasks.length) {
       // Tasks waiting for check are never closed from here: that would approve
       // them without anyone checking. They are named and left as they are.
       const inCheck = open.tasks.filter((x) => node(x)?.status === 'check').length;
       const closable = open.tasks.length - inCheck;
-      const what = [closable && plural(closable, 'open task'), open.steps.length && plural(open.steps.length, 'open step')].filter(Boolean).join(' and ');
+      const what = closable ? plural(closable, 'open task') : '';
       const ans = !what ? 'alt' : await confirmDialog({
         title: 'Close what is still open inside?',
         body: `${t.title} still has ${what}.${inCheck ? ` ${plural(inCheck, 'task')} waiting for check ${inCheck === 1 ? 'stays' : 'stay'} as ${inCheck === 1 ? 'it is' : 'they are'}.` : ''}`,
@@ -263,11 +308,16 @@ export async function setStatus(id, to, { comment, note, blockedBy, reason, adva
   }
   // Cancelled from a customer's update: that note is answered by it.
   if (clearRequests) extra.patches.push({ id, requestOpen: 0 });
-  const patches = mergePatches([...r.patches, ...extra.patches]);
+  // A tick inside a job is activity on the job (and any task of its own it
+  // sits in), as ticking a step always was: it keeps them out of the Backlog.
+  const above = touchJob(id, c.at, { self: false }).filter((p) => !r.patches.some((x) => x.id === p.id));
+  const patches = mergePatches([...r.patches, ...extra.patches, ...above]);
   const inverse = inverseOf(patches);
   write({ patch: patches, updates: [...r.updates, ...extra.updates] });
   const unblocked = [...r.updates, ...extra.updates].filter((u) => u.kind === 'unblock').length;
-  const withIt = r.updates.filter((u) => u.taskId !== id && (u.kind === 'cancel' || u.kind === 'reopen')).length;
+  // Counted from the changes, not the timeline: tasks part of the job are
+  // cancelled and reopened with it without an entry of their own.
+  const withIt = r.patches.filter((p) => p.id !== id && 'cancelled' in p && 'status' in p).length;
   const word = from === 'check' && to === 'done' ? 'Approved'
     : from === 'check' && to === 'in_progress' ? 'Taken back from check'
     : from === 'cancelled' ? `Reopened · ${S.LABEL[to]}`
@@ -341,85 +391,37 @@ export function updateFields(id, fields, { message = null, undo = false } = {}) 
   if (message) toast(message, undo ? { action: 'Undo', onAction: () => write({ patch: inverse }) } : {});
 }
 
-/** Tap a step: To do → Doing → Done → N/a. */
-export function cycleStep(id) {
-  const s = node(id);
-  if (!s) return;
-  setStepState(id, S.nextStepState(s.state ?? 'todo'));
-}
-
 /**
- * May this person tick this step? The rules' test: its parent is theirs, or
- * the task it sits in (through steps and sections) is - so a designer ticks
- * the sub-steps the lead's template made in a job assigned to them.
- */
-export const canWriteStep = (s) => state.role === 'lead'
-  || (state.role === 'designer' && (canWrite(node(s?.parentId)) || canWrite(T.ownerTask(state.idx, s?.id))));
-
-/**
- * THE CHECKBOX on a step or subtask (decided 2026-11-04). A click goes
- * forward, a right-click or long-press backwards (status.js says where to).
- * Ticking a step Done starts the next To-do step at its level; ticking a
- * subtask Done or Ready for check starts the next To-do subtask if it is
- * nobody's or the same person's. One write, one Undo for both.
+ * THE CHECK CONTROL on every task inside a job (decided 2026-11-04; one
+ * control since steps merged into tasks, 2026-11-06). A click goes forward,
+ * a right-click or long-press backwards (status.js says where to). A task
+ * with nobody on it is part of its job: To do → In progress → Done, for
+ * whoever may edit the job. One with an assignee goes through the check for
+ * anyone but the lead. Ticking one Done (or Ready for check) starts the next
+ * To-do task at its level if it is nobody's or the same person's. One write,
+ * one Undo for both.
  * @param {1|-1} dir
  */
 export function tick(id, dir = 1) {
   const n = node(id);
-  if (!n) return;
-  if (n.kind === T.KIND.step) {
-    if (!canWriteStep(n)) { toast('Only whoever has this job, or the Design lead, ticks its steps.', { warn: true }); return; }
-    const from = n.state ?? 'todo';
-    const to = dir > 0 ? S.nextStepState(from) : S.stepBack(from);
-    if (!to) return;
-    const at = nowISO();
-    const changed = [{ id, state: to, updatedAt: at }];
-    const next = dir > 0 && to === 'done' ? node(S.nextStepToStart(state.idx, id)) : null;
-    if (next && canWriteStep(next)) changed.push({ id: next.id, state: 'doing', updatedAt: at });
-    const inverse = inverseOf(changed);
-    write({ patch: mergePatches([...changed, ...touchJob(id, at)]) });
-    if (changed.length > 1) toast(`Done · next: ${T.nameOf(next)}`, { action: 'Undo', onAction: () => write({ patch: inverse }) });
+  if (!n || n.kind !== T.KIND.task) return;
+  if (T.isContainer(state.idx, n)) { toast('Its state comes from the tasks inside it: tick those.'); return; }
+  const light = T.isLight(state.idx, n);
+  if (!canWrite(n)) {
+    toast(light ? 'Only whoever has this job, or the Design lead, ticks its tasks.' : 'Only whoever it is assigned to, or the Design lead, changes it.', { warn: true });
     return;
   }
-  if (n.kind !== T.KIND.task) return;
-  if (!canWrite(n)) { toast('Only whoever it is assigned to, or the Design lead, changes it.', { warn: true }); return; }
-  const to = dir > 0 ? S.taskForward(n, state.role) : S.taskBack(n, state.role, state.me);
+  const to = dir > 0 ? S.taskForward(n, state.role, light) : S.taskBack(n, state.role, state.me, light);
   if (to) { setStatus(id, to, { advance: dir > 0 }); return; }
   if (dir < 0) return;
   // Forward goes nowhere from here: say what does.
   const why = {
     check: S.canTakeBack(n, state.me) ? 'It is with the Design lead for check. Right-click the box to take it back.' : 'It is with the Design lead for check.',
     waiting: 'It is waiting. Open it to stop waiting.',
-    done: state.role === 'lead' ? 'Done. Right-click the box to reopen it.' : 'Done.',
-    cancelled: 'Cancelled. Open it to reopen it.',
+    done: state.role === 'lead' || light ? 'Done. Right-click the box to undo it.' : 'Done.',
+    cancelled: light ? 'Cancelled. Right-click the box to bring it back.' : 'Cancelled. Open it to reopen it.',
   }[n.status];
   if (why) toast(why);
-}
-
-export function setStepState(id, value) {
-  const at = nowISO();
-  write({ patch: [{ id, state: value, updatedAt: at }, ...touchJob(id, at)] });
-}
-
-/** "Make it a task": the step becomes a real subtask in the same place, for whoever has the job. */
-export function promoteStep(id) {
-  const s = node(id);
-  if (!s || s.kind !== T.KIND.step) return;
-  const at = nowISO();
-  const base = taskNode({ id, parentId: s.parentId, order: s.order, title: s.label, at, assignee: T.ownerTask(state.idx, s.parentId)?.assignee ?? state.me, status: s.state === 'done' ? 'done' : s.state === 'doing' ? 'in_progress' : s.state === 'na' ? 'cancelled' : 'todo' });
-  write({ patch: [{ ...base, kind: T.KIND.task }] });
-  toast('Now a task, with its own status and updates', { action: 'Undo', onAction: () => write({ patch: [{ id, kind: T.KIND.step }] }) });
-}
-
-/** "Make it a step": only a task with no updates, inside a job. */
-export async function demoteTask(id) {
-  const t = node(id);
-  if (!t || t.kind !== T.KIND.task) return;
-  if (T.isJob(state.idx, t)) { toast('A job cannot become a step. Move it into another job first.', { warn: true }); return; }
-  if (await Store.hasUpdates(id)) { toast('It has updates, so it stays a task: a step has no timeline.', { warn: true }); return; }
-  const st = t.status === 'done' ? 'done' : t.status === 'in_progress' ? 'doing' : t.status === 'cancelled' ? 'na' : 'todo';
-  write({ patch: [{ id, kind: T.KIND.step, label: t.title, state: st, updatedAt: nowISO() }] });
-  toast('Now a step', { action: 'Undo', onAction: () => write({ patch: [{ id, kind: T.KIND.task }] }) });
 }
 
 // ---------------------------------------------------------------------------
@@ -578,11 +580,11 @@ export function turnIntoJob(id) {
   toast(`${name} is now a job`, { action: 'Undo', onAction: () => write({ patch: inverse }) });
 }
 
-/** Rename via a prompt: groups, products, steps and tasks alike. */
+/** Rename via a prompt: groups, products and tasks alike. */
 export async function rename(id) {
   const n = node(id);
   if (!n) return;
-  const key = n.kind === T.KIND.task ? 'title' : n.kind === T.KIND.step ? 'label' : 'name';
+  const key = n.kind === T.KIND.task ? 'title' : 'name';
   const v = await promptDialog({ title: 'Rename', value: T.nameOf(n), ok: 'Rename' });
   if (v && v !== T.nameOf(n)) updateFields(id, { [key]: v });
 }
@@ -593,19 +595,26 @@ export async function rename(id) {
 
 /**
  * Assign a task (the lead). The open tasks inside it that were following it
- * go with it; an `assign` event names who it went to.
+ * go with it; an `assign` event names who it went to. Inside a job this is
+ * also PROMOTE and DEMOTE (team.js reassignPatches): someone on it makes it
+ * a task of their own, nobody makes it part of its job again.
  */
 export function assign(id, who) {
   const n = node(id);
   if (!n || n.kind !== T.KIND.task || state.role !== 'lead') return;
   if ((n.assignee ?? null) === (who ?? null)) return;
   const at = nowISO();
+  const nested = !T.isJob(state.idx, n);
   const patches = TM.reassignPatches(state.idx, id, who ?? null, { at });
   const inverse = inverseOf(patches);
-  const update = { taskId: id, at, by: state.me, kind: 'assign', from: n.assignee ?? null, to: who ?? null, text: who ? `Assigned to ${realName(who)}` : 'Unassigned' };
+  const back = patches[0]?.status === 'in_progress' && ['check', 'fix'].includes(n.status);
+  const said = who ? `Assigned to ${realName(who)}` : nested ? 'Unassigned: part of its job again' : 'Unassigned';
+  const update = { taskId: id, at, by: state.me, kind: 'assign', from: n.assignee ?? null, to: who ?? null, text: back ? `${said} · back to In progress` : said };
   write({ patch: patches, updates: [update] });
   const more = patches.length - 1;
-  toast(`${who ? `Assigned to ${personName(who)}` : 'Unassigned'}${more ? ` · ${plural(more, 'task')} inside too` : ''}`, {
+  const word = who ? `Assigned to ${personName(who)}${nested && !n.assignee ? ' · on their list now' : ''}`
+    : nested ? `Unassigned · ticked with its job now${back ? ', back to In progress' : ''}` : 'Unassigned';
+  toast(`${word}${more ? ` · ${plural(more, 'task')} inside too` : ''}`, {
     action: 'Undo',
     onAction: () => write({ patch: inverse, updates: [{ ...update, at: nowISO(), from: who ?? null, to: n.assignee ?? null, text: n.assignee ? `Assigned back to ${realName(n.assignee)}` : 'Unassigned' }] }),
   });
@@ -671,7 +680,7 @@ export function setShare(id, choice) {
 
 /**
  * The lead's app keeps `sharedEffective` / `shareLevel` right: a job moved
- * into a shared group, a step a designer added to a shared job, a job
+ * into a shared group, a task a designer added to a shared job, a job
  * archived out of one. Idempotent; runs on every change and writes only
  * what differs.
  */
@@ -681,7 +690,66 @@ export function ensureSharing() {
   const fixes = SH.sharePatches(state.idx).filter((p) => !sharePending.has(p.id));
   if (!fixes.length) return;
   for (const p of fixes) sharePending.add(p.id);
-  write({ patch: fixes }).finally(() => { for (const p of fixes) sharePending.delete(p.id); });
+  write({ patch: fixes }).catch(() => {}).finally(() => { for (const p of fixes) sharePending.delete(p.id); });
+}
+
+// ---------------------------------------------------------------------------
+// steps into tasks: the one-time migration (migrate.js), the lead's to run
+// ---------------------------------------------------------------------------
+
+/** Steps not converted yet, that the lead's app offers to convert. */
+export const stepsLeft = () => (state.role === 'lead' ? state.rawSteps.length : 0);
+
+/**
+ * Everything in `tasks` as one JSON file, saved on this computer: what the
+ * conversion rewrites, so it can be put back by hand if it ever had to be.
+ * Local mode saves the whole browser's data, as Settings' backup does.
+ */
+export async function exportBackup() {
+  try {
+    const data = Store.mode === 'local'
+      ? Store.exportLocal()
+      : { exportedAt: nowISO(), tasks: [...state.raw, ...await Store.loadArchived()] };
+    const blob = new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `design-scheduling-tasks-backup-${dayOf()}.json`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    toast('Backup saved to this computer');
+    return true;
+  } catch (e) {
+    toastError(e, 'The backup was not saved');
+    return false;
+  }
+}
+
+/**
+ * Convert every step - live and archived - into a task, in one go (the
+ * store writes it in batches under Firestore's limit). Only when the lead
+ * asks; never on its own.
+ * @returns {Promise<number|null>} how many were converted, null on failure
+ */
+let converting = false;
+export async function convertSteps() {
+  if (state.role !== 'lead' || converting) return null;
+  converting = true;
+  try {
+    const archived = (await Store.loadArchived()).filter(M.isStep);
+    const live = state.rawSteps;
+    const set = M.convertSteps([...live, ...archived], { by: state.me, at: nowISO() });
+    if (!set.length) return 0;
+    await Store.commit({ set });
+    toast(`Converted ${plural(set.length, 'step')} into tasks`);
+    return set.length;
+  } catch (e) {
+    toastError(e, 'The steps were not converted');
+    return null;
+  } finally {
+    converting = false;
+  }
 }
 
 /** A manager's note on a shared job: a Question, an Update from customer, or a Request. */
@@ -832,7 +900,7 @@ export function makeJobFromNote(noteId, { title, parentId, assignee, useTemplate
   const set = [job];
   if (useTemplate && parentId) {
     const t = T.stepsTemplateOf(state.idx, parentId);
-    if (t) set.push(...stepsFrom(t.template, job.id, at));
+    if (t) set.push(...fromTemplate(t.template, job.id, at));
   }
   const by = state.me;
   const update = { taskId: job.id, at, by, kind: 'create', text: `From a Log note by ${realName(n.by)}` };

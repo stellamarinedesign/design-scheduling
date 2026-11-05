@@ -36,7 +36,7 @@ import { idb } from './idb.js';
 export const COL = {
   settings: 'settings',     // settings/access: who is what (the rules read it)
   people: 'people',         // people/{email}: display name, initials
-  tasks: 'tasks',           // every node: group | product | task | step
+  tasks: 'tasks',           // every node: group | product | task (and step, until converted)
   updates: 'updates',       // tasks/{id}/updates/{id}: the timeline
   images: 'images',         // photos as Bytes, one per document (photos.js)
   notes: 'notes',           // the Log
@@ -265,14 +265,6 @@ export const Store = {
     );
   },
 
-  /** Does a task have any updates? ("Make it a step" is only for one with none.) */
-  async hasUpdates(taskId) {
-    if (this.mode === 'local') return Boolean(lsGet('updates', {})[taskId]?.length);
-    const { collection, query, limit, getDocs } = this._fs;
-    const snap = await getDocs(query(collection(this._db, COL.tasks, taskId, COL.updates), limit(1)));
-    return !snap.empty;
-  },
-
   // ---- the Log --------------------------------------------------------------
 
   _noteWatchers: new Set(),
@@ -379,7 +371,7 @@ export const Store = {
 
   /**
    * A manager's tree: the categories, and the jobs (with, for a job shared
-   * with its stage, its steps) that the lead has shared - two live queries,
+   * with its stage, its stage tasks) that the lead has shared - two live queries,
    * one list. A shared node is one with `sharedEffective == true`, which is
    * what the rules test, so the query must ask for it.
    */

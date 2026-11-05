@@ -245,7 +245,7 @@ function applyBar() {
     apply.disabled = true;
     const result = build();
     try {
-      // Steps and tasks first would be fine too; one commit, in batches, either way.
+      // One commit, written in batches the store keeps under Firestore's limit.
       const p = Store.commit({ set: result.nodes, updates: result.updates });
       for (const [id, v] of Object.entries(result.views)) prefs.set(`view.${id}`, v);
       if (state.mode === 'local') await p; else p.catch((e) => toastError(e, 'Part of the import did not save'));

@@ -544,7 +544,7 @@ The working unit of Home, Tasks and Team: one task or job per tile, flat Shadow 
 Rule Grey edge, 8px corners, 10px padding (12px on the left) and at least 128px tall (120px on
 phones).
 
-- **Top row:** a tick (subtasks only) · the status pill · space · the age (meta) · ⋯ (28px).
+- **Top row:** a tick (tasks inside a job only) · the status pill · space · the age (meta) · ⋯ (28px).
 - **Then:** the title (body strong, two lines at most, hyphenated between words), the place as a
   category dot and crumb ending in an ellipsis, and a two-line subtext. A send-back reason is in
   Link Coral; a waiting reason is in Signal Amber.
@@ -563,43 +563,46 @@ phones).
     then does the pill end in "…". Its menu and the tile's accessible name still say the status
     in full.
 
-### Task panel: the "Tasks and steps" inset
+### Task panel: the "Tasks" inset
 
 A node's children sit in an inset that steps back to the ground (Black Night). Grey tiles on the
 panel's own Shadow Grey ran together. It has a 1px Rule Grey edge, 11px corners and 12px padding.
 In the Workshop theme the ground is the panel's own white, so the inset takes Band.
 
-- **Heading row:** an uppercase label ("Tasks and steps", "Inside this step" or "In this
-  section"), "n of m done" in meta, then the Tiles/List switch on the right.
+- **Heading row:** an uppercase label ("Tasks", or "In this section"), "n of m done" in meta,
+  then the Tiles/List switch on the right. Since steps merged into tasks (2026-11-06) there is
+  one kind of child: a task, with or without someone on it.
 - **Segmented switch:** a 1px Strong Rule outline with 8px corners and 28px segments (34px on
   phones). Labels are Muted Ash meta at 600. The pressed segment is Chip Grey with a White label.
   Each segment has a 14px icon and a word. Inside the inset on phones only the icons show; the
   words stay for screen readers. The choice is remembered per node.
-- **Child tiles:** a compact tile in columns of at least 200px (or the full width), with an 8px
-  gap and 6px padding.
-  - Top row: a 28px tick column, the title (two lines; steps at weight 400), and ⋯.
+- **Child tiles (Tiles):** the direct children only, one compact tile each, in columns of at
+  least 200px (or the full width), with an 8px gap and 6px padding.
+  - Top row: a 28px tick column, the title (two lines, weight 600), and ⋯.
   - The subtext and foot indent 32px to sit under the title.
-  - The foot shows a pill only when the status says something (not To do or Done), "Doing" or
-    "N/a" on steps, "n/m", and the assignee's initials pushed right.
-  - Finished children lose the fill and their title is muted. N/a and cancelled are struck.
-- **Section blocks:** a section starts a block of its own tiles under a header row. The row has
-  a folder icon, the name as an uppercase label-style button in Ash, "n open", and ⋯, with a
-  hairline beneath. Nested sections indent 12px. An empty one says "Empty. Drag tasks in, or add
-  one from its ⋯."
-- **List mode:** rows are at least 38px (46px on phones), laid out as a 28px tick, the label
-  and the end actions. Each level indents 28px. Rows are divided by Chip Grey hairlines.
-  - Parent steps and subtasks are body strong, and done ones turn Ash.
-  - N/a and cancelled rows are muted and struck.
-  - Section rows carry a folder icon and an uppercase label.
+  - The foot shows a pill only when the status says something (not To do or Done), "n/m" when
+    it has tasks inside, and the assignee's initials pushed right.
+  - Finished children lose the fill and their title is muted. Cancelled ones are struck.
+- **Section tiles:** a section is a tile too, on the ground (Black Night) rather than Shadow
+  Grey, with a 16px folder icon in the tick column, its name, and "n open" (or "All done",
+  "Empty") with "n/m" in the foot. Opening it drills the panel in; things drag into it.
+- **List mode:** the whole tree. Rows are at least 38px (46px on phones), laid out as a 28px
+  tick, the label and the end actions. Each level indents 28px. Rows are divided by Chip Grey
+  hairlines.
+  - A task with tasks inside is body strong; done ones turn Ash.
+  - Cancelled rows are muted and struck.
+  - Section rows carry a folder icon and an uppercase label, as headings.
+- **Add a task:** one box, typed straight in. Enter adds and the box keeps focus; "Section"
+  sits under it as a small ghost button.
 - **Tick:** a 28px target (44px on phones) around a 20px box with 5px corners and a 1.5px Strong
   Rule stroke.
   - Doing: Signal Blue stroke on its tint.
   - Done: an Ash fill with a check.
-  - N/a: a dashed stroke.
-  - A subtask's box takes its status hue: sent back (red), waiting (amber), Ready for check
-    (violet).
-- **Empty:** the dashed empty box. When the category has a steps template, it offers a small
-  "Add the … steps" button.
+  - Cancelled: a dashed stroke.
+  - The box takes its status hue: sent back (red), waiting (amber), Ready for check (violet).
+  - A task with nobody on it and tasks inside shows their state and cannot be ticked itself.
+- **Empty:** the dashed empty box. When the category has a tasks template, it offers a small
+  "Add the … tasks" button.
 
 ### Callouts (task panel)
 
@@ -760,17 +763,17 @@ A read-only list of the jobs the lead has shared: no ticks, no drag, no status m
     (two on phones), and "A note waiting for an answer" in amber.
   - Half-screen drops the who column. Phones restack it as pill · who · age over the title over
     the stage.
-- **Stage strip:** a row of 12 × 6px pills, one per step: done green, doing blue, sent back
-  coral, waiting amber, n/a outlined. A meta line names the current step. Without stage sharing
+- **Stage strip:** a row of 12 × 6px pills, one per top-level task: done green, doing blue,
+  sent back coral, waiting amber, cancelled outlined. A meta line names the current task. Without stage sharing
   the cell says "Stage not shared".
 - **Job sheet:** the crumb and the title in the body face, then properties (Who, Rev in mono…).
-  - The stage comes next, as a larger strip (20 × 8px) and an ordered list of 40px steps. Each
-    step has a round 16px mark, not a box, since there is nothing to tick: done is filled green,
-    doing is a blue ring, n/a is dashed.
+  - The stage comes next, as a larger strip (20 × 8px) and an ordered list of 40px rows, one
+    per top-level task. Each has a round 16px mark, not a box, since there is nothing to tick:
+    done is filled green, doing is a blue ring, waiting an amber ring, cancelled is dashed.
   - Last comes "Updates and notes" with the composer.
 - **Share with managers** (the lead's ⋯ on a job or group): a menu with an uppercase heading and
   checked choices. "As [the group above]" (with its level as a hint), Not shared, Status only
-  (hint: status, latest update, who, age) and Status + stage (hint: and its steps). The panel's
+  (hint: status, latest update, who, age) and Status + stage (hint: and its tasks). The panel's
   properties row says how it is shared and where from.
 - **Questions & requests** (lead's Home, above Ready for checking, only when any are open): rows
   of at least 52px.

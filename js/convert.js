@@ -8,26 +8,26 @@
 // JOB → CATEGORY: `kind` becomes 'group' and it takes the next category
 // colour. Its job details (status, brief, assignee, due, revision, folders,
 // waiting, check and done records…) are KEPT BUT HIDDEN in `jobStash`, so
-// turning it back restores the job as it was. Its subtasks become jobs in the
-// new category, and its sections become sub-categories. Tasks that waited on
-// it stop waiting on it: a category cannot hold anything up.
+// turning it back restores the job as it was. Its top-level tasks become
+// jobs in the new category, where they are and as they are (a task is a job
+// by where it sits), and its sections become sub-categories. Tasks that
+// waited on it stop waiting on it: a category cannot hold anything up.
 //
-// ITS STEPS BECOME JOBS (owner's amendment, 2026-11-04): each top-level step
-// becomes its own job in the new category, in the same place in the order -
-// Done → Done, Doing → In progress, To do → To do - and its sub-steps stay
-// steps inside that job. An N/a step is not a job; it stays hidden with the
-// stash. A subtask under an N/a step is lifted out to the category, so
-// nothing real is hidden. Turned back into a job, the step-jobs become
-// subtasks like any other job inside it; they do not go back to steps.
+// Since steps merged into tasks (2026-11-06) there is no separate "its steps
+// become jobs" branch: what were steps are tasks, and they become jobs like
+// the rest, cancelled ones (what N/a was) included, in the Cancelled strip.
+// One with nobody on it was part of the job, so it goes to whoever had the
+// job, rather than becoming the lead's by default.
 //
 // CATEGORY → JOB: `kind` becomes 'task'; the stash restores the job it used
-// to be, or it starts as To do. Its jobs become subtasks and its
-// sub-categories become sections inside the job. A category holding products
-// is refused: a product can only live in a category.
+// to be, or it starts as To do. Its jobs become tasks inside it - with nobody
+// on them, part of the job - and its sub-categories become sections inside
+// the job. A category holding products is refused: a product can only live
+// in a category.
 //
 // Both ways post a `convert` event in the timeline.
 
-import { KIND, nameOf, childrenOf, descendantIds, isJob, isSection, newOrder, ORDER_GAP } from './tree.js';
+import { KIND, nameOf, childrenOf, descendantIds, isJob, isSection } from './tree.js';
 import { removeBlockers } from './status.js';
 
 /** The job fields that are stashed while it is a category. */
@@ -73,22 +73,14 @@ export function toCategory(idx, id, { by, at, colour = null }) {
   for (const k of JOB_FIELDS) patch[k] = null;
   const patches = [patch];
 
+  // Its top-level tasks are jobs now, where they are. Those with nobody on
+  // them were part of the job: they go to whoever had it (and stay with
+  // nobody, the lead's own, for a job of the lead's).
   const updates = [];
-  // Its top-level steps become jobs, where they are; N/a steps stay hidden.
   for (const c of childrenOf(idx, id)) {
-    if (c.kind !== KIND.step || c.state === 'na') continue;
-    patches.push(stepToJob(c, { by, at, assignee: n.assignee ?? by }));
-    updates.push({ taskId: c.id, at, by, kind: 'convert', from: KIND.step, to: KIND.task, text: `Was a step of ${n.title}` });
+    if (c.kind !== KIND.task || c.assignee || !n.assignee) continue;
+    patches.push({ id: c.id, assignee: n.assignee, updatedAt: at });
   }
-  // A subtask under an N/a step would be hidden with it: lift it out to the category.
-  let order = newOrder(idx, id, 'end');
-  const lift = (pid) => {
-    for (const c of childrenOf(idx, pid)) {
-      if (c.kind === KIND.task) { patches.push({ id: c.id, parentId: id, order, updatedAt: at }); order += ORDER_GAP; }
-      else if (c.kind === KIND.step) lift(c.id);
-    }
-  };
-  for (const c of childrenOf(idx, id)) if (c.kind === KIND.step && c.state === 'na') lift(c.id);
 
   // It no longer holds anything up.
   const freed = removeBlockers(idx, [id], { by, at });
@@ -96,24 +88,6 @@ export function toCategory(idx, id, { by, at, colour = null }) {
   return {
     patches,
     updates: [{ taskId: id, at, by, kind: 'convert', from: KIND.task, to: KIND.group, text: 'Turned into a category' }, ...updates, ...freed.updates],
-  };
-}
-
-/** A step's state, as a job's status. */
-export const STEP_TO_STATUS = { done: 'done', doing: 'in_progress', todo: 'todo' };
-
-/** The patch that makes a step a job (or task) in its own place, with every task field written. */
-function stepToJob(step, { by, at, assignee }) {
-  const status = STEP_TO_STATUS[step.state ?? 'todo'] ?? 'todo';
-  return {
-    id: step.id, kind: KIND.task, title: step.label ?? '',
-    brief: '', status, waiting: null, priority: 'normal',
-    assignee, createdBy: step.createdBy ?? by,
-    updatedAt: at, lastActivityAt: at,
-    due: null, revision: null, folders: [],
-    checkedBy: null, checkedAt: null, doneAt: status === 'done' ? at : null,
-    fixNote: null, cancelled: null, submittedBy: null, submittedAt: null,
-    homeOrder: null, backlogIgnored: false,
   };
 }
 

@@ -9,9 +9,9 @@
 //
 // A ROW: status pill and title; ONE "next" line (the send-back comment in Fix
 // colour, else what it waits on, the latest update, or the brief's first
-// line); a steps strip with "2 of 6 steps"; due date (amber when close) and
-// where it sits; and ONE action: Start, Post update, Submit for check, or
-// Open. A row opens the same task panel as the lead's.
+// line); a strip of the tasks inside with "2 of 6 done"; due date (amber
+// when close) and where it sits; and ONE action: Start, Post update, Submit
+// for check, or Open. A row opens the same task panel as the lead's.
 //
 // Header: search, Sort (Due by default · Age · Last update · Manual), and
 // + Add task, which puts a task of their own in "From designers" for the
@@ -139,12 +139,12 @@ function dueLine(t) {
   return el('span', { class: `my-due${close ? ' soon' : ''}` }, word);
 }
 
-/** The steps strip: one segment per top-level step or subtask. */
+/** The strip: one segment per top-level task inside it. */
 function strip(t) {
-  const segs = TM.stepStrip(state.idx, t.id);
+  const segs = TM.stageStrip(state.idx, t.id);
   if (!segs.length) return el('span', { class: 'my-steps' });
   const p = T.progress(state.idx, t.id);
-  const label = `${p.done} of ${p.total} steps`;
+  const label = `${p.done} of ${p.total} done`;
   return el('span', { class: 'my-steps' },
     el('span', { class: 'strip', role: 'img', 'aria-label': label }, segs.slice(0, 14).map((s) => el('i', { class: `s-${s}` }))),
     el('span', { class: 'meta' }, label));

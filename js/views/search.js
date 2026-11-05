@@ -2,7 +2,7 @@
 // category, done ones included, each with its breadcrumb. No open/close
 // animation: it is a keyboard action used many times a day.
 
-import { el, icon, pill, dot } from '../ui.js';
+import { el, pill, dot } from '../ui.js';
 import { state } from '../state.js';
 import * as T from '../tree.js';
 import * as S from '../status.js';
@@ -28,9 +28,8 @@ export function openSearch() {
       el('span', { class: 'hint' }, 'Enter opens the first · arrows move · Esc closes'));
     const choose = (n) => {
       close(true);
-      // The panel shows a task, a section, or a step where it sits (in what holds it).
+      // The panel shows a task (a job, or any task inside one) or a section.
       if (n.kind === T.KIND.task || T.isSection(state.idx, n)) openTask(n.id);
-      else if (n.kind === T.KIND.step) openTask(n.parentId);
       else go(`/tasks/${n.id}`);
     };
     const draw = () => {
@@ -38,7 +37,9 @@ export function openSearch() {
       const query = q.value.trim();
       const words = norm(query).split(/\s+/).filter(Boolean);
       // A designer has no category tree to open: their search is jobs and tasks.
-      let hits = state.idx.nodes.filter((n) => (n.kind !== T.KIND.step || words.length) && (includeCancelled || n.status !== 'cancelled')
+      // The small tasks that are part of a job only come up once words are
+      // typed: a bare list of them, out of their jobs, says nothing.
+      let hits = state.idx.nodes.filter((n) => (words.length || !T.isLight(state.idx, n)) && (includeCancelled || n.status !== 'cancelled')
         && (state.role === 'lead' || n.kind === T.KIND.task));
       if (words.length) {
         hits = hits.filter((n) => {
@@ -56,7 +57,7 @@ export function openSearch() {
         const i = words[0] ? norm(name).indexOf(words[0]) : -1;
         const label = i >= 0 ? [name.slice(0, i), el('mark', {}, name.slice(i, i + words[0].length)), name.slice(i + words[0].length)] : [name];
         list.append(el('button', { class: 'pick', type: 'button', role: 'option', onclick: () => choose(n) },
-          n.kind === T.KIND.task ? pill(n.status) : n.kind === T.KIND.step ? icon('tasks', 16) : dot(T.colourOf(state.idx, n.id)),
+          n.kind === T.KIND.task ? pill(T.shownStatus(state.idx, n)) : dot(T.colourOf(state.idx, n.id)),
           el('span', { style: { 'min-width': '0', overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap' } }, ...label),
           el('span', { class: 'sub' }, T.ancestorChain(state.idx, n.id).map(T.nameOf).join(' › '))));
       }

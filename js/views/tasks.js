@@ -38,6 +38,7 @@ import { tile, row, band, enableDrag, backlogDays } from './tile.js';
 import { go, route, routeHref } from '../router.js';
 import { promptDialog } from '../dialog.js';
 import { welcome, errorState } from './home.js';
+import { stepsBanner } from './convert-steps.js';
 import { newMasterCategory } from './sidebar.js';
 
 const SORTS = {
@@ -137,6 +138,8 @@ export function renderTasks(root, id) {
   root.append(inner);
   if (state.error && !state.ready) { inner.append(errorState()); return; }
   if (!state.ready) { inner.append(el('div', { class: 'grid', 'aria-busy': 'true', 'aria-label': 'Loading' }, [1, 2, 3, 4].map(() => el('div', { class: 'skel' })))); return; }
+  const ask = stepsBanner();
+  if (ask) inner.append(ask);
   if (!id) return fullList(inner);
   if (id === 'top') return focusPage(inner, null);
   const n = node(id);
@@ -147,7 +150,7 @@ export function renderTasks(root, id) {
       el('div', { class: 'row' }, btn('All tasks', () => go('/tasks')), btn('Open the archive', () => go('/archive'), { cls: 'ghost' }))));
     return;
   }
-  // A job, a task, a step or a section: the panel shows it, over the list
+  // A job, a task or a section: the panel shows it, over the list
   // with its category revealed.
   if (!T.isGroupLike(n) || T.isSection(state.idx, n)) {
     const cat = T.ancestorChain(state.idx, n.id).filter((a) => T.isGroupLike(a) && !T.isSection(state.idx, a)).pop();
@@ -434,7 +437,7 @@ async function addGroup(parentId, { kind = T.KIND.group } = {}) {
   const name = await promptDialog({
     title: `New ${what}`, label: 'Name', ok: 'Add',
     placeholder: kind === T.KIND.product ? 'e.g. Model 450' : inJob ? 'e.g. Laser' : 'e.g. Davits',
-    body: kind === T.KIND.product ? 'A product holds its jobs, one per revision. The Progress page (later) reads its steps.' : '',
+    body: kind === T.KIND.product ? 'A product holds its jobs, one per revision. The Progress page (later) reads its tasks.' : '',
   });
   if (name) {
     const id = A.createGroup({ name, parentId, kind });
@@ -473,7 +476,7 @@ export function groupMenu(anchor, g, { at = null, focus = false } = {}) {
     'sep',
     { label: 'Rename', icon: 'edit', onSelect: () => A.rename(g.id) },
     isCat && g.kind === T.KIND.group ? { label: 'Colour…', icon: 'grid', onSelect: () => colourMenu(anchor, g) } : null,
-    isCat ? { label: 'Steps template…', icon: 'tasks', onSelect: () => editTemplate(g) } : null,
+    isCat ? { label: 'Tasks template…', icon: 'tasks', onSelect: () => editTemplate(g) } : null,
     lead && isCat ? { label: 'Share with managers…', icon: 'team', hint: shareText(g) === 'Not shared' ? null : shareText(g).split(' · ')[0], onSelect: () => shareMenu(anchor, g, { at }) } : null,
     lead && isCat && g.kind === T.KIND.group && !isTop ? { label: 'Add a product', icon: 'plus', onSelect: () => addGroup(g.id, { kind: T.KIND.product }) } : null,
     lead && isCat && g.kind === T.KIND.group ? { label: 'Turn into a job', icon: 'restore', onSelect: () => A.turnIntoJob(g.id) } : null,
@@ -497,12 +500,12 @@ function colourMenu(anchor, g) {
 
 async function editTemplate(g) {
   const v = await promptDialog({
-    title: `Steps template for ${T.nameOf(g)}`,
-    label: 'One step a line; indent two spaces for sub-steps',
+    title: `Tasks template for ${T.nameOf(g)}`,
+    label: 'One task a line; indent two spaces for the tasks inside one',
     value: T.templateToText(g.stepsTemplate ?? []),
     placeholder: 'Concept\n3D model\n  Body\n  Head\nDrawings\nLaser\nBuild form',
     multiline: true, required: false, ok: 'Save template',
-    body: 'New jobs in this category, and in the groups inside it, start with these steps. Existing jobs are not changed.',
+    body: 'New jobs in this category, and in the groups inside it, start with these tasks. Existing jobs are not changed.',
   });
   if (v === null) return;
   A.updateFields(g.id, { stepsTemplate: v.trim() ? T.templateFromText(v) : null }, { message: v.trim() ? 'Template saved' : 'Template removed' });

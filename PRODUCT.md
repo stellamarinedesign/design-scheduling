@@ -61,7 +61,7 @@ It's built around Stella's own drafting workflow, not a generic project tool:
 
 - **Product categories** such as cylinder lifters, rotary lifters, davits, tender launchers,
   helm chairs, watermakers and doors, plus minor fixes and R&D.
-- **Deliverable steps** inside a job: concept, approval, 3D, drawings, laser, build form,
+- **Deliverable tasks** inside a job: concept, approval, 3D, drawings, laser, build form,
   checked, production.
 - **The lead's explicit check loop:** Ready for check → Approve, or Send back to fix with a
   comment.
@@ -102,7 +102,9 @@ It's built around Stella's own drafting workflow, not a generic project tool:
   The structure is user-built and deliberately not hard-coded, because how the work is
   organised is still evolving.
 - **Job:** a task whose parent is a group.
-- **Task:** anything nested under a job, at any depth.
+- **Task:** anything nested under a job, at any depth. One with nobody on it is part of its
+  job: a one-tap tick, checked with the job. Assigning someone makes it their own task, on
+  their list and through the check. There is no separate "step".
 - **Statuses:** To do, In progress, Waiting, Ready for check, Fix (sent back), Done,
   Cancelled.
 - **Roles:** Design lead, Designer, Contributor, Manager contributor (working name).
@@ -126,7 +128,7 @@ It's built around Stella's own drafting workflow, not a generic project tool:
   licensed font files may appear in code, fixtures, mockups or examples. Demo content must be
   invented.
 - The security rules, not the interface, enforce permissions. Only a Design lead can approve or
-  send back.
+  send back, and only a lead marks a job, or a task with an assignee, Done.
 
 **Undecided:**
 

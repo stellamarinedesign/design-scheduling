@@ -10,10 +10,12 @@
 //
 // THE RULES CANNOT WALK UP THE TREE, so the effective share is written onto
 // the nodes a manager may read: `sharedEffective` and `shareLevel` on each
-// shared job, and on the steps inside a job shared with its stage (through
-// steps and sections, never into a subtask, which is somebody's work). The
-// lead's app keeps them right on every change (sharePatches); nobody else
-// may write them.
+// shared job, and, for a job shared with its stage, on its top-level tasks
+// (through sections) and the tasks inside those that are part of the job -
+// so a top-level task's state, worked out from its insides, reads the same
+// outside. Never into a task with someone on it: that is their work, shown
+// by its own status. The lead's app keeps them right on every change
+// (sharePatches); nobody else may write them.
 //
 // REQUESTS. A manager adds a note to a shared job - a Question, an Update
 // from customer, or a Request - as a `request` update in its timeline, and
@@ -23,7 +25,7 @@
 
 import * as T from './tree.js';
 import { LABEL } from './status.js';
-import { stepStrip } from './team.js';
+import { stageStrip } from './team.js';
 import { dayOf } from './dates.js';
 
 export const SHARE_LABEL = { status: 'Status only', stage: 'Status + stage' };
@@ -53,12 +55,16 @@ export function shareOf(idx, id) {
   return inherited(idx, id);
 }
 
-/** The steps a manager may read for a job shared with its stage: through steps and sections, never into a task. */
+/**
+ * The tasks a manager may read for a job shared with its stage: its
+ * top-level tasks, through sections, and inside those with nobody on them;
+ * never into a task someone has.
+ */
 export function stageNodes(idx, jobId) {
   const out = [];
   const walk = (pid) => {
     for (const c of T.childrenOf(idx, pid)) {
-      if (c.kind === T.KIND.step) { out.push(c.id); walk(c.id); }
+      if (c.kind === T.KIND.task) { out.push(c.id); if (!c.assignee) walk(c.id); }
       else if (c.kind === T.KIND.group) walk(c.id);
     }
   };
@@ -68,8 +74,8 @@ export function stageNodes(idx, jobId) {
 
 /**
  * The patches that make `sharedEffective` and `shareLevel` right on every
- * node: on for shared jobs and (stage) their steps, off for anything that
- * had them and no longer should. Only what differs.
+ * node: on for shared jobs and (stage) their stage tasks, off for anything
+ * that had them and no longer should. Only what differs.
  * @returns {object[]}
  */
 export function sharePatches(idx) {
@@ -177,20 +183,21 @@ export function byCategory(idx, jobs) {
 }
 
 /**
- * A job's stage, from the steps this reader can see: the strip, the current
- * step and how far along, e.g. "Approval (waiting) · 1 of 8". Null when it
- * has no steps.
+ * A job's stage, from the tasks this reader can see: the strip, the current
+ * task and how far along, e.g. "Approval (waiting) · 1 of 8". Null when it
+ * has no tasks inside. A task part of the job reads "under way" or "next"; one
+ * someone has reads its status as outsiders see it.
  */
 export function stageOf(idx, job) {
-  const strip = stepStrip(idx, job.id);
+  const strip = stageStrip(idx, job.id);
   if (!strip.length) return null;
   const { done, total } = T.progress(idx, job.id);
-  const next = T.nextStep(idx, job.id);
+  const next = T.nextTask(idx, job.id);
   let line;
-  if (!next) line = `All steps done · ${done} of ${total}`;
+  if (!next) line = `All tasks done · ${done} of ${total}`;
   else {
     const word = job.status === 'waiting' ? 'waiting'
-      : next.kind === T.KIND.step ? (next.state === 'doing' ? 'under way' : 'next')
+      : T.isLight(idx, next) ? (next.status === 'todo' ? 'next' : next.status === 'in_progress' ? 'under way' : outsideStatus(next.status).label.toLowerCase())
         : outsideStatus(next.status).label.toLowerCase();
     line = `${T.nameOf(next)} (${word}) · ${done} of ${total}`;
   }

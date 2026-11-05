@@ -32,7 +32,7 @@ export function shareMenu(anchor, n, { at = null } = {}) {
   items.push(
     { label: 'Not shared', checked: own === 'off' || (own === null && !above.from), onSelect: () => A.setShare(n.id, above.from ? 'off' : null) },
     { label: 'Status only', hint: 'status, latest update, who, age', checked: own === 'status', onSelect: () => A.setShare(n.id, 'status') },
-    { label: 'Status + stage', hint: 'and its steps', checked: own === 'stage', onSelect: () => A.setShare(n.id, 'stage') },
+    { label: 'Status + stage', hint: 'and its tasks', checked: own === 'stage', onSelect: () => A.setShare(n.id, 'stage') },
   );
   menu(anchor, items, { label: 'Share with managers', at });
 }

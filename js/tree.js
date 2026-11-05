@@ -6,12 +6,24 @@
 //   product  a product row for the Progress page (Phase 4); its jobs are its
 //            revisions;
 //   task     a job (its parent is a group, a product, or nothing) or a task
-//            (anything under a job);
-//   step     a light tick inside a job: To do / Doing / Done / N/a. Steps can
-//            nest and sit among real subtasks.
+//            (anything under a job, at any depth).
 // Siblings of every kind share one manual `order`. Nothing here knows any
 // category by name or assumes a depth: a node's category path, colour and
-// steps template are read off its group ancestors.
+// tasks template are read off its group ancestors.
+//
+// ONE KIND OF TASK (decided 2026-11-06, Phase 2.5). Inside a job there used
+// to be steps (light ticks) and subtasks (real tasks); in use the difference
+// confused. Now everything inside a job is a task, and AN ASSIGNEE OF ITS OWN
+// IS WHAT MAKES ONE HEAVY:
+//   - a nested task with nobody on it is PART OF ITS JOB (`isLight`): one
+//     tap ticks it, a designer may tick it Done, it never goes for check, and
+//     it never shows on Home or anyone's lists - only its job does. With
+//     tasks inside, its state is worked out from them (`shownStatus`);
+//   - a nested task with an assignee is a real task, on their lists and
+//     through the check. Assigning promotes; unassigning demotes.
+// `step` stays in KIND only for data written before the change: the
+// migration (migrate.js) turns every step into a task, and until it has run
+// the app reads each one as the task it will become.
 //
 // The helpers are ported from TileDo (children_of, descendant_ids,
 // ancestor_chain, insert_relative, nest_under, renumber, cascade_complete) and
@@ -97,7 +109,7 @@ export function ancestorChain(idx, id) {
 
 export const isGroupLike = (n) => n?.kind === KIND.group || n?.kind === KIND.product;
 
-/** What a node is called on screen, whatever its kind. */
+/** What a node is called on screen, whatever its kind (a step not yet converted has a label). */
 export const nameOf = (n) => (n ? (n.kind === KIND.step ? n.label : n.kind === KIND.task ? n.title : n.name) ?? '' : '');
 
 /**
@@ -111,16 +123,50 @@ export function isJob(idx, n) {
   return !p || (isGroupLike(p) && !isSection(idx, p));
 }
 
-/** Does a node have real tasks among its children (directly, or inside its sections)? */
+/**
+ * PART OF ITS JOB: a task inside a job with no assignee of its own (what a
+ * step was). It is ticked, not checked, and lists show its job instead.
+ */
+export const isLight = (idx, n) => n?.kind === KIND.task && !n.assignee && !isJob(idx, n);
+
+/** Does a node have tasks among its children (directly, or inside its sections)? */
 export function hasTaskChildren(idx, id) {
   return childrenOf(idx, id).some((c) => c.kind === KIND.task
     || (c.kind === KIND.group && hasTaskChildren(idx, c.id)));
 }
 
+/** A light task with tasks inside: its state is theirs, worked out (`shownStatus`), never ticked itself. */
+export const isContainer = (idx, n) => isLight(idx, n) && hasTaskChildren(idx, n.id);
+
+/** The tasks inside a node, through its sections, one level down. */
+function innerTasks(idx, id) {
+  const out = [];
+  for (const c of childrenOf(idx, id)) {
+    if (c.kind === KIND.task) out.push(c);
+    else if (c.kind === KIND.group) out.push(...innerTasks(idx, c.id));
+  }
+  return out;
+}
+
+/**
+ * The status a task shows. Its own, except a light task with tasks inside:
+ * Done when everything inside is done or cancelled (Cancelled when all of it
+ * was cancelled), In progress when anything inside is under way or done, else
+ * To do. Its own Cancelled stands.
+ */
+export function shownStatus(idx, n) {
+  if (!isContainer(idx, n) || n.status === 'cancelled') return n?.status ?? 'todo';
+  const inner = innerTasks(idx, n.id).map((c) => shownStatus(idx, c));
+  if (inner.every((s) => !OPEN(s))) return inner.every((s) => s === 'cancelled') ? 'cancelled' : 'done';
+  return inner.some((s) => s !== 'todo' && s !== 'cancelled') ? 'in_progress' : 'todo';
+}
+
+/** Finished for its parent's sake: done or cancelled, as it shows. */
+export const isFinishedNode = (idx, n) => !OPEN(shownStatus(idx, n));
+
 /**
  * The task a node belongs to: itself when it is a task, else the nearest task
- * above it, through steps and sections. A step's or a section's owner is the
- * person that task is theirs to (the rules make the same walk for a designer).
+ * above it, through sections.
  */
 export function ownerTask(idx, id) {
   const n = idx.byId.get(id);
@@ -149,11 +195,12 @@ export function jobOf(idx, id) {
  * The tasks whose "last activity" moves when something happens at a node:
  * the node itself when it is a task, and every task above it - the sub-job it
  * sits in as well as the job. The Backlog reads lastActivityAt, and its pool
- * holds sub-jobs too.
+ * holds sub-jobs too. A task above it that is part of its job is passed over:
+ * nothing reads its activity, and every tick would write it.
  */
 export function activityTargets(idx, id) {
   const self = idx.byId.get(id);
-  const out = ancestorChain(idx, id).filter((a) => a.kind === KIND.task).map((a) => a.id);
+  const out = ancestorChain(idx, id).filter((a) => a.kind === KIND.task && !isLight(idx, a)).map((a) => a.id);
   if (self?.kind === KIND.task) out.push(self.id);
   return out;
 }
@@ -187,7 +234,11 @@ export function colourOf(idx, id) {
   return null;
 }
 
-/** The steps template of the nearest group that has one, the node itself included. */
+/**
+ * The tasks template of the nearest group that has one, the node itself
+ * included. Stored as `stepsTemplate` (its shape, [{label, children?}], is
+ * unchanged since steps merged into tasks); on screen it is the tasks template.
+ */
 export function stepsTemplateOf(idx, id) {
   const self = idx.byId.get(id);
   if (isGroupLike(self) && self.stepsTemplate?.length) return { from: self, template: self.stepsTemplate };
@@ -200,8 +251,8 @@ export function stepsTemplateOf(idx, id) {
 }
 
 /**
- * A steps template as text, one step a line, sub-steps indented by two spaces
- * or a tab; and back. The template is stored as [{label, children?}].
+ * A tasks template as text, one task a line, the tasks inside one indented by
+ * two spaces or a tab; and back. The template is stored as [{label, children?}].
  */
 export function templateFromText(text) {
   const root = [];
@@ -222,16 +273,33 @@ export function templateFromText(text) {
 }
 
 /**
- * Step nodes from a steps template, under a parent. Pure: the caller hands in
- * who and when, and how ids are made. Each carries createdBy, which the rules
- * check when a designer ticks it.
+ * A task node with every field written, so queries and rules see real values
+ * (Firestore's `== null` matches a stored null, never a missing field).
  */
-export function stepsFromTemplate(template, parentId, { at, by, newId }) {
+export function blankTask({ id, parentId = null, order, title, brief = '', at, by, status = 'todo', assignee = null }) {
+  return {
+    id, kind: KIND.task, parentId, order,
+    title: String(title ?? '').trim(), brief: String(brief ?? '').trim(),
+    status, waiting: null, priority: 'normal',
+    assignee: assignee ?? null, createdBy: by,
+    createdAt: at, updatedAt: at, lastActivityAt: at, statusAt: at,
+    due: null, revision: null, folders: [],
+    checkedBy: null, checkedAt: null, doneAt: null, cancelled: null,
+    homeOrder: null, backlogIgnored: false, archivedAt: null,
+  };
+}
+
+/**
+ * Tasks from a tasks template, under a parent: unassigned, so each is part of
+ * its job, as a template's steps were. Pure: the caller hands in who and when,
+ * and how ids are made. Each carries createdBy.
+ */
+export function tasksFromTemplate(template, parentId, { at, by, newId }) {
   const out = [];
   const walk = (list, pid) => list.forEach((t, i) => {
     const item = typeof t === 'string' ? { label: t } : t;
     const id = newId();
-    out.push({ id, kind: KIND.step, parentId: pid, order: (i + 1) * ORDER_GAP, label: item.label, state: 'todo', createdBy: by, createdAt: at, updatedAt: at, archivedAt: null });
+    out.push(blankTask({ id, parentId: pid, order: (i + 1) * ORDER_GAP, title: item.label, at, by }));
     if (item.children?.length) walk(item.children, id);
   });
   walk(template ?? [], parentId);
@@ -297,9 +365,6 @@ export function nestProblem(idx, movingId, parentId) {
   if (parentId && descendantIds(idx, movingId).includes(parentId)) return 'Something cannot go inside one of its own tasks or groups.';
   const insideJob = parent && (parent.kind === KIND.task || parent.kind === KIND.step || isSection(idx, parent));
   switch (moving.kind) {
-    case KIND.step:
-      if (!insideJob) return 'Steps live inside a job.';
-      return null;
     case KIND.product:
       if (parent && parent.kind !== KIND.group) return 'A product goes in a category.';
       if (insideJob) return 'A product goes in a category, not inside a job.';
@@ -369,10 +434,12 @@ export function newOrder(idx, parentId, position = 'end') {
 // ---------------------------------------------------------------------------
 
 /**
- * Progress of a job or task: leaf steps plus subtasks, N/a and cancelled
- * left out. A step with sub-steps counts through them; a subtask counts once,
- * whatever it holds (it has its own progress); a section counts through what
- * it holds. The tile bars and the panel header read the same number.
+ * Progress of a job or task: the tasks inside it, cancelled ones left out. A
+ * light task with tasks inside counts through them (its state is theirs); a
+ * task with an assignee counts once, by its own status, whatever it holds
+ * (it has its own progress); a section counts through what it holds. So the
+ * numbers are the ones the steps gave before they merged into tasks. The tile
+ * bars, the panel header, the Progress page and the stage read the same.
  * @returns {{done: number, total: number}}
  */
 export function progress(idx, id) {
@@ -381,15 +448,10 @@ export function progress(idx, id) {
   const walk = (pid) => {
     for (const c of childrenOf(idx, pid)) {
       if (c.kind === KIND.task) {
+        if (isContainer(idx, c) && c.status !== 'cancelled') { walk(c.id); continue; }
         if (c.status === 'cancelled') continue;
         total += 1;
         if (c.status === 'done') done += 1;
-      } else if (c.kind === KIND.step) {
-        const kids = childrenOf(idx, c.id).filter((k) => k.kind === KIND.step || k.kind === KIND.task);
-        if (kids.length) { walk(c.id); continue; }
-        if (c.state === 'na') continue;
-        total += 1;
-        if (c.state === 'done') done += 1;
       } else if (c.kind === KIND.group) {
         walk(c.id);
       }
@@ -399,24 +461,21 @@ export function progress(idx, id) {
   return { done, total };
 }
 
-/** Is a step done for its parent's sake: done or N/a, or all its sub-steps are? */
-export function stepFinished(idx, step) {
-  const kids = childrenOf(idx, step.id).filter((k) => k.kind === KIND.step || k.kind === KIND.task);
-  if (!kids.length) return step.state === 'done' || step.state === 'na';
-  return kids.every((k) => (k.kind === KIND.task ? !OPEN(k.status) : stepFinished(idx, k)));
-}
-
-/** The first step or subtask still open, depth first: the tile's "Next:" line. */
-export function nextStep(idx, id) {
+/**
+ * The first task still open, depth first, looking inside light tasks (whose
+ * state is their insides') and sections: the tile's "Next:" line, and the
+ * stage a manager sees.
+ */
+export function nextTask(idx, id) {
   for (const c of childrenOf(idx, id)) {
     if (c.kind === KIND.task) {
-      if (OPEN(c.status)) return c;
-    } else if (c.kind === KIND.step) {
-      const kids = childrenOf(idx, c.id).filter((k) => k.kind === KIND.step || k.kind === KIND.task);
-      if (kids.length) { const n = nextStep(idx, c.id); if (n) return n; }
-      else if (c.state !== 'done' && c.state !== 'na') return c;
+      if (isContainer(idx, c)) {
+        if (c.status === 'cancelled') continue;
+        const n = nextTask(idx, c.id);
+        if (n) return n;
+      } else if (OPEN(c.status)) return c;
     } else if (c.kind === KIND.group) {
-      const n = nextStep(idx, c.id);
+      const n = nextTask(idx, c.id);
       if (n) return n;
     }
   }
@@ -427,18 +486,15 @@ export function nextStep(idx, id) {
  * TileDo's cascade_complete, as a question rather than an act: what is still
  * open inside a task that is being marked done. The caller asks the person
  * before closing them (decided 2026-11-04).
- * @returns {{tasks: string[], steps: string[]}}
+ * @returns {{tasks: string[]}}
  */
 export function cascadeTargets(idx, id) {
   const tasks = [];
-  const steps = [];
   for (const d of descendantIds(idx, id)) {
     const n = idx.byId.get(d);
     if (n.kind === KIND.task && OPEN(n.status)) tasks.push(d);
-    if (n.kind === KIND.step && n.state !== 'done' && n.state !== 'na'
-      && !childrenOf(idx, d).some((k) => k.kind === KIND.step || k.kind === KIND.task)) steps.push(d);
   }
-  return { tasks, steps };
+  return { tasks };
 }
 
 /** Every job under a group (or the top), at any depth, outside other jobs. */
@@ -457,7 +513,7 @@ export function jobsUnder(idx, groupId) {
 /** Open jobs under a group: the sidebar's count. */
 export const openJobCount = (idx, groupId) => jobsUnder(idx, groupId).filter((j) => OPEN(j.status)).length;
 
-/** Every task below a node at any depth (jobs, sub-jobs and tasks; never steps). */
+/** Every task below a node at any depth (jobs and the tasks inside them). */
 export function tasksUnder(idx, id) {
   return descendantIds(idx, id).map((d) => idx.byId.get(d)).filter((n) => n.kind === KIND.task);
 }

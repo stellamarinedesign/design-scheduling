@@ -57,19 +57,31 @@ parent. Starting here is what loads this file, the project skills and the Impecc
 ## Behaviour rules worth knowing
 
 - **Groups anywhere.** Categories are not a fixed list. Every node is a `tasks` document with
-  `kind: 'group' | 'product' | 'task' | 'step'`.
-  - Steps are light ticks that can nest and mix with real subtasks.
+  `kind: 'group' | 'product' | 'task'`.
   - Products are rows of the Progress page; their jobs are revisions, and the row shows the
-    latest job's top-level steps.
+    latest job's top-level tasks.
   - Groups can sit at the top (master categories), inside groups (categories,
     sub-categories) or inside jobs (sections).
-  - A node's category path, colour and steps template come from its group ancestors.
+  - A node's category path, colour and tasks template (stored as `stepsTemplate`) come from
+    its group ancestors.
   - Never hard-code a category, a nesting depth, or a group/task pattern. Details are in
     "Structure change: groups anywhere" in `../handoff/PLAN.md`.
+- **One kind of task** (decided 2026-11-06, Phase 2.5). Steps merged into tasks: everything
+  inside a job is `kind: 'task'`, and **an assignee of its own is what makes one heavy**.
+  - **Nobody on it:** it is part of its job (`tree.isLight`). One tap ticks it To do → In
+    progress → Done, a designer who can edit the job may tick it Done, it never goes for
+    check, and it stays off Home, the lists, Crew and the Backlog. With tasks inside, its
+    state is worked out from them (`tree.shownStatus`).
+  - **Someone on it:** a real task, on their list and through the check.
+  - Assigning someone promotes it; unassigning demotes it (Ready for check and Sent back go
+    back to In progress). `state.isMine`'s "unassigned is the lead's" applies to jobs only.
+  - `kind: 'step'` survives only in data written before the change. The lead's app converts
+    it (`js/migrate.js`), once, when asked; until then each step is read as the task it
+    becomes. The rules keep their step branches until the live migration has run.
 - **Words on screen** (`PRODUCT.md`, "Capabilities and Constraints"):
   - **Category:** a group.
   - **Job:** a task whose parent is a group.
-  - **Task:** anything nested under a job.
+  - **Task:** anything nested under a job. There are no "steps" on screen any more.
   - **Roles:** Design lead · Designer · Contributor · Manager contributor (working name). In
     code and the access document they are `lead | designer | contributor | manager`.
     - Contributors see the Log only.
@@ -86,9 +98,10 @@ parent. Starting here is what loads this file, the project skills and the Impecc
   let designers read all tasks.
 - **Statuses are fixed:** `todo | in_progress | waiting | check | fix | done | cancelled`
   (`js/status.js`).
-  - **Only a Design lead marks anything Done**, by any route, and only a lead sends back.
-    `status.js`, the UI and `firestore.rules` all enforce it, and non-leads can't post
-    `approve` or `sendback` updates.
+  - **Only a Design lead marks a job, or a task with an assignee, Done**, by any route, and
+    only a lead sends back. A task inside a job with nobody on it is the exception: whoever
+    may edit the job ticks it Done. `status.js`, the UI and `firestore.rules` all enforce it,
+    and non-leads can't post `approve` or `sendback` updates.
   - Whoever submitted work may **take it back** from Ready for check to In progress, with an
     optional note (a `retract` timeline event).
   - Starting a task is one tap.

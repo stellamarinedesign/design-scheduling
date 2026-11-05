@@ -2,6 +2,8 @@
 //
 // POOL: my To-do jobs and sub-jobs (nodes with tasks under them; bottom-level
 // tasks are left out) untouched for at least N days (default 14), not hidden.
+// Mine is assigned to me, or a job with nobody on it; a task inside a job
+// with nobody on it is part of that job, never in the pool itself.
 // ROTATION: a daily seeded pick weighted toward the oldest, so the row holds
 // still for a day and the oldest come round most often.
 // HIDE: `backlogIgnored` takes an item out of the Backlog only, and is offered
@@ -16,10 +18,12 @@ import { ageDays, dayOf } from './dates.js';
  * @param {{me: string, days: number, now?: number}} o
  */
 export function backlogPool(idx, { me, days, now = Date.now() }) {
-  return idx.nodes.filter((n) => n.kind === KIND.task && n.status === 'todo'
-    && (!n.assignee || n.assignee === me) && !n.backlogIgnored
-    && (isJob(idx, n) || hasTaskChildren(idx, n.id))
-    && ageDays(n.lastActivityAt, now) >= days);
+  return idx.nodes.filter((n) => {
+    if (n.kind !== KIND.task || n.status !== 'todo' || n.backlogIgnored) return false;
+    const job = isJob(idx, n);
+    if (!(n.assignee === me || (!n.assignee && job))) return false;
+    return (job || hasTaskChildren(idx, n.id)) && ageDays(n.lastActivityAt, now) >= days;
+  });
 }
 
 /** May this item be hidden from the Backlog? Only when an ancestor is in the pool as well. */

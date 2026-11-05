@@ -111,9 +111,9 @@ export function renderJobs(root) {
 function stageCell(job) {
   if (job.shareLevel !== 'stage') return el('span', { class: 'mj-stage meta' }, 'Stage not shared');
   const st = SH.stageOf(state.idx, job);
-  if (!st) return el('span', { class: 'mj-stage meta' }, 'No steps yet');
+  if (!st) return el('span', { class: 'mj-stage meta' }, 'No tasks yet');
   return el('span', { class: 'mj-stage' },
-    el('span', { class: 'strip', role: 'img', 'aria-label': `${st.done} of ${st.total} steps done` }, st.strip.slice(0, 14).map((s) => el('i', { class: `s-${s}` }))),
+    el('span', { class: 'strip', role: 'img', 'aria-label': `${st.done} of ${st.total} tasks done` }, st.strip.slice(0, 14).map((s) => el('i', { class: `s-${s}` }))),
     el('span', { class: 'meta mj-stage-line' }, st.line));
 }
 
@@ -202,23 +202,32 @@ export function renderJobSheet(root, id, { fresh = false } = {}) {
 
 const prop = (label, kids) => el('div', { class: 'pc' }, el('span', { class: 'pc-lbl' }, label), el('span', { class: 'pv-static' }, ...kids));
 
-/** The stage, step by step: what the lead shared of it. */
+/**
+ * The stage, task by task: what the lead shared of it - the job's top-level
+ * tasks (through its sections), each as it stands from outside.
+ */
 function stageSection(job) {
   const sec = el('section', { class: 'psec', 'aria-label': 'Stage' }, el('div', { class: 'psec-head' }, el('h2', { class: 'lbl' }, 'Stage')));
   if (job.shareLevel !== 'stage') { sec.append(el('p', { class: 'meta wrap' }, 'Stage not shared: the Design lead shares this job\'s status only.')); return sec; }
   const st = SH.stageOf(state.idx, job);
-  if (!st) { sec.append(el('p', { class: 'meta wrap' }, 'No steps yet.')); return sec; }
+  if (!st) { sec.append(el('p', { class: 'meta wrap' }, 'No tasks yet.')); return sec; }
   sec.append(el('div', { class: 'mj-stage big' },
-    el('span', { class: 'strip', role: 'img', 'aria-label': `${st.done} of ${st.total} steps done` }, st.strip.map((s) => el('i', { class: `s-${s}` }))),
+    el('span', { class: 'strip', role: 'img', 'aria-label': `${st.done} of ${st.total} tasks done` }, st.strip.map((s) => el('i', { class: `s-${s}` }))),
     el('span', { class: 'meta wrap' }, st.line)));
-  const word = { done: 'Done', doing: 'Under way', todo: 'To do', na: 'Not needed' };
+  // Done ✓ / In progress ◐ / To do / Sent back ! / Waiting … / Cancelled –,
+  // as outsiders read them (a send-back is the team's own business: under way).
+  const seg = { done: 'done', in_progress: 'doing', check: 'doing', fix: 'doing', waiting: 'wait', todo: 'todo', cancelled: 'na' };
+  const word = { done: 'Done', doing: 'Under way', wait: 'Waiting', todo: 'To do', na: 'Not needed' };
   const list = el('ol', { class: 'mj-steps' });
-  for (const c of T.childrenOf(state.idx, job.id)) {
-    if (c.kind !== T.KIND.step) continue;
-    const kids = T.childrenOf(state.idx, c.id).filter((k) => k.kind === T.KIND.step);
-    const s = kids.length ? (T.stepFinished(state.idx, c) ? 'done' : T.progress(state.idx, c.id).done ? 'doing' : 'todo') : (c.state ?? 'todo');
-    list.append(el('li', { class: `mj-step s-${s}` }, el('span', { class: 'mj-step-mark', 'aria-hidden': 'true' }, s === 'done' ? icon('check', 14) : null), el('span', {}, c.label), el('span', { class: 'meta' }, word[s] ?? '')));
-  }
+  const walk = (pid) => {
+    for (const c of T.childrenOf(state.idx, pid)) {
+      if (c.kind === T.KIND.group) { walk(c.id); continue; }
+      if (c.kind !== T.KIND.task) continue;
+      const s = seg[T.shownStatus(state.idx, c)] ?? 'todo';
+      list.append(el('li', { class: `mj-step s-${s}` }, el('span', { class: 'mj-step-mark', 'aria-hidden': 'true' }, s === 'done' ? icon('check', 14) : null), el('span', {}, T.nameOf(c)), el('span', { class: 'meta' }, word[s] ?? '')));
+    }
+  };
+  walk(job.id);
   if (list.childNodes.length) sec.append(list);
   return sec;
 }

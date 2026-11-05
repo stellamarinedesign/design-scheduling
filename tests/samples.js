@@ -5,8 +5,50 @@
 
 const AT = '2026-10-01T00:00:00.000Z';
 
-/** A small tree: two master categories, categories, jobs, steps, sections, a product. */
+/** The invented lead the fixtures' own tasks belong to (the tests' BY). */
+export const LEAD = 'lead@example.test';
+
+/**
+ * A small tree: two master categories, categories, jobs, the tasks inside a
+ * job, a section, a product. Since steps merged into tasks (2026-11-06),
+ * what were steps are tasks with nobody on them - part of their job - and
+ * what were subtasks are tasks with someone on them (here the lead, whose
+ * own subtasks they were).
+ */
 export function sampleNodes() {
+  const n = (o) => ({ archivedAt: null, createdAt: AT, updatedAt: AT, lastActivityAt: AT, ...o });
+  const part = (o) => n({ kind: 'task', assignee: null, createdBy: LEAD, ...o });
+  return [
+    n({ id: 'g-prod', kind: 'group', parentId: null, order: 1024, name: 'Production' }),
+    n({ id: 'g-alpha', kind: 'group', parentId: 'g-prod', order: 1024, name: 'Alpha Units', colour: 2,
+      stepsTemplate: [{ label: 'Concept' }, { label: '3D model', children: [{ label: 'Body' }, { label: 'Head' }] }, { label: 'Drawings' }] }),
+    n({ id: 'g-alpha-sub', kind: 'group', parentId: 'g-alpha', order: 4096, name: 'Small range' }),
+    n({ id: 'g-beta', kind: 'group', parentId: 'g-prod', order: 2048, name: 'Beta Frames', colour: 5 }),
+    n({ id: 'g-prog', kind: 'group', parentId: null, order: 2048, name: 'Programs' }),
+
+    n({ id: 'j1', kind: 'task', parentId: 'g-alpha', order: 1024, title: 'Bracket redesign', status: 'in_progress' }),
+    n({ id: 'j2', kind: 'task', parentId: 'g-alpha', order: 2048, title: 'Hinge plate update', status: 'todo' }),
+    n({ id: 'j3', kind: 'task', parentId: 'g-alpha-sub', order: 1024, title: 'Compact frame concept', status: 'todo' }),
+    n({ id: 'j4', kind: 'task', parentId: 'g-beta', order: 1024, title: 'Panel cut list', status: 'done' }),
+
+    // j1's insides: tasks part of the job, one holding tasks of its own, a
+    // task someone has among them, and a section.
+    part({ id: 's1', parentId: 'j1', order: 1024, title: 'Concept', status: 'done' }),
+    part({ id: 's2', parentId: 'j1', order: 2048, title: '3D model', status: 'todo' }),
+    part({ id: 's2a', parentId: 's2', order: 1024, title: 'Body', status: 'done' }),
+    part({ id: 's2b', parentId: 's2', order: 2048, title: 'Head', status: 'todo' }),
+    n({ id: 't1', kind: 'task', parentId: 's2', order: 3072, title: 'Swap pins to standard', status: 'in_progress', assignee: LEAD, createdBy: LEAD }),
+    part({ id: 's3', parentId: 'j1', order: 3072, title: 'Approval', status: 'cancelled', cancelled: { by: LEAD, at: AT, reason: 'Was N/a', prevStatus: 'todo' } }),
+    n({ id: 'sec', kind: 'group', parentId: 'j1', order: 4096, name: 'Laser' }),
+    n({ id: 't2', kind: 'task', parentId: 'sec', order: 1024, title: 'Laser files', status: 'todo', assignee: LEAD, createdBy: LEAD }),
+  ];
+}
+
+/**
+ * The same tree as it was stored before steps merged into tasks: steps with
+ * a label and a state, subtasks among them. The migration's input.
+ */
+export function sampleStepNodes() {
   const n = (o) => ({ archivedAt: null, createdAt: AT, updatedAt: AT, lastActivityAt: AT, ...o });
   return [
     n({ id: 'g-prod', kind: 'group', parentId: null, order: 1024, name: 'Production' }),

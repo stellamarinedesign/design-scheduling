@@ -5,8 +5,10 @@
 // it as it is.
 //
 // WHO IS WHOSE. A task is a person's when it is assigned to them. The lead's
-// own work is also anything unassigned (state.isMine), as it was in Phase 1.
-// Crew is the designers only: the lead is not one of their own lanes.
+// own work is also any JOB with nobody on it (state.isMine), as it was in
+// Phase 1. A task inside a job with nobody on it is part of that job
+// (tree.isLight) and on nobody's list: only its job is. Crew is the
+// designers only: the lead is not one of their own lanes.
 //
 // "FROM DESIGNERS". A task a designer adds for themselves lands in a group
 // of their own under a lead-only master category, "From designers › Alex".
@@ -17,7 +19,7 @@
 // with nothing moved. The lead files it into a proper category by dragging
 // or Move to…; it keeps its assignee, so it stays on the designer's list.
 
-import { KIND, ancestorChain, childrenOf, progress, stepFinished, nameOf, newOrder, ORDER_GAP } from './tree.js';
+import { KIND, ancestorChain, childrenOf, progress, nameOf, newOrder, ORDER_GAP, isJob, isLight, isContainer, shownStatus, nextTask } from './tree.js';
 import { isOpen } from './status.js';
 import { ageDays, ageLabel, dayOf, parseDay } from './dates.js';
 
@@ -184,9 +186,12 @@ export function sinceShare(t, now = Date.now()) {
 const ACTIVE = ['fix', 'check', 'in_progress', 'waiting'];
 const tasks = (idx) => idx.nodes.filter((n) => n.kind === KIND.task);
 
-/** Everything waiting for the lead's check, at any depth: the oldest waits first. */
+/**
+ * Everything waiting for the lead's check, at any depth: the oldest waits
+ * first. A task part of its job is never checked on its own (its job is).
+ */
 export function checkQueue(idx) {
-  return tasks(idx).filter((t) => t.status === 'check')
+  return tasks(idx).filter((t) => t.status === 'check' && !isLight(idx, t))
     .sort((a, b) => String(statusSince(a)).localeCompare(String(statusSince(b))));
 }
 
@@ -260,7 +265,9 @@ export const TEAM_GROUPS = [
   { key: 'todo', statuses: ['todo'] },
 ];
 export function teamColumn(idx, email, { includeUnassigned = false } = {}) {
-  const mine = tasks(idx).filter((t) => t.assignee === email || (includeUnassigned && !t.assignee));
+  // Unassigned, for the lead's own column, means jobs: a task inside a job
+  // with nobody on it is part of the job, not a row of its own.
+  const mine = tasks(idx).filter((t) => t.assignee === email || (includeUnassigned && !t.assignee && isJob(idx, t)));
   return TEAM_GROUPS.map((g) => ({
     key: g.key,
     rows: mine.filter((t) => g.statuses.includes(t.status))
@@ -269,27 +276,46 @@ export function teamColumn(idx, email, { includeUnassigned = false } = {}) {
 }
 
 /**
- * Assigning a task: it, and the open tasks inside it that were following
- * it (same person as it had, or nobody), go to the new person. Tasks inside
- * that somebody else holds keep their person.
+ * Assigning a task: it, and the open tasks inside it that were following it
+ * (the same person as it had), go to the new person. Tasks inside that
+ * somebody else holds keep their person, and so do tasks with nobody on them:
+ * they are part of their job and go with it as they are.
+ *
+ * PROMOTE AND DEMOTE (2026-11-06): a task inside a job that gets someone is
+ * a real task now, on their list and through the check; one that loses its
+ * person is part of its job again. Its status stays, except Ready for check
+ * and Sent back, which a task part of its job cannot be: back to In progress.
+ * One that held tasks of its own showed their state, so promoted it starts
+ * from that.
  * @returns {object[]} patches
  */
 export function reassignPatches(idx, id, to, { at }) {
   const t = idx.byId.get(id);
   if (!t || t.kind !== KIND.task) return [];
   const from = t.assignee ?? null;
-  const out = [{ id, assignee: to ?? null, updatedAt: at, lastActivityAt: at }];
-  const walk = (pid) => {
-    for (const c of childrenOf(idx, pid)) {
-      if (c.kind === KIND.task) {
-        if (isOpen(c.status) && (c.assignee ?? null) === from && (c.assignee ?? null) !== (to ?? null)) {
-          out.push({ id: c.id, assignee: to ?? null, updatedAt: at });
-        }
+  const who = to ?? null;
+  const out = [];
+  const change = (n, extra = {}) => {
+    const p = { id: n.id, assignee: who, updatedAt: at, ...extra };
+    if (!isJob(idx, n)) {
+      if (!who && ['check', 'fix'].includes(n.status)) Object.assign(p, { status: 'in_progress', statusAt: at, fixNote: null, submittedBy: null, submittedAt: null });
+      if (who && isContainer(idx, n)) {
+        const shown = shownStatus(idx, n);
+        if (shown !== (n.status ?? 'todo')) Object.assign(p, { status: shown, statusAt: at, doneAt: shown === 'done' ? at : null });
       }
-      walk(c.id);
     }
+    out.push(p);
   };
-  walk(id);
+  change(t, { lastActivityAt: at });
+  if (from) {
+    const walk = (pid) => {
+      for (const c of childrenOf(idx, pid)) {
+        if (c.kind === KIND.task && isOpen(c.status) && (c.assignee ?? null) === from && from !== who) change(c);
+        walk(c.id);
+      }
+    };
+    walk(id);
+  }
   return out;
 }
 
@@ -351,7 +377,7 @@ export function myTaskGroups(idx, me, { now = Date.now(), sort = 'due', query = 
 /**
  * The one "next" line under a row in a designer's list: the send-back
  * comment, what it waits on, the latest update, the brief's first line, or
- * the next step. `who(email)` names a person.
+ * the next task inside it. `who(email)` names a person.
  * @returns {{text: string, cls: string}|null}
  */
 export function nextLine(idx, t, { now = Date.now(), who = (e) => e, waitingLine = () => '' } = {}) {
@@ -370,43 +396,25 @@ export function nextLine(idx, t, { now = Date.now(), who = (e) => e, waitingLine
     if (first) return { text: `Brief: ${first}`, cls: '' };
     if (inInbox(t)) return { text: 'Added by you · not filed yet', cls: '' };
   }
-  const step = firstOpenStep(idx, t.id);
-  return step ? { text: `Next: ${nameOf(step)}`, cls: '' } : null;
-}
-
-function firstOpenStep(idx, id) {
-  for (const c of childrenOf(idx, id)) {
-    if (c.kind === KIND.task && isOpen(c.status)) return c;
-    if (c.kind === KIND.step) {
-      const kids = childrenOf(idx, c.id).filter((k) => k.kind === KIND.step || k.kind === KIND.task);
-      if (kids.length) { const n = firstOpenStep(idx, c.id); if (n) return n; } else if (c.state !== 'done' && c.state !== 'na') return c;
-    } else if (c.kind === KIND.group) {
-      const n = firstOpenStep(idx, c.id);
-      if (n) return n;
-    }
-  }
-  return null;
+  const next = nextTask(idx, t.id);
+  return next ? { text: `Next: ${nameOf(next)}`, cls: '' } : null;
 }
 
 const TASK_SEG = { todo: 'todo', in_progress: 'doing', check: 'doing', fix: 'fix', waiting: 'wait', done: 'done', cancelled: 'na' };
 
 /**
- * The steps strip: one segment per top-level step or subtask (inside
- * sections too), as done / doing / fix / wait / todo / na. A step with steps
- * inside shows how they stand.
+ * The stage strip: one segment per top-level task (inside sections too), as
+ * done / doing / fix / wait / todo / na. A task part of the job with tasks
+ * inside shows how they stand. The designer's row, the Progress page and a
+ * manager's stage read it.
  * @returns {string[]}
  */
-export function stepStrip(idx, id) {
+export function stageStrip(idx, id) {
   const out = [];
   const walk = (pid) => {
     for (const c of childrenOf(idx, pid)) {
-      if (c.kind === KIND.task) out.push(TASK_SEG[c.status] ?? 'todo');
-      else if (c.kind === KIND.step) {
-        const kids = childrenOf(idx, c.id).filter((k) => k.kind === KIND.step || k.kind === KIND.task);
-        if (!kids.length) out.push({ doing: 'doing', done: 'done', na: 'na' }[c.state] ?? 'todo');
-        else if (stepFinished(idx, c)) out.push('done');
-        else out.push(progress(idx, c.id).done ? 'doing' : 'todo');
-      } else if (c.kind === KIND.group) walk(c.id);
+      if (c.kind === KIND.task) out.push(TASK_SEG[shownStatus(idx, c)] ?? 'todo');
+      else if (c.kind === KIND.group) walk(c.id);
     }
   };
   walk(id);
@@ -415,7 +423,7 @@ export function stepStrip(idx, id) {
 
 /**
  * The one action a designer's row offers: Start a To-do, Submit when every
- * step is done, Post update while it is under way, else Open.
+ * task inside is done, Post update while it is under way, else Open.
  * @returns {'start'|'submit'|'update'|'open'}
  */
 export function rowAction(idx, t) {

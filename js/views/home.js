@@ -18,6 +18,7 @@ import { go } from '../router.js';
 import { newMasterCategory } from './sidebar.js';
 import { checksSection, crewSection } from './crew.js';
 import { requestsSection } from './managers.js';
+import { stepsBanner } from './convert-steps.js';
 
 const FILTERS = [
   { key: 'in_progress', label: 'In progress', match: (s) => s === 'in_progress' || s === 'check' },
@@ -48,6 +49,9 @@ export function renderHome(root) {
   if (state.error && !state.ready) { inner.append(errorState()); return; }
   if (!state.ready) { inner.append(loading()); return; }
   if (!state.idx.nodes.length) { inner.append(welcome()); return; }
+  // Steps not yet converted into tasks: the lead is asked, here, until they are.
+  const ask = stepsBanner();
+  if (ask) inner.append(ask);
 
   // ── My work ──
   const mine = state.idx.nodes.filter((n) => n.kind === T.KIND.task && isMine(n));
