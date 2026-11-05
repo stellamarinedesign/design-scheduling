@@ -865,6 +865,27 @@ export async function run() {
     expect(T.ancestorChain(idx2, 'own1').map((n) => n.id), [TM.FROM_DESIGNERS, TM.inboxId(DA)], 'now inside, nothing moved');
     expect(TM.inboxFixes(idx2, { designers: [DA], people: {}, by: BY, at }), [], 'idempotent');
   });
+  test('From designers: a designer missing from an out-of-date list is still found from their task', () => {
+    const own = { id: 'own1', kind: 'task', parentId: TM.inboxId(DA), order: 1024, title: 'Seal detail', status: 'todo', assignee: DA, createdBy: DA };
+    const made = TM.inboxFixes(T.buildIndex([...sampleNodes(), own]), { designers: [], people: { [DA]: { name: 'Alex' } }, by: BY, at: AT });
+    expect(made.map((n) => [n.id, n.name, n.inboxOf]).slice(1), [[TM.inboxId(DA), 'Alex', DA]]);
+  });
+  test('From designers: a stand-in group name is put right, a name the lead typed is kept', () => {
+    const own = { id: 'own1', kind: 'task', parentId: TM.inboxId(DA), order: 1024, title: 'Seal detail', status: 'todo', assignee: DA, createdBy: DA };
+    const grp = (extra) => ({ id: TM.inboxId(DA), kind: 'group', parentId: TM.FROM_DESIGNERS, order: 1024, inboxOf: null, ...extra });
+    const master = { id: TM.FROM_DESIGNERS, kind: 'group', parentId: null, order: 9999, name: 'From designers' };
+    const people = { [DA]: { name: 'Alex' } };
+    const idxOf = (g) => T.buildIndex([...sampleNodes(), master, g, own]);
+    expect(TM.inboxRepairs(idxOf(grp({ name: 'A former designer' })), { designers: [], people, at: AT }),
+      [{ id: TM.inboxId(DA), inboxOf: DA, name: 'Alex', updatedAt: AT }], 'former designer: named');
+    const prefix = DA.replace(/@.*/, '');
+    expect(TM.inboxRepairs(idxOf(grp({ name: prefix, inboxOf: DA })), { designers: [DA], people, at: AT }),
+      [{ id: TM.inboxId(DA), inboxOf: DA, name: 'Alex', updatedAt: AT }], 'named from the address: the real name once it loads');
+    expect(TM.inboxRepairs(idxOf(grp({ name: 'Alex', inboxOf: DA })), { designers: [DA], people, at: AT }), [], 'right already: nothing');
+    expect(TM.inboxRepairs(idxOf(grp({ name: 'Alex (old jobs)', inboxOf: DA })), { designers: [DA], people, at: AT }), [], 'the lead\'s name is kept');
+    expect(TM.inboxRepairs(idxOf(grp({ name: 'A former designer' })), { designers: [], people: {}, at: AT }),
+      [{ id: TM.inboxId(DA), inboxOf: DA, name: prefix, updatedAt: AT }], 'no name yet: the address, better than nobody');
+  });
   test('Ready for checking: every task in check, the longest waiting first', () => {
     const idx = T.buildIndex(apply(teamNodes(), [{ id: 't2', status: 'check', submittedAt: ago(5) }]));
     expect(TM.checkQueue(idx).map((t) => t.id), ['t2', 'j2']);

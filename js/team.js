@@ -108,15 +108,52 @@ export function inboxFixes(idx, { designers = [], people = {}, by, at }) {
       name: 'From designers', colour: 10, createdBy: by, createdAt: at, updatedAt: at, archivedAt: null,
     });
   }
-  const byInbox = new Map(designers.map((d) => [inboxId(d), d]));
   let order = newOrder(idx, FROM_DESIGNERS, 'end');
   for (const id of [...wanted].sort()) {
-    const who = byInbox.get(id);
+    const who = inboxOwner(idx, id, designers);
     out.push({
-      id, kind: KIND.group, parentId: FROM_DESIGNERS, order, inboxOf: who ?? null,
-      name: who ? nameFor(people, who) : 'A former designer', createdBy: by, createdAt: at, updatedAt: at, archivedAt: null,
+      id, kind: KIND.group, parentId: FROM_DESIGNERS, order, inboxOf: who,
+      name: who ? nameFor(people, who) : FORMER, createdBy: by, createdAt: at, updatedAt: at, archivedAt: null,
     });
     order += ORDER_GAP;
+  }
+  return out;
+}
+
+/** The name a designer's group gets when nobody can be found for it. */
+const FORMER = 'A former designer';
+
+/**
+ * Whose group is this? The access list says, when the designer is on it.
+ * The tasks inside say too - a designer's own task is made by and assigned
+ * to them - so a list that is out of date (an account added in Settings
+ * after this app loaded it) still finds them.
+ */
+function inboxOwner(idx, id, designers) {
+  for (const d of designers) if (inboxId(d) === id) return d;
+  for (const n of idx.nodes) {
+    if (n.parentId !== id) continue;
+    for (const a of [n.createdBy, n.assignee]) if (a && inboxId(a) === id) return a;
+  }
+  return null;
+}
+
+/**
+ * Designers' groups whose name is a stand-in, put right: one made before its
+ * designer could be found ("A former designer"), or named from the address
+ * before the person's name had loaded. A name the lead typed is kept.
+ * @returns {object[]} patches
+ */
+export function inboxRepairs(idx, { designers = [], people = {}, at }) {
+  const out = [];
+  for (const g of idx.nodes) {
+    if (g.kind !== KIND.group || !isInboxId(g.id)) continue;
+    const who = g.inboxOf ?? inboxOwner(idx, g.id, designers);
+    if (!who) continue;
+    const name = nameFor(people, who);
+    const standIn = g.name === FORMER || g.name === String(who).replace(/@.*/, '');
+    if ((g.inboxOf ?? null) === who && (!standIn || g.name === name)) continue;
+    out.push({ id: g.id, inboxOf: who, ...(standIn && g.name !== name ? { name } : {}), updatedAt: at });
   }
   return out;
 }

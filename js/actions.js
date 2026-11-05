@@ -628,11 +628,16 @@ export function addOwnTask({ title, brief = '' }) {
 const inboxPending = new Set();
 export function ensureInboxes() {
   if (state.role !== 'lead' || !state.ready) return;
-  const fixes = TM.inboxFixes(state.idx, { designers: state.access.designers, people: state.people, by: state.me, at: nowISO() })
+  const at = nowISO();
+  const designers = state.access.designers ?? [];
+  const fixes = TM.inboxFixes(state.idx, { designers, people: state.people, by: state.me, at })
     .filter((n) => !inboxPending.has(n.id));
-  if (!fixes.length) return;
-  for (const n of fixes) inboxPending.add(n.id);
-  write({ set: fixes }).finally(() => { for (const n of fixes) inboxPending.delete(n.id); });
+  const repairs = TM.inboxRepairs(state.idx, { designers, people: state.people, at })
+    .filter((p) => !inboxPending.has(p.id));
+  if (!fixes.length && !repairs.length) return;
+  const ids = [...fixes, ...repairs].map((n) => n.id);
+  for (const id of ids) inboxPending.add(id);
+  write({ set: fixes, patch: repairs }).finally(() => { for (const id of ids) inboxPending.delete(id); });
 }
 
 // ---------------------------------------------------------------------------

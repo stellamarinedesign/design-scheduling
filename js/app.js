@@ -348,7 +348,9 @@ async function start() {
     A.ensureSharing();
     A.reconcileNotes();
   });
-  Store.watchPeople((people) => { state.people = people; if (state.ready) drawAll(); });
+  // A name that arrives late also puts right a designer's group named from
+  // the address before it did (team.js inboxRepairs).
+  Store.watchPeople((people) => { state.people = people; if (state.ready) { drawAll(); A.ensureInboxes(); } });
   drawAll();
   // A contributor or a manager reads no tasks, only the categories (the
   // rules refuse the rest): the Log's category picker and paths need them.

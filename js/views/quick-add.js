@@ -53,8 +53,8 @@ export function openQuickAdd({ parentId, capture = false, own = state.role !== '
       const inJob = p && (p.kind === T.KIND.task || T.isSection(state.idx, p));
       heading.textContent = inJob ? 'New task' : 'New job';
       placeBtn.textContent = '';
-      placeBtn.append(p ? (p.kind === T.KIND.task ? pill(p.status) : dot(T.colourOf(state.idx, p.id))) : null,
-        el('span', {}, p ? T.ancestorChain(state.idx, p.id).concat(p).map(T.nameOf).join(' › ') : 'Not in a category'));
+      placeBtn.append(...[p ? (p.kind === T.KIND.task ? pill(p.status) : dot(T.colourOf(state.idx, p.id))) : null,
+        el('span', {}, p ? T.ancestorChain(state.idx, p.id).concat(p).map(T.nameOf).join(' › ') : 'Not in a category')].filter(Boolean));
       const tpl = !inJob && p ? T.stepsTemplateOf(state.idx, p.id) : null;
       tplLine.hidden = !tpl;
       tplLine.textContent = '';

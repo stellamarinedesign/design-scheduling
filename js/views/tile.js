@@ -189,6 +189,10 @@ export function tile(t, { path = false, assignee = false, variant = 'normal', me
   const pathText = T.pathText(state.idx, t.id);
   const titleCls = `tile-title${t.status === 'done' ? ' done' : ''}${t.status === 'cancelled' ? ' cancelled' : ''}`;
   const sub = !T.isJob(state.idx, t);   // a subtask: the check control, in place of Start
+  // The age sits in the top row; on a phone, two tiles to a row, the same
+  // words sit in the foot instead (app.css), so the status fits whole.
+  const age = (cls) => el('span', { class: `meta ${cls}${stale || variant === 'backlog' ? ' warn' : ''}`, title: 'Since the last activity' },
+    variant === 'backlog' ? `${days}d untouched` : ageLabel(t.lastActivityAt));
 
   const a = el('article', {
     class: `tile${t.status === 'cancelled' ? ' muted' : ''}`, dataset: { id: t.id }, 'aria-current': open ? 'true' : null,
@@ -202,8 +206,7 @@ export function tile(t, { path = false, assignee = false, variant = 'normal', me
     sub ? checkBox(t) : null,
     statusPill(t),
     el('span', { class: 'sp' }),
-    el('span', { class: `meta${stale || variant === 'backlog' ? ' warn' : ''}`, title: 'Since the last activity' },
-      variant === 'backlog' ? `${days}d untouched` : ageLabel(t.lastActivityAt)),
+    age('age'),
     iconBtn('more', `More actions for ${t.title}`, (e) => { e.stopPropagation(); taskMenu(e.currentTarget, t, { extra: menuExtra }); })),
   el('div', { class: titleCls }, t.title),
   path && pathText ? el('div', { class: 'tile-path' }, dot(colour), el('span', {}, pathText)) : null,
@@ -212,6 +215,7 @@ export function tile(t, { path = false, assignee = false, variant = 'normal', me
     t.status === 'todo' && !sub && A.canWrite(t) ? btn('Start', (e) => { e.stopPropagation(); A.start(t.id); }, { cls: 'sm', ic: 'play', title: 'Start: one tap to In progress' }) : null,
     variant !== 'backlog' && prog.total ? bar(prog.done, prog.total) : el('span', { class: 'sp' }),
     variant !== 'backlog' && prog.total ? el('span', { class: 'meta' }, `${prog.done}/${prog.total}`) : null,
+    age('foot-age'),
     assignee ? whoBadge(t.assignee) : null));
   // Right-click, long-press and Shift+F10 open the same menu as ⋯.
   return withMenu(a, (at) => taskMenu(a.querySelector('.tile-top .ib') ?? a, t, { extra: menuExtra, at }));

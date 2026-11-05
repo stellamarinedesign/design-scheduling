@@ -107,7 +107,9 @@ export function renderPanel(root, id, { fresh = false } = {}) {
     watchTimeline(id);
     watchJobNotes(id);
     const review = contextAction(n);
-    body.append(top(n), requestCallout(n), childrenSection(n), review ? el('div', { class: 'panel-review' }, review) : null, briefSection(n), fromLogSection(), foldersSection(n), updatesSection(n), footer(n));
+    // Native append writes a null as the word "null": the parts that may be
+    // absent (a manager's request, the review) are filtered out first.
+    body.append(...[top(n), requestCallout(n), childrenSection(n), review ? el('div', { class: 'panel-review' }, review) : null, briefSection(n), fromLogSection(), foldersSection(n), updatesSection(n), footer(n)].filter(Boolean));
   } else {
     stopTimeline();
     body.append(nodeTop(n), childrenSection(n));

@@ -196,8 +196,19 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
 /* A long-press opens the menu: no iOS callout, no text selection under the thumb. */
 .has-menu { -webkit-touch-callout: none; }
 .tile, .card, .si, .tree .grp-head { -webkit-user-select: none; user-select: none; }
-.tile-top { display: flex; align-items: center; gap: 6px; min-height: 28px; }
+.tile-top { display: flex; align-items: center; gap: 6px; min-height: 28px; min-width: 0; }
 .tile-top .ib { width: 28px; height: 28px; margin-right: -4px; }
+/* The top row never runs past the tile, however narrow: the age and ⋯ keep
+   their size and the status pill gives way, ending in "…". Its menu and its
+   accessible name still say the status whole. */
+.tile-top > .pill { flex: 0 1 auto; min-width: 0; display: block; overflow: hidden; text-overflow: ellipsis; line-height: 22px; }
+.tile-top > .pill:is(button) { line-height: 24px; }
+.tile-top > .meta { flex: none; }
+/* Short of room, the tick's touch target narrows first (drawn at 20px, it never
+   goes below that), and only then the pill. */
+.tile-top > .tick { flex-shrink: 8; }
+/* The age's second place, in the foot: shown only where the top row is short of room (phones). */
+.tile-foot > .foot-age { display: none; }
 .tile-title { font-weight: 600; line-height: 1.3; overflow-wrap: break-word; -webkit-hyphens: auto; hyphens: auto; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .tile-title.done { color: var(--text3); }
 .tile-title.cancelled { color: var(--text3); text-decoration: line-through; }
@@ -997,7 +1008,15 @@ input::-ms-reveal { display: none; }
   .btn.sm { height: 36px; }
   .fp { height: 36px; }
   .ib { width: 44px; height: 44px; }
-  .tile-top .ib { width: 44px; height: 44px; margin: -8px -10px -8px 0; }
+  /* Two tiles to a row leave the top row about 145px at 375px wide: not
+     enough for a tick, "In progress", the age and a 44px ⋯. The age moves
+     down to the foot, which has room, and the top row keeps the tick, the
+     whole status and ⋯ (whose target reaches over the gap on its left). */
+  .tile-top { gap: 4px; }
+  .tile-top > .pill { padding: 0 8px; }
+  .tile-top > .age { display: none; }
+  .tile-foot > .foot-age { display: inline; margin-left: auto; flex: none; }
+  .tile-top .ib { width: 44px; height: 44px; margin: -8px -10px -8px -12px; }
   /* A category tile on a phone gives its name the width: tighter padding, and
      its 44px menu target sits in the corner instead of beside the name. */
   .card { padding: 12px; }

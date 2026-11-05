@@ -9,7 +9,7 @@
 // temporary password shown once. Only a MASTER sees the accounts section: not
 // hidden, not greyed, simply absent.
 
-import { Auth, setAccess, tidyEmail, isEmail, friendlyAuthError } from './auth.js';
+import { Auth, setAccess, currentAccess, tidyEmail, isEmail, friendlyAuthError } from './auth.js';
 import { Store } from './store.js';
 import { openDialog } from './dialog.js';
 import { openPasswordDialog } from './password.js';
@@ -200,6 +200,9 @@ async function accounts(host, markClean) {
       await Store.saveAccess(next);
       access = next;
       setAccess(next);
+      // The app's own copy too: Crew, the assignee lists and the designers'
+      // groups go by it, and a designer added here may post before a reload.
+      state.access = currentAccess();
       toast(note);
       draw();
       markClean();
