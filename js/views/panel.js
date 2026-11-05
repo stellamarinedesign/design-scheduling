@@ -49,7 +49,9 @@ const timeline = { id: null, list: [], more: false, limit: 20, unsub: null, load
 /** Is a field in the panel being edited right now? */
 export function panelEditing() {
   const a = document.activeElement;
-  const busy = rootEl && rootEl.contains(a) && a.matches('textarea, input:not([type=checkbox]):not([type=date])');
+  // An add box (data-keep) does not hold the panel back: what it adds should
+  // show at once, and renderPanel puts the box, focus and all, back after.
+  const busy = rootEl && rootEl.contains(a) && a.matches('textarea, input:not([type=checkbox]):not([type=date])') && !a.dataset.keep;
   if (busy) stale = true;
   return busy;
 }
@@ -100,6 +102,10 @@ export function renderPanel(root, id, { fresh = false } = {}) {
   if (isPlace(n)) { revealCategory(n.id); return; }
 
   const keepScroll = !fresh && openId === id ? root.querySelector('.panel-body')?.scrollTop ?? 0 : 0;
+  // An add box with focus survives the redraw: its words, caret and focus.
+  const act = document.activeElement;
+  const kept = !fresh && openId === id && act?.dataset?.keep && root.contains(act)
+    ? { key: act.dataset.keep, value: act.value, from: act.selectionStart, to: act.selectionEnd } : null;
   openId = id;
   root.textContent = '';
   const body = el('div', { class: 'panel-body' });
@@ -120,6 +126,14 @@ export function renderPanel(root, id, { fresh = false } = {}) {
   // a focused field would put the title in edit mode (and the keyboard up on
   // a phone). Tab reaches the title next.
   if (fresh) { root.tabIndex = -1; root.focus({ preventScroll: true }); }
+  if (kept) {
+    const box = root.querySelector(`[data-keep="${CSS.escape(kept.key)}"]`);
+    if (box) {
+      box.value = kept.value;
+      box.focus({ preventScroll: true });
+      try { box.setSelectionRange(kept.from, kept.to); } catch { /* not a text box */ }
+    }
+  }
   // A change that arrived while a field was being edited is drawn once the
   // field lets go. A real listener, once per panel element: `onfocusout` is
   // not an event-handler property in Chrome or Edge, so assigning one did
@@ -611,8 +625,10 @@ function listInto(list, pid, depth) {
 
 /** Add a step (typed straight in), a task or a section. */
 function addControls(n) {
-  const input = el('input', { class: 'input', type: 'text', placeholder: n.kind === T.KIND.step ? 'Add a sub-step' : 'Add a step', 'aria-label': 'Add a step', maxlength: '200' });
-  const add = () => { const v = input.value.trim(); if (!v) return; A.addStep(n.id, v); input.value = ''; requestAnimationFrame(() => rootEl.querySelector('.kids .add-line .input')?.focus()); };
+  const input = el('input', { class: 'input', type: 'text', placeholder: n.kind === T.KIND.step ? 'Add a sub-step' : 'Add a step', 'aria-label': 'Add a step', maxlength: '200', dataset: { keep: `add-${n.id}` } });
+  // Cleared before the write: the redraw it brings may come at once, and the
+  // box it puts back must be empty, ready for the next step.
+  const add = () => { const v = input.value.trim(); if (!v) return; input.value = ''; A.addStep(n.id, v); requestAnimationFrame(() => rootEl.querySelector('.kids .add-line .input')?.focus()); };
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); add(); }
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); input.value = ''; input.blur(); }

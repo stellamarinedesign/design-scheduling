@@ -181,6 +181,62 @@ components:
     typography: "{typography.label}"
     rounded: "{rounded.pill}"
     padding: "1px 6px"
+  tile:
+    backgroundColor: "{colors.shadow-grey}"
+    textColor: "{colors.text-white}"
+    typography: "{typography.body-strong}"
+    rounded: "{rounded.md}"
+    padding: "10px 10px 10px 12px"
+    height: "128px"
+  tile-selected:
+    backgroundColor: "{colors.chip-grey}"
+  kids-inset:
+    backgroundColor: "{colors.black-night}"
+    rounded: "{rounded.lg}"
+    padding: "12px"
+  child-tile:
+    backgroundColor: "{colors.shadow-grey}"
+    textColor: "{colors.text-white}"
+    typography: "{typography.body-strong}"
+    rounded: "{rounded.md}"
+    padding: "6px 4px 6px 6px"
+  segmented-on:
+    backgroundColor: "{colors.chip-grey}"
+    textColor: "{colors.text-white}"
+    typography: "{typography.meta}"
+    rounded: "{rounded.md}"
+    height: "28px"
+  callout:
+    backgroundColor: "{colors.band}"
+    textColor: "{colors.text-white}"
+    typography: "{typography.body}"
+    rounded: "{rounded.lg}"
+    padding: "12px 14px"
+  callout-check:
+    backgroundColor: "{colors.signal-violet-bg}"
+    textColor: "{colors.signal-violet-text}"
+  callout-fix:
+    backgroundColor: "{colors.signal-red-bg}"
+    textColor: "{colors.link-coral}"
+  callout-waiting:
+    backgroundColor: "{colors.signal-amber-bg}"
+    textColor: "{colors.signal-amber-text}"
+  note-card:
+    backgroundColor: "{colors.shadow-grey}"
+    textColor: "{colors.text-white}"
+    typography: "{typography.body-strong}"
+    rounded: "{rounded.md}"
+    padding: "10px 12px"
+  kind-chip:
+    backgroundColor: "{colors.chip-grey}"
+    textColor: "{colors.text-ash}"
+    typography: "{typography.meta}"
+    rounded: "{rounded.pill}"
+    padding: "0 8px"
+    height: "22px"
+  skeleton:
+    backgroundColor: "{colors.shadow-grey}"
+    rounded: "{rounded.md}"
 ---
 
 # Design System: Design Scheduling
@@ -345,6 +401,17 @@ spacing scale from sp-1 (4px) to sp-6 (32px).
   | Half-screen | 700–1100px | The category sidebar (240px) beside one content column. The task panel (560px) slides over the content rather than squeezing it. |
   | Wide | over 1100px | Home splits into two columns. On very wide screens the task panel can sit beside the list instead of over it. |
 
+- **Tile grids:** tiles fill columns of at least 208px with a 12px gap. On phones, two tiles sit
+  in a row (10px gap). Ready-for-checking tiles and Log cards need 264px, and a Team column
+  300px; each drops to one column on a phone. Log cards keep two columns at half-screen. A tree
+  section narrower than 345px holds one column of tiles.
+- **Rows on a phone:** wide list rows (Crew and Team lanes, manager Jobs rows, Questions &
+  requests) restack into a short top line (status or kind, age, ⋯) over the title at full width, with
+  the time bar or stage strip below. Titles may wrap to three lines there; the panel has the rest.
+- **Heads on a phone:** a view's filter pills stay on one line and scroll sideways, the search
+  drops to its own full-width line, and where the header already names the page the view
+  heading is hidden visually (kept for screen readers).
+
 ### Named Rules
 
 **The Half-Screen Rule.** Every view is designed and checked at about 900px wide (snapped beside
@@ -352,6 +419,13 @@ CAD), as well as at 375px and full desktop. Nothing important may depend on widt
 
 **The Glance Rule.** A row's status, owner and age are readable without hovering, expanding or
 opening anything.
+
+**The Give-Way Rule.** When a row runs short of room, nothing leaves its box. Things give way in
+a fixed order:
+
+1. touch targets narrow first, never below the control as drawn;
+2. then text ends in an ellipsis, with the whole words kept in the accessible name or menu;
+3. or a fact moves to a second place that has room (a tile's age drops to its foot on phones).
 
 ## Elevation & Depth
 
@@ -388,8 +462,8 @@ flat. A shadow means "this is above the page and will go away".
 
 ## Components
 
-All components here are synthesised from the tokens, ahead of the first build. Re-run
-`/impeccable document` after Phase 1 to capture the shipped versions.
+Buttons through Motion were written from the tokens ahead of the first build. Tiles onwards
+are recorded from the shipped Phase 2 code (`css/app.css`, `js/views/`).
 
 ### Buttons
 
@@ -464,6 +538,269 @@ Motion exists only for change of state, following emil-design-eng:
 Nothing animates on load or on hover beyond a colour change. Reduced motion collapses every
 duration to 0.
 
+### Tiles
+
+The working unit of Home, Tasks and Team: one task or job per tile, flat Shadow Grey, a 1px
+Rule Grey edge, 8px corners, 10px padding (12px on the left) and at least 128px tall (120px on
+phones).
+
+- **Top row:** a tick (subtasks only) · the status pill · space · the age (meta) · ⋯ (28px).
+- **Then:** the title (body strong, two lines at most, hyphenated between words), the place as a
+  category dot and crumb ending in an ellipsis, and a two-line subtext. A send-back reason is in
+  Link Coral; a waiting reason is in Signal Amber.
+- **Foot:** Start (small, with ▶) on a To-do job, the progress bar with "n/m", and the assignee.
+- **Whole tile opens it:** a transparent full-bleed button sits under the content, and the pill,
+  tick, ⋯ and Start sit above it. Right-click, long-press and Shift+F10 open the same menu as ⋯.
+- **States:** hover raises the edge to Strong Rule (not on touch). The open tile takes a Chip Grey
+  fill with a Muted Ash edge. A cancelled tile loses its fill, and its title is muted and struck.
+- **Backlog tiles** show "Nd untouched" in amber. On phones they scroll sideways in one snapping
+  row, each about 72% of the screen wide.
+- **On phones (two tiles to a row):** the top row has about 145px at 375px wide.
+  - The age moves to the foot, right-aligned. The top row keeps the tick, the whole status
+    pill (8px side padding) and ⋯.
+  - ⋯ keeps a 44px target by reaching over the gap on its left.
+  - Short of room, the tick's touch target narrows first (its 20px box never shrinks). Only
+    then does the pill end in "…". Its menu and the tile's accessible name still say the status
+    in full.
+
+### Task panel: the "Tasks and steps" inset
+
+A node's children sit in an inset that steps back to the ground (Black Night). Grey tiles on the
+panel's own Shadow Grey ran together. It has a 1px Rule Grey edge, 11px corners and 12px padding.
+In the Workshop theme the ground is the panel's own white, so the inset takes Band.
+
+- **Heading row:** an uppercase label ("Tasks and steps", "Inside this step" or "In this
+  section"), "n of m done" in meta, then the Tiles/List switch on the right.
+- **Segmented switch:** a 1px Strong Rule outline with 8px corners and 28px segments (34px on
+  phones). Labels are Muted Ash meta at 600. The pressed segment is Chip Grey with a White label.
+  Each segment has a 14px icon and a word. Inside the inset on phones only the icons show; the
+  words stay for screen readers. The choice is remembered per node.
+- **Child tiles:** a compact tile in columns of at least 200px (or the full width), with an 8px
+  gap and 6px padding.
+  - Top row: a 28px tick column, the title (two lines; steps at weight 400), and ⋯.
+  - The subtext and foot indent 32px to sit under the title.
+  - The foot shows a pill only when the status says something (not To do or Done), "Doing" or
+    "N/a" on steps, "n/m", and the assignee's initials pushed right.
+  - Finished children lose the fill and their title is muted. N/a and cancelled are struck.
+- **Section blocks:** a section starts a block of its own tiles under a header row. The row has
+  a folder icon, the name as an uppercase label-style button in Ash, "n open", and ⋯, with a
+  hairline beneath. Nested sections indent 12px. An empty one says "Empty. Drag tasks in, or add
+  one from its ⋯."
+- **List mode:** rows are at least 38px (46px on phones), laid out as a 28px tick, the label
+  and the end actions. Each level indents 28px. Rows are divided by Chip Grey hairlines.
+  - Parent steps and subtasks are body strong, and done ones turn Ash.
+  - N/a and cancelled rows are muted and struck.
+  - Section rows carry a folder icon and an uppercase label.
+- **Tick:** a 28px target (44px on phones) around a 20px box with 5px corners and a 1.5px Strong
+  Rule stroke.
+  - Doing: Signal Blue stroke on its tint.
+  - Done: an Ash fill with a check.
+  - N/a: a dashed stroke.
+  - A subtask's box takes its status hue: sent back (red), waiting (amber), Ready for check
+    (violet).
+- **Empty:** the dashed empty box. When the category has a steps template, it offers a small
+  "Add the … steps" button.
+
+### Callouts (task panel)
+
+A callout says where the open task stands and holds what can be done about it. It has 11px
+corners, 12px by 14px padding and 10px gaps, in three parts:
+
+- **Head:** meta size at 600, written "what · who · when".
+- **Body:** White, wrapping anywhere and keeping line breaks.
+- **Acts row:** buttons 8px apart, wrapping.
+
+Neutral callouts (cancelled, dismissed, archived) are Band with a hairline. Status callouts take
+their status tint, lose the hairline, and colour the head in the status text tint:
+
+- **Ready for check** (violet).
+  - For the lead: Approve (primary, ✓), Send back (outlined), and Take back (ghost, only for
+    whoever submitted it).
+  - For anyone else: "Waiting for the Design lead to check it." in meta, plus Take back if they
+    submitted it.
+- **Sent back** (red tint, Link Coral head): the fix note, then Submit for check again (primary)
+  and Start fixing.
+- **Waiting** (amber): the reason or blocker, then "Stop waiting · back to …" and Change (ghost).
+- **Request** (amber): a manager's open note on the job. A note waiting on the lead is amber, as
+  anything waiting on someone is. The head is "Question from … · when · n open" (or Update from customer, Request). Then:
+  - Cancel job (danger: a Burning Star Red outline and a Link Coral label, never a fill), only
+    when the customer has cancelled;
+  - Reply, which focuses the update box;
+  - Mark answered (ghost).
+- **Read-only** (someone else's task, seen by a designer): the same tint, head and body, then a
+  meta line saying who has it and that an update can still be posted. There are no buttons.
+
+On phones the panel's bottom dock carries the primary action, and the callout's red button
+hides, so one red button stays in view.
+
+### Ready for checking (Home)
+
+The lead's queue, oldest first, as tiles of at least 264px (one column on phones). The heading
+has a count bubble. When the queue is empty the section is one line: "Nothing is waiting for your
+check."
+
+A check tile is a tile without the minimum height:
+
+- **Top row:** the pill, the time since it was submitted, and ⋯.
+- **Then:** the title; the submitter's 22px initials with "name · job · place"; and their latest
+  note as subtext.
+- **Foot:** Approve (small and **outlined**, never red, since a page of checks would otherwise
+  carry several red buttons), Send back (ghost), space, and Open (ghost).
+
+### Crew lanes and the Team tab
+
+- **Lane:** a Shadow Grey card with 11px corners, clipped. Its 44px head holds the person's
+  initials, their name (body strong), their counts in meta, and how recently they posted. After
+  a few silent days that turns to "Quiet for N days" in amber.
+- **Lane row:** 52px tall, in columns: the pill (124px), the title over its subtext, the time
+  bar, the age, and ⋯. Rows are divided by Chip Grey hairlines. Hover and the open row take
+  Band.
+- **Time bar:** an 8px pill-shaped track on Chip Grey. It fills leftwards from "now", and two
+  weeks fills it. It is coloured by the status hue (blue, amber, violet or red) and labelled for
+  screen readers with the status and duration. A "2 wk · 1 wk · now" axis sits above the lanes
+  (hidden on phones).
+- **Team tab:** a card per person, at least 300px wide, in auto-fill columns aligned to the top.
+  - The head has initials, name, role, and a stack of meta lines: open, done this week and
+    month, and checks waiting with the oldest one's age.
+  - The body has status bands (an uppercase label, a count and a hairline) of lane rows without
+    the bar. To do comes last and folded.
+  - A column under a dragged task shows a 2px dashed focus outline.
+  - One column on phones.
+
+### The Log
+
+- **Head:** "Log" in Friz. Then filter pills (All · Open issues & ideas · Reference) with
+  counts, a search (240px; on phones full width on its own line), and + Note. + Note is small and
+  outlined, not red: the one red button in view belongs to the composer or the panel. It reads
+  "Note (draft)" when a draft is waiting. On phones the floating + takes its place. A second line holds the category as a lit chip (Shadow Grey, Strong Rule
+  edge) that clears it, plus the category and author pickers.
+- **Note card:** Shadow Grey with a hairline and 8px corners, clipped.
+  - The feed fills columns of at least 264px, and every card in a row is the same height. Half
+    screen has two columns. Phones have one, with natural heights.
+  - **Photo first:** the first photo is 148px tall (184px on phones), cropped to fill, with a
+    hairline under it and a "+N" badge in the bottom corner on a dark translucent pill.
+  - **Body** (10px by 12px):
+    - a chips row: the kind as a quiet Chip Grey chip, the state pill (Open in amber, Actioned
+      blue, Resolved green, Dismissed and Archived outlined), and "Waiting to send" in amber
+      while offline;
+    - the title (body strong, two lines);
+    - the excerpt: three lines under a photo, eight without one (five on phones);
+    - the linked job, with a link icon and "+N";
+    - a foot of initials, name and age, with the category dot and place pushed right.
+  - **States:** hover and open as for tiles. Dismissed and archived cards lose their fill, with a
+    muted title.
+- **Paging:** "Show older" (small ghost) under the feed. Archived notes fold behind their own
+  strip.
+
+### Note composer
+
+A wide dialog (720px). On phones it fills the screen height, text first.
+
+- **Title:** a single-line input, 16px at 600, with the placeholder "Title". It is required,
+  takes up to 140 characters, and has focus when the dialog opens.
+- **Detail:** a textarea, 16px with 1.45 line height, at least 132px tall (120px on phones),
+  with the placeholder "Detail". The two boxes have no visible labels; their accessible names
+  are Title and Detail.
+- **Keys:** Enter in the title moves to the detail. Ctrl+Enter (or ⌘+Enter) posts from either
+  box. Esc closes like Close.
+- **Optional fields:** Kind (a segmented Issue · Idea · Reference; 44px equal segments on phones),
+  Category (a picker button with a dot and the place), Job (the lead and designers only), and
+  Photos.
+  - These sit in three columns on desktop, two at half-screen and one on phones.
+  - Field captions are uppercase labels.
+- **Errors:** a Link Coral meta line above the actions ("Write a title first.").
+- **Actions:** Post (primary) and Close, then space, the draft status in meta ("Draft kept on
+  this device"), and Discard draft (ghost).
+- **The draft is kept:** every keystroke and photo is saved on the device.
+  - Close and Esc never ask; a toast says "Draft kept: + Note brings it back".
+  - A post the rules refuse puts its words and photos back into the draft.
+  - Editing a note that is already posted is different: that is a guarded dialog.
+
+### Photos: tray, thumbnails, lightbox
+
+- **Tray:** 72px squares (80px on phones) with 8px corners, a hairline and Band behind, 6px apart.
+  It holds up to 12 photos. Each has a round remove button in the top corner (26px; 36px on
+  phones) on a dark translucent disc. While a photo is being resized it shows "Preparing…" in
+  micro type. Camera and Photos buttons on touch screens; Add photos, drop and paste on a PC. A box
+  under a dragged file shows a 2px dashed focus outline.
+- **Thumbnails:** a row of 72px squares (80px on phones). In the note panel they become a grid of
+  4:3 tiles at least 140px wide.
+- **Lightbox:** a full-screen, near-opaque dark stage in both themes.
+  - Its bar holds a tabular "n / m" count, the caption (ending in an ellipsis), and a 44px
+    close.
+  - Previous and next are 48 × 64px (44 × 56 on phones) on translucent Shadow Grey.
+  - It opens on the thumbnail, softened, and swaps in the full photo.
+  - ← → and swipe move between photos; Esc or a tap on the stage closes it.
+  - It fades in over 150ms, and with no fade under reduced motion.
+
+### Note side panel
+
+The same panel as a task (a full-screen sheet on phones).
+
+- **Top:** the chips row (kind, state, pending), the title in the body face at headline size,
+  then the author's initials, name and "when · edited", and a Category property.
+- **Body:** the photos grid, then the text (Show all / Show less when long), then the linked jobs
+  as rows: a 36px thumbnail or icon, the title over its place, at least 48px tall.
+- **Triage** (an open issue or idea, for the lead and designers): an amber callout with Make job
+  (small primary), Link to a job, and Dismiss (ghost). On phones Make job and Link to a job move
+  to the bottom dock.
+- **Dismissed:** a neutral callout with who, when and why, and Reopen.
+
+### Manager Jobs
+
+A read-only list of the jobs the lead has shared: no ticks, no drag, no status menu.
+
+- **Head:** "Jobs" with filter pills (All · In progress · Waiting · Being checked · Done this
+  month), a search (220px), and a By category / Full list switch.
+- **Category sections:** a toggle with a chevron, the category name in Friz at title size, and a
+  count. Each folds, and the fold is remembered.
+- **Row:** at least 64px, in columns: the pill (128px), the main column, the stage
+  (160–240px), who has it (140px), and the age.
+  - The main column holds the title (wrapping), its place in meta, the latest update on one line
+    (two on phones), and "A note waiting for an answer" in amber.
+  - Half-screen drops the who column. Phones restack it as pill · who · age over the title over
+    the stage.
+- **Stage strip:** a row of 12 × 6px pills, one per step: done green, doing blue, sent back
+  coral, waiting amber, n/a outlined. A meta line names the current step. Without stage sharing
+  the cell says "Stage not shared".
+- **Job sheet:** the crumb and the title in the body face, then properties (Who, Rev in mono…).
+  - The stage comes next, as a larger strip (20 × 8px) and an ordered list of 40px steps. Each
+    step has a round 16px mark, not a box, since there is nothing to tick: done is filled green,
+    doing is a blue ring, n/a is dashed.
+  - Last comes "Updates and notes" with the composer.
+- **Share with managers** (the lead's ⋯ on a job or group): a menu with an uppercase heading and
+  checked choices. "As [the group above]" (with its level as a hint), Not shared, Status only
+  (hint: status, latest update, who, age) and Status + stage (hint: and its steps). The panel's
+  properties row says how it is shared and where from.
+- **Questions & requests** (lead's Home, above Ready for checking, only when any are open): rows
+  of at least 52px.
+  - Each row has a kind chip ("Customer cancelled" in amber), the title over "name: note", and
+    "age · +N".
+  - Then Cancel job (small danger, only for a cancellation), Reply, and Answered (ghost).
+
+### Loading, empty and error states
+
+- **Skeletons:** flat Shadow Grey blocks with a hairline and 8px corners. Each is the size of
+  what it stands for: a 128px tile, a 280px note card, a 64px row (inside a list, with only its
+  bottom hairline), or a 60px block and a tile in the panel. They do not shimmer. Their container
+  carries aria-busy and a "Loading…" label.
+- **Empty:** a dashed hairline box in Muted Ash, 16px padding, with any lead phrase in Ash at 600.
+  It says what to do next and may offer one small action. A view with nothing in it yet shows a
+  welcome block instead: a Friz heading, a line of Ash text at most 62ch, and its actions.
+- **Errors:** a block of Ash text at most 62ch wide, with 24px above and below, announced as an
+  alert.
+  - The heading says what failed, in words: "Your tasks did not load", "The Log did not load",
+    "The jobs did not load".
+  - Two plain lines follow. A refusal by the rules reads "This account is not allowed to see
+    it." with what to do (reload, or ask the Design lead). Anything else gives its message and
+    "If you are offline, it loads when the connection is back."
+  - Then a Reload button.
+- **Gone:** something deleted or unshared, opened in the panel, says "Not here any more" or "Not
+  shared any more", with a way on (Open the archive).
+- **Failed writes:** the warning toast, in plain words ("That did not save: this account is not
+  allowed to make that change. Reload to see what you can do now."). A refused post keeps its
+  draft.
+
 ## Do's and Don'ts
 
 ### Do:
@@ -478,6 +815,12 @@ duration to 0.
   menu, popover, toast.
 - **Do** show focus as the 2px Burning Star Red ring, offset 2px, on every interactive element.
 - **Do** set folder paths and revisions in the mono face.
+- **Do** let a crowded row give way in order: touch targets first, then an ellipsis, or move a
+  fact to a second place (the Give-Way Rule). Nothing pokes out of its tile.
+- **Do** put tiles on a surface one tone away from their own. Inside the grey panel, children
+  sit on the ground.
+- **Do** say load errors and refusals in plain words, with what to do next, and keep what
+  someone typed when a post is refused.
 
 ### Don't:
 
@@ -491,3 +834,5 @@ duration to 0.
   touchable control.
 - **Don't** animate anything that isn't a change of state, and never on page load.
 - **Don't** set job or task titles in Friz Quadrata. Don't ship the licensed font files.
+- **Don't** show raw backend errors ("Missing or insufficient permissions") to anyone.
+- **Don't** fill Approve red where several checks share a page. On check tiles it is outlined.

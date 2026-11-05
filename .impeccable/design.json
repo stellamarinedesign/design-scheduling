@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-03T22:55:20.193941+00:00",
+  "generatedAt": "2026-11-05T04:04:06.301783+00:00",
   "title": "Design System: Design Scheduling",
   "extensions": {
     "colorMeta": {
@@ -322,12 +322,17 @@
       {
         "name": "phone",
         "value": "700px",
-        "purpose": "Below: one column, panel as a full-height sheet, floating add button (provisional)."
+        "purpose": "Below: one column (two tiles to a row), panel as a full-height sheet, bottom tab bar and floating add button."
       },
       {
         "name": "wide",
         "value": "1100px",
-        "purpose": "Above: Home splits into two columns (provisional). Every view is also checked at ~900px (half-screen)."
+        "purpose": "Below: the sidebar becomes a drawer. Every view is also checked at ~900px (half-screen)."
+      },
+      {
+        "name": "panel-beside",
+        "value": "1280px",
+        "purpose": "At or above: the task panel sits beside the list; below, it slides over it."
       }
     ]
   },
@@ -393,8 +398,40 @@
       "kind": "nav",
       "refersTo": "count-bubble",
       "description": "Shadow Grey bar on the 3px red rule; active tab underlined; counts in bubbles.",
-      "html": "<header class=\"ds-head\"><span class=\"ds-title\">Design Scheduling</span><nav class=\"ds-tabs\"><a class=\"ds-tab ds-on\">Home</a><a class=\"ds-tab\">Categories</a><a class=\"ds-tab\">Team <span class=\"ds-count\">2</span></a><a class=\"ds-tab\">Log</a></nav></header>",
+      "html": "<header class=\"ds-head\"><span class=\"ds-title\">Design Scheduling</span><nav class=\"ds-tabs\"><a class=\"ds-tab ds-on\">Home</a><a class=\"ds-tab\">Tasks</a><a class=\"ds-tab\">Team <span class=\"ds-count\">2</span></a><a class=\"ds-tab\">Log</a></nav></header>",
       "css": ".ds-head{display:flex;align-items:center;gap:24px;background:var(--header-bg, #282827);border-bottom:3px solid #ea372e;padding:0 16px;height:52px}.ds-title{font:700 15px/1 'Friz Quadrata Pro','Friz Quadrata BT','Friz Quadrata',Georgia,serif;text-transform:uppercase;letter-spacing:.1em;color:var(--header-text, #fff)}.ds-tabs{display:flex;gap:4px;height:100%}.ds-tab{display:flex;align-items:center;gap:6px;padding:0 12px;font:600 14.5px/1 system-ui,'Segoe UI',sans-serif;color:var(--text3, #b0b0ab);border-bottom:3px solid transparent;margin-bottom:-3px;cursor:pointer}.ds-tab:hover{color:var(--text, #fff)}.ds-on{color:var(--text, #fff);border-bottom-color:var(--tab-active, #ea372e)}.ds-count{background:var(--count-bg, #ea372e);color:var(--count-text, #fff);border-radius:999px;padding:1px 6px;font:700 11px/1.2 system-ui,'Segoe UI',sans-serif}"
+    },
+    {
+      "name": "Tile",
+      "kind": "card",
+      "refersTo": "tile",
+      "description": "One task or job: tick (subtasks), status pill, age and more on top; title, place, subtext; Start, progress and owner in the foot. On phones the age moves to the foot and the pill ends in an ellipsis before anything overflows.",
+      "html": "<div class=\"ds-tiles\"><article class=\"ds-tile\"><div class=\"ds-top\"><span class=\"ds-pl ds-prog\">In progress</span><span class=\"ds-sp\"></span><span class=\"ds-meta\">2d</span><button class=\"ds-more\" aria-label=\"More actions\">&#8943;</button></div><div class=\"ds-title\">Hatch frame drawings, revision B</div><div class=\"ds-path\"><span class=\"ds-dot\"></span><span>Deck fittings &rsaquo; Hatches</span></div><div class=\"ds-foot\"><span class=\"ds-bar\"><i style=\"width:60%\"></i></span><span class=\"ds-meta\">3/5</span><span class=\"ds-av\">AB</span></div></article><article class=\"ds-tile\"><div class=\"ds-top\"><span class=\"ds-pl ds-wait\">Waiting</span><span class=\"ds-sp\"></span><button class=\"ds-more\" aria-label=\"More actions\">&#8943;</button></div><div class=\"ds-title\">Check bracket hole sizes</div><div class=\"ds-sub\">Waiting: supplier drawing</div><div class=\"ds-foot\"><span class=\"ds-sp\"></span><span class=\"ds-meta\">5d</span></div></article></div>",
+      "css": ".ds-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(208px,1fr));gap:12px}.ds-tile{background:var(--surface,#282827);border:1px solid var(--border,#454542);border-radius:8px;padding:10px 10px 10px 12px;display:flex;flex-direction:column;gap:6px;min-height:128px;color:var(--text,#fff);font:400 14.5px/1.4 system-ui,'Segoe UI',sans-serif;cursor:pointer;transition:border-color 120ms ease}.ds-tile:hover{border-color:var(--border2,#5e5e5a)}.ds-tile:focus-within{outline:2px solid var(--focus,#ea372e);outline-offset:2px}.ds-top{display:flex;align-items:center;gap:6px;min-height:28px;min-width:0}.ds-pl{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;height:22px;line-height:22px;padding:0 10px;border-radius:999px;font-size:13px;font-weight:500}.ds-prog{background:var(--blue-bg,#172033);color:var(--blue-text,#8ab4ff)}.ds-wait{background:var(--amber-bg,#2b1f08);color:var(--amber-text,#f2b84b)}.ds-sp{flex:1}.ds-meta{font-size:13px;color:var(--text3,#b0b0ab);font-variant-numeric:tabular-nums;white-space:nowrap}.ds-more{width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--text3,#b0b0ab);cursor:pointer}.ds-more:hover{background:var(--bg,#1c1c1b);color:var(--text,#fff)}.ds-title{font-weight:600;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.ds-path{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text3,#b0b0ab)}.ds-dot{width:8px;height:8px;border-radius:50%;background:var(--cat-5,#4fb8a8);flex:none}.ds-sub{font-size:13px;color:var(--amber-text,#f2b84b)}.ds-foot{display:flex;align-items:center;gap:8px;margin-top:auto;min-height:24px}.ds-bar{position:relative;flex:1;height:4px;border-radius:999px;background:var(--bg2,#333331);overflow:hidden}.ds-bar i{position:absolute;inset:0 auto 0 0;background:var(--text2,#d2d2ce)}.ds-av{width:24px;height:24px;border-radius:50%;background:var(--bg2,#333331);display:inline-grid;place-items:center;font-size:10.5px;font-weight:700;color:var(--text2,#d2d2ce)}"
+    },
+    {
+      "name": "Callouts",
+      "kind": "custom",
+      "refersTo": "callout-check",
+      "description": "Where the open task stands, with its actions: status tint, head as what, who and when, then an acts row. Request callouts share the amber of anything waiting.",
+      "html": "<div class=\"ds-cos\"><div class=\"ds-co ds-co-check\"><div class=\"ds-co-head\">Ready for check &middot; submitted by A. Designer &middot; 2h ago</div><div class=\"ds-acts\"><button class=\"ds-b ds-b-pri\">&#10003; Approve</button><button class=\"ds-b\">Send back</button></div></div><div class=\"ds-co ds-co-fix\"><div class=\"ds-co-head\">Sent back &middot; yesterday</div><div class=\"ds-co-body\">Dimension the flange holes.</div><div class=\"ds-acts\"><button class=\"ds-b\">Start fixing</button></div></div><div class=\"ds-co ds-co-req\"><div class=\"ds-co-head\">Question from a manager &middot; 1h ago</div><div class=\"ds-co-body\">Is revision C on the way?</div><div class=\"ds-acts\"><button class=\"ds-b\">Reply</button><button class=\"ds-b ds-b-ghost\">Mark answered</button></div></div></div>",
+      "css": ".ds-cos{display:grid;gap:12px;max-width:520px}.ds-co{border-radius:11px;padding:12px 14px;display:flex;flex-direction:column;gap:10px;background:var(--bg,#1c1c1b);border:1px solid var(--border,#454542);color:var(--text,#fff);font:400 14.5px/1.4 system-ui,'Segoe UI',sans-serif}.ds-co-head{font-size:13px;font-weight:600}.ds-co-body{white-space:pre-wrap;overflow-wrap:anywhere}.ds-co-check{background:var(--violet-bg,#251c45);border-color:transparent}.ds-co-check .ds-co-head{color:var(--violet-text,#c4b5fd)}.ds-co-fix{background:var(--red-bg,#2b100e);border-color:transparent}.ds-co-fix .ds-co-head{color:var(--red-text,#ff7369)}.ds-co-req{background:var(--amber-bg,#2b1f08);border-color:transparent}.ds-co-req .ds-co-head{color:var(--amber-text,#f2b84b)}.ds-acts{display:flex;gap:8px;flex-wrap:wrap}.ds-b{height:36px;padding:0 14px;border-radius:8px;border:1px solid var(--border2,#5e5e5a);background:transparent;color:var(--text2,#d2d2ce);font:600 14px/1 system-ui,'Segoe UI',sans-serif;cursor:pointer}.ds-b:hover{background:var(--bg,#1c1c1b)}.ds-b:focus-visible{outline:2px solid var(--focus,#ea372e);outline-offset:2px}.ds-b-pri{background:var(--accent,#af1f24);border-color:var(--accent,#af1f24);color:#fff}.ds-b-pri:hover{background:var(--accent,#af1f24);filter:brightness(1.12)}.ds-b-ghost{border-color:transparent;color:var(--text3,#b0b0ab)}"
+    },
+    {
+      "name": "Tasks and Steps Inset",
+      "kind": "custom",
+      "refersTo": "kids-inset",
+      "description": "A node's children in the task panel, stepped back to the ground so grey tiles never sit on grey; Tiles/List switch (icons only on phones), compact child tiles with a tick.",
+      "html": "<div class=\"ds-panel\"><section class=\"ds-kids\"><div class=\"ds-kh\"><span class=\"ds-lbl\">Tasks and steps</span><span class=\"ds-m\">1 of 3 done</span><span style=\"flex:1\"></span><div class=\"ds-seg\" role=\"group\" aria-label=\"Show as\"><button aria-pressed=\"true\">Tiles</button><button aria-pressed=\"false\">List</button></div></div><div class=\"ds-kgrid\"><article class=\"ds-kt\"><div class=\"ds-ktop\"><button class=\"ds-tick ds-done\" aria-label=\"Done\"><i>&#10003;</i></button><div class=\"ds-kt-title\">General arrangement</div></div></article><article class=\"ds-kt\"><div class=\"ds-ktop\"><button class=\"ds-tick ds-doing\" aria-label=\"Doing\"><i></i></button><div class=\"ds-kt-title\">Cutting files</div></div><div class=\"ds-kfoot\"><span class=\"ds-pl\">In progress</span></div></article></div></section></div>",
+      "css": ".ds-panel{background:var(--surface,#282827);padding:16px;max-width:520px;font:400 14.5px/1.4 system-ui,'Segoe UI',sans-serif;color:var(--text,#fff)}.ds-kids{background:var(--ground,#0e0a0a);border:1px solid var(--border,#454542);border-radius:11px;padding:12px;display:flex;flex-direction:column;gap:8px}.ds-kh{display:flex;align-items:center;gap:8px;min-height:30px}.ds-lbl{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text3,#b0b0ab)}.ds-m{font-size:13px;color:var(--text3,#b0b0ab);font-variant-numeric:tabular-nums}.ds-seg{display:inline-flex;border:1px solid var(--border2,#5e5e5a);border-radius:8px;overflow:hidden}.ds-seg button{height:28px;padding:0 10px;border:0;background:transparent;color:var(--text3,#b0b0ab);font:600 13px/1 system-ui,'Segoe UI',sans-serif;cursor:pointer}.ds-seg button+button{border-left:1px solid var(--border2,#5e5e5a)}.ds-seg button[aria-pressed=true]{background:var(--bg2,#333331);color:var(--text,#fff)}.ds-seg button:focus-visible{outline:2px solid var(--focus,#ea372e);outline-offset:-2px}.ds-kgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,200px),1fr));gap:8px}.ds-kt{background:var(--surface,#282827);border:1px solid var(--border,#454542);border-radius:8px;padding:6px 4px 6px 6px;display:flex;flex-direction:column;gap:4px;transition:border-color 120ms ease}.ds-kt:hover{border-color:var(--border2,#5e5e5a)}.ds-ktop{display:grid;grid-template-columns:28px minmax(0,1fr);gap:4px;align-items:start}.ds-kt-title{font-weight:600;line-height:1.3;padding-top:4px}.ds-tick{width:28px;height:28px;display:grid;place-items:center;border:0;background:transparent;padding:0;cursor:pointer;color:var(--surface,#282827)}.ds-tick i{width:20px;height:20px;border-radius:5px;border:1.5px solid var(--border2,#5e5e5a);display:grid;place-items:center;font-style:normal;font-size:13px}.ds-tick.ds-done i{background:var(--text2,#d2d2ce);border-color:var(--text2,#d2d2ce)}.ds-tick.ds-doing i{border-color:var(--blue,#3b82f6);background:var(--blue-bg,#172033)}.ds-tick:hover i{border-color:var(--text2,#d2d2ce)}.ds-tick:focus-visible{outline:2px solid var(--focus,#ea372e);outline-offset:-2px}.ds-kfoot{padding-left:32px}.ds-pl{display:inline-flex;height:22px;align-items:center;padding:0 10px;border-radius:999px;font-size:13px;background:var(--blue-bg,#172033);color:var(--blue-text,#8ab4ff)}"
+    },
+    {
+      "name": "Note Card",
+      "kind": "card",
+      "refersTo": "note-card",
+      "description": "A Log note in the feed: photo first with +N, kind chip and state pill, two-line title, excerpt, then who, when and the category dot.",
+      "html": "<article class=\"ds-nc\" tabindex=\"0\"><div class=\"ds-nc-photo\"><span class=\"ds-nc-more\">+2</span></div><div class=\"ds-nc-body\"><div class=\"ds-nc-chips\"><span class=\"ds-kc\">Issue</span><span class=\"ds-open\">Open</span></div><h3 class=\"ds-nc-title\">Bracket clashes with the cable tray</h3><p class=\"ds-nc-ex\">Seen during fit-out. Needs 20mm more clearance.</p><div class=\"ds-nc-foot\"><span class=\"ds-av\">CW</span><span>C. Worker</span><span class=\"ds-m\">3h</span><span class=\"ds-place\"><span class=\"ds-dot\"></span>Deck fittings</span></div></div></article>",
+      "css": ".ds-nc{display:flex;flex-direction:column;max-width:300px;overflow:hidden;background:var(--surface,#282827);border:1px solid var(--border,#454542);border-radius:8px;color:var(--text,#fff);font:400 14.5px/1.4 system-ui,'Segoe UI',sans-serif;cursor:pointer;transition:border-color 120ms ease}.ds-nc:hover{border-color:var(--border2,#5e5e5a)}.ds-nc:focus-visible{outline:2px solid var(--focus,#ea372e);outline-offset:-2px}.ds-nc-photo{position:relative;height:148px;background:var(--bg,#1c1c1b);border-bottom:1px solid var(--border,#454542)}.ds-nc-more{position:absolute;right:8px;bottom:8px;height:22px;padding:0 8px;border-radius:999px;background:rgba(14,10,10,.78);color:#fff;font-size:13px;font-weight:600;display:inline-flex;align-items:center}.ds-nc-body{display:flex;flex-direction:column;gap:6px;padding:10px 12px}.ds-nc-chips{display:flex;gap:6px}.ds-kc{height:22px;padding:0 8px;border-radius:999px;background:var(--bg2,#333331);color:var(--text2,#d2d2ce);font-size:13px;font-weight:500;display:inline-flex;align-items:center}.ds-open{height:22px;padding:0 10px;border-radius:999px;background:var(--amber-bg,#2b1f08);color:var(--amber-text,#f2b84b);font-size:13px;display:inline-flex;align-items:center}.ds-nc-title{margin:0;font-size:14.5px;font-weight:600;line-height:1.3}.ds-nc-ex{margin:0;font-size:13px;color:var(--text2,#d2d2ce)}.ds-nc-foot{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text2,#d2d2ce)}.ds-m{color:var(--text3,#b0b0ab);font-variant-numeric:tabular-nums}.ds-place{margin-left:auto;display:inline-flex;align-items:center;gap:6px;color:var(--text3,#b0b0ab)}.ds-dot{width:8px;height:8px;border-radius:50%;background:var(--cat-2,#e39b4b)}.ds-av{width:24px;height:24px;border-radius:50%;background:var(--bg2,#333331);display:inline-grid;place-items:center;font-size:10.5px;font-weight:700}"
     }
   ],
   "narrative": {
@@ -455,28 +492,38 @@
         "section": "layout"
       },
       {
+        "name": "The Give-Way Rule",
+        "body": "When a row runs short of room, nothing leaves its box. Things give way in a fixed order: 1. touch targets narrow first, never below the control as drawn; 2. then text ends in an ellipsis, with the whole words kept in the accessible name or menu; 3. or a fact moves to a second place that has room (a tile's age drops to its foot on phones).",
+        "section": "layout"
+      },
+      {
         "name": "The Floating-Only Shadow Rule",
         "body": "Nothing at rest casts a shadow. Cards, tiles and rows are flat. A shadow means \"this is above the page and will go away\".",
         "section": "elevation"
       }
     ],
     "dos": [
-      "**Do** keep the screen greyscale at rest and let the status hues carry meaning (the Signal",
+      "**Do** keep the screen greyscale at rest and let the status hues carry meaning (the Signal Rule).",
       "**Do** write the status word inside every status pill. Colour is never the only signal.",
       "**Do** keep job and task rows at 44px. Use tabular figures for every count, age and date.",
-      "**Do** check every view at 375px, about 900px (half-screen) and full desktop before calling",
-      "**Do** use the Floating panel shadow only on layers that float and dismiss: panel, sheet,",
+      "**Do** check every view at 375px, about 900px (half-screen) and full desktop before calling it done.",
+      "**Do** use the Floating panel shadow only on layers that float and dismiss: panel, sheet, menu, popover, toast.",
       "**Do** show focus as the 2px Burning Star Red ring, offset 2px, on every interactive element.",
-      "**Do** set folder paths and revisions in the mono face."
+      "**Do** set folder paths and revisions in the mono face.",
+      "**Do** let a crowded row give way in order: touch targets first, then an ellipsis, or move a fact to a second place (the Give-Way Rule). Nothing pokes out of its tile.",
+      "**Do** put tiles on a surface one tone away from their own. Inside the grey panel, children sit on the ground.",
+      "**Do** say load errors and refusals in plain words, with what to do next, and keep what someone typed when a post is refused."
     ],
     "donts": [
-      "**Don't** change the Stella tokens in `css/style.css` or the Friz Quadrata headings without",
-      "**Don't** fill more than one button per view with Upsdell Red. Never fill an area with",
+      "**Don't** change the Stella tokens in `css/style.css` or the Friz Quadrata headings without the owner's approval.",
+      "**Don't** fill more than one button per view with Upsdell Red. Never fill an area with Burning Star Red beyond a count bubble.",
       "**Don't** fill rows, cards or chips with category colour. Categories are dots.",
       "**Don't** put shadows on cards, tiles or rows at rest.",
-      "**Don't** hide an action behind hover or right-click alone. Every action needs a visible,",
+      "**Don't** hide an action behind hover or right-click alone. Every action needs a visible, touchable control.",
       "**Don't** animate anything that isn't a change of state, and never on page load.",
-      "**Don't** set job or task titles in Friz Quadrata. Don't ship the licensed font files."
+      "**Don't** set job or task titles in Friz Quadrata. Don't ship the licensed font files.",
+      "**Don't** show raw backend errors (\"Missing or insufficient permissions\") to anyone.",
+      "**Don't** fill Approve red where several checks share a page. On check tiles it is outlined."
     ]
   }
 }
