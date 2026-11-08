@@ -11,7 +11,7 @@
 // typing land in a popup: it slides in at the corner, its words are read out
 // (role="alert"), and its buttons are there for the mouse or a Tab.
 
-import { el, btn, icon, iconBtn, toast } from '../ui.js';
+import { el, btn, icon, iconBtn, toast, loadProblem } from '../ui.js';
 import { state, node, personName, realName } from '../state.js';
 import * as T from '../tree.js';
 import * as TC from '../timing.js';
@@ -19,7 +19,7 @@ import * as TR from '../timer.js';
 import { canWrite } from '../actions.js';
 import { Store } from '../store.js';
 import { openDialog, confirmDialog } from '../dialog.js';
-import { nowISO, dayOf, dayLabel } from '../dates.js';
+import { nowISO, dayOf, dayLabel, parseDay } from '../dates.js';
 
 const works = () => state.role === 'lead' || state.role === 'designer';
 
@@ -35,7 +35,8 @@ const works = () => state.role === 'lead' || state.role === 'designer';
 export function jobTimes(jobId) {
   const job = node(jobId);
   const t = state.time.job;
-  if (!job?.timeTracked || t.id !== jobId || !t.loaded) return null;
+  // Not loaded, or the query failed: the job's kept total stands in, and no figure claims 0m.
+  if (!job?.timeTracked || t.id !== jobId || !t.loaded || t.error) return null;
   const now = nowISO();
   const totals = TC.totals(state.idx, jobId, t.list, now);
   const live = new Map();
@@ -100,27 +101,34 @@ export function timerBar(job) {
   const others = (times?.list ?? []).filter((e) => !e.end && e.by !== state.me && !TC.stopOf(e, job, nowISO()));
   const who = [...new Set(others.map((e) => personName(e.by)))];
   const total = times ? figure(times, job.id, { cls: 'timer-total-fig', always: true }) : el('span', { class: 'timer-total-fig' }, TC.fmt((job.timeTotal ?? 0) * 60000));
+  // A name in the line is cut to one short run, so what the timer is counting
+  // to (the stop) always shows; the whole name is its tooltip.
+  const name = (text) => el('span', { class: 'timer-name', title: text }, text);
+  const parts = [];
+  const say = (...bits) => { if (parts.length) parts.push(' · '); parts.push(...bits); };
   let control = null;
-  let line = '';
   if (works() && TC.onBench(job)) {
     control = mineHere
       ? btn('Pause', () => TR.pauseTimer(job.id), { cls: 'sm timer-btn on', ic: 'pause', title: 'Pause your timer. It does not restart by itself.' })
       : btn('Start', () => TR.startTimer(job.id), { cls: 'sm timer-btn', ic: 'play', title: running ? `Start timing this job (pauses ${node(running.jobId)?.title ?? 'your other timer'})` : 'Start timing this job' });
+    // Until this person's running timers are in hand, Start could not pause the other one.
+    if (!state.time.loaded) { control.disabled = true; control.title = 'Your timer is loading'; }
     if (mineHere) {
       const task = node(running.taskId);
-      line = `On ${task ? task.title : 'the job'} · stops ${TC.clock(running.stopAt)}${running.stopFor === 'lunch' ? ' for lunch' : ''}`;
+      say('On ', task ? name(task.title) : 'the job', ` · stops ${TC.clock(running.stopAt)}${running.stopFor === 'lunch' ? ' for lunch' : ''}`);
     } else if (running) {
-      line = `Your timer is on ${node(running.jobId)?.title ?? 'another job'}`;
+      say('Your timer is on ', name(node(running.jobId)?.title ?? 'another job'));
     }
   } else if (works()) {
-    line = 'The timer runs while the job is being worked on';
+    say('The timer runs while the job is being worked on');
   }
-  if (who.length) line = [line, `${who.join(', ')} timing too`].filter(Boolean).join(' · ');
+  if (who.length) say(`${who.join(', ')} timing too`);
+  if (state.time.job.id === job.id && state.time.job.error) say('The entries did not load: this is the total last saved');
   return el('div', { class: 'timer-bar', role: 'group', 'aria-label': 'Time' },
     control,
     el('button', { class: 'timer-total', type: 'button', title: 'Open the time log', 'aria-label': `Time recorded: ${total.textContent}. Open the time log`, onclick: () => openTimeLog(job.id) },
       icon('clock', 16), total),
-    line ? el('span', { class: 'meta timer-line' }, line) : null);
+    parts.length ? el('span', { class: 'meta timer-line' }, ...parts) : null);
 }
 
 /** A task's time in the panel's property row, inside a tracked job: opens the job's log. */
@@ -209,9 +217,12 @@ export function openTimeLog(jobId) {
   if (!job) return;
   let entries = [];
   let loaded = false;
-  let form = null;            // {kind: 'add'} | {kind: 'edit', id}
+  let loadErr = null;
+  let fromCache = false;      // offline: what this device holds, maybe not all of it
+  let form = null;           // {kind: 'add' | 'edit', id?, values?, error?}: values and error when a save came back refused
   let stale = false;
   let unsub = null;
+  let gone = false;
   openDialog((box, close, { dismiss }) => {
     box.classList.add('time-log');
     const totalEl = el('span', { class: 'meta' });
@@ -220,7 +231,7 @@ export function openTimeLog(jobId) {
     const body = el('div', { class: 'tl-body' });
     box.append(
       el('div', { class: 'tl-head' },
-        el('div', { class: 'tl-title' }, el('h3', {}, 'Time log'), el('div', { class: 'meta wrap' }, job.title)),
+        el('div', { class: 'tl-title' }, el('h3', {}, 'Time log'), el('div', { class: 'meta wrap', title: job.title }, job.title)),
         totalEl),
       el('div', { class: 'row tl-tools' }, addBtn, csvBtn),
       body,
@@ -235,17 +246,27 @@ export function openTimeLog(jobId) {
       csvBtn.disabled = !entries.length;
       addBtn.disabled = form?.kind === 'add';
       body.textContent = '';
-      if (form?.kind === 'add') body.append(entryForm({ jobId, onDone: () => { form = null; draw(); } }));
-      if (!loaded) { body.append(el('div', { class: 'skel', 'aria-busy': 'true', style: { 'min-height': '80px' } })); return; }
+      const done = () => { form = null; draw(); };
+      if (form?.kind === 'add') body.append(entryForm({ jobId, values: form.values, error: form.error, onDone: done }));
+      if (!loaded) { body.append(el('div', { class: 'skel', 'aria-busy': 'true', 'aria-label': 'Loading', style: { 'min-height': '80px' } })); return; }
+      if (loadErr && !entries.length) {
+        body.append(el('div', { class: 'state-msg tl-state', role: 'alert' },
+          el('h4', {}, 'The time log did not load'),
+          ...loadProblem(loadErr).map((line) => el('p', {}, line)),
+          el('div', {}, btn('Reload', () => location.reload(), { cls: 'sm' }))));
+        return;
+      }
+      const partial = fromCache && Store.offline();
+      if (partial) body.append(el('p', { class: 'meta tl-note' }, 'Offline: these are the entries this device holds. Any others show when the connection is back.'));
       if (!entries.length) {
-        body.append(el('div', { class: 'empty' }, el('span', {}, 'No time recorded yet. Start the timer at the top of the job, or add a stretch it missed.')));
+        if (!partial) body.append(el('div', { class: 'empty' }, el('span', {}, 'No time recorded yet. Start the timer at the top of the job, or add a stretch it missed.')));
         return;
       }
       for (const { day, entries: list } of TC.byDay(entries)) {
         const dayMs = list.reduce((s, e) => s + TC.msOf(e, fresh, now), 0);
-        const sec = el('section', { class: 'tl-day', 'aria-label': dayLabel(day) },
-          el('div', { class: 'tl-day-head' }, el('h4', { class: 'lbl' }, day === dayOf() ? `Today · ${dayLabel(day)}` : dayLabel(day)), el('span', { class: 'meta' }, TC.fmt(dayMs))));
-        for (const e of list) sec.append(form?.kind === 'edit' && form.id === e.id ? entryForm({ jobId, entry: e, onDone: () => { form = null; draw(); } }) : entryRow(e, fresh, now));
+        const sec = el('section', { class: 'tl-day', 'aria-label': dayHead(day) },
+          el('div', { class: 'tl-day-head' }, el('h4', { class: 'lbl' }, day === dayOf() ? `Today · ${dayHead(day)}` : dayHead(day)), el('span', { class: 'meta' }, TC.fmt(dayMs))));
+        for (const e of list) sec.append(form?.kind === 'edit' && form.id === e.id ? entryForm({ jobId, entry: e, values: form.values, error: form.error, onDone: done }) : entryRow(e, fresh, now));
         body.append(sec);
       }
     };
@@ -256,12 +277,16 @@ export function openTimeLog(jobId) {
       const task = e.taskId ? node(e.taskId) : null;
       const prov = provenance(e);
       const can = TR.canEditEntry(e);
-      return el('div', { class: `tl-row${running ? ' live' : ''}` },
+      // Stopped before it started (clocks that disagreed, a hand edit): it
+      // counts as nothing, and says so rather than showing a quiet 0m.
+      const backwards = TC.isBackwards(e);
+      return el('div', { class: `tl-row${running ? ' live' : ''}${backwards ? ' wrong' : ''}` },
         el('div', { class: 'tl-when' },
           el('span', { class: 'tl-times' }, `${TC.clockAmPm(e.start)} – ${running ? 'now' : TC.clockAmPm(end)}`),
           el('span', { class: 'tl-dur' }, TC.fmt(TC.msOf(e, fresh, now)))),
         el('div', { class: 'tl-what' },
           el('span', { class: 'tl-task' }, task ? task.title : e.taskId ? 'A task since removed' : 'The job itself'),
+          backwards ? el('span', { class: 'tl-flag' }, can ? 'Stops before it starts, so it counts as nothing. Edit it to fix.' : 'Stops before it starts, so it counts as nothing.') : null,
           el('span', { class: 'meta' }, [personName(e.by), e.pausedFor === 'lunch' ? 'paused for lunch' : '', prov].filter(Boolean).join(' · '))),
         can ? el('div', { class: 'tl-acts' },
           btn('Edit', () => { form = { kind: 'edit', id: e.id }; draw(); }, { cls: 'sm ghost', ic: 'edit' }),
@@ -271,28 +296,38 @@ export function openTimeLog(jobId) {
           }, 'sm')) : null);
     };
 
-    unsub = Store.watchTime({ jobId }, (list) => {
-      entries = list ?? entries;
+    unsub = Store.watchTime({ jobId }, (list, meta) => {
+      if (list) { entries = list; loadErr = null; fromCache = Boolean(meta?.fromCache); } else loadErr = meta?.error ?? new Error('The time entries could not be read.');
       loaded = true;
       // An open form is never redrawn under the cursor; it catches up when closed.
       if (form) { stale = true; return; }
       draw();
-    });
+    }, { cached: true });
     draw();
 
-    /** Add or edit: day, start, stop, task. A running entry has no stop to change. */
-    function entryForm({ jobId: jid, entry = null, onDone }) {
+    /**
+     * Add or edit: day, start, stop, task. A running entry has no stop to
+     * change. `values` and `error`: a save the store refused, put back as it
+     * was typed (the form closes at once, since offline the write waits).
+     */
+    function entryForm({ jobId: jid, entry = null, values = null, error = '', onDone }) {
       const running = entry && !entry.end;
-      const err = el('div', { class: 'form-err', role: 'alert' });
-      const day = el('input', { class: 'input', type: 'date', value: entry ? TC.dayOfInstant(entry.start) : dayOf(), 'aria-label': 'Day', max: dayOf() });
-      const start = el('input', { class: 'input', type: 'time', value: entry ? TC.hmOf(entry.start) : '', 'aria-label': 'Start', required: true });
-      const stop = el('input', { class: 'input', type: 'time', value: entry?.end ? TC.hmOf(entry.end) : '', 'aria-label': 'Stop', required: !running, disabled: Boolean(running) });
-      const task = el('select', { class: 'sel', 'aria-label': 'Task' }, taskOptions(jid, entry?.taskId ?? null));
+      const err = el('div', { class: 'form-err', role: 'alert' }, error);
+      const day = el('input', { class: 'input', type: 'date', value: values?.day ?? (entry ? TC.dayOfInstant(entry.start) : dayOf()), 'aria-label': 'Day', max: dayOf() });
+      const start = el('input', { class: 'input', type: 'time', value: values?.start ?? (entry ? TC.hmOf(entry.start) : ''), 'aria-label': 'Start', required: true });
+      const stop = el('input', { class: 'input', type: 'time', value: values?.stop ?? (entry?.end ? TC.hmOf(entry.end) : ''), 'aria-label': 'Stop', required: !running, disabled: Boolean(running) });
+      const task = el('select', { class: 'sel', 'aria-label': 'Task' }, taskOptions(jid, values ? values.task || null : entry?.taskId ?? null));
       const save = () => {
         const s = TC.instantOf(day.value, start.value);
         const f = running ? null : TC.instantOf(day.value, stop.value);
         if (!s || (!running && !f)) { err.textContent = 'Give it a day, a start and a stop.'; return; }
-        const problem = entry ? TR.editEntry(entry, { start: s, end: f, taskId: task.value || null }) : TR.addTime({ jobId: jid, taskId: task.value || null, start: s, end: f });
+        const typed = { day: day.value, start: start.value, stop: stop.value, task: task.value };
+        const back = { kind: entry ? 'edit' : 'add', id: entry?.id, values: typed, error: 'That did not save, so it is back here as you typed it.' };
+        // Refused after the form closed: it comes back, unless the log has gone or another form is open.
+        const onFail = () => { if (gone || form) return; form = back; draw(); };
+        const problem = entry
+          ? TR.editEntry(entry, { start: s, end: f, taskId: task.value || null }, { onFail })
+          : TR.addTime({ jobId: jid, taskId: task.value || null, start: s, end: f }, { onFail });
         if (problem) { err.textContent = problem; return; }
         onDone();
         if (stale) draw();
@@ -312,7 +347,14 @@ export function openTimeLog(jobId) {
       requestAnimationFrame(() => start.focus());
       return wrap;
     }
-  }, { label: 'Time log', wide: true, guard: true }).then(() => unsub?.());
+  }, { label: 'Time log', wide: true, guard: true }).then(() => { gone = true; unsub?.(); });
+}
+
+/** 'Mon 3 Nov': a log that runs over weeks reads by weekday. */
+const WEEKDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+function dayHead(day) {
+  const d = parseDay(day);
+  return d ? `${WEEKDAY[d.getDay()]} ${dayLabel(day)}` : dayLabel(day);
 }
 
 /** The CSV for the quote, saved on this computer. */

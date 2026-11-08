@@ -152,6 +152,13 @@ export const Store = {
   },
 
   /**
+   * Live data and no connection. Firestore keeps a write on this device and
+   * sends it when it can, so the write's promise waits until then: whatever
+   * waits on one says so instead of hanging.
+   */
+  offline() { return this.mode === 'firestore' && !navigator.onLine; },
+
+  /**
    * One change, written together: whole nodes (`set`), field changes
    * (`patch`, each {id, ...fields}), deletions (`remove`, ids), and timeline
    * entries (`updates`, each {taskId, ...}); and for the Log, whole notes
@@ -426,10 +433,15 @@ export const Store = {
   /**
    * Time entries matching equality filters - {by, end: null, day, jobId} -
    * live. Equality alone, so Firestore needs no composite index for any of
-   * them. `cb(list, {error?})`.
+   * them. `cb(list, {error?, fromCache?})`.
+   *
+   * `fromCache` (asked for with `cached: true`): the list is what this device
+   * holds, not yet confirmed by the server - offline, or the first moments
+   * after opening. It may be short, so nothing that writes a total from the
+   * list may trust it.
    * @returns {() => void} stop watching
    */
-  watchTime(match, cb) {
+  watchTime(match, cb, { cached = false } = {}) {
     const keys = Object.keys(match);
     if (this.mode === 'local') {
       const send = () => cb(this._localTime().filter((e) => keys.every((k) => (e[k] ?? null) === match[k])), {});
@@ -440,7 +452,8 @@ export const Store = {
     const { collection, query, where, onSnapshot } = this._fs;
     return onSnapshot(
       query(collection(this._db, COL.time), ...keys.map((k) => where(k, '==', match[k]))),
-      (snap) => cb(snap.docs.map((d) => ({ ...d.data(), id: d.id })), {}),
+      { includeMetadataChanges: cached },
+      (snap) => cb(snap.docs.map((d) => ({ ...d.data(), id: d.id })), { fromCache: snap.metadata.fromCache }),
       (e) => { console.warn('[time]', e.message); cb(null, { error: e }); },
     );
   },

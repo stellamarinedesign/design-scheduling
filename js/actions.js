@@ -160,7 +160,7 @@ function nextColour() {
  * A job takes the tasks template of its nearest group unless told not to.
  * @returns {string} the new id
  */
-export function createTask({ title, parentId = null, brief = '', useTemplate = true, assignee }) {
+export function createTask({ title, parentId = null, brief = '', useTemplate = true, assignee, onFail = null }) {
   const at = nowISO();
   const parent = parentId ? node(parentId) : null;
   const inJob = parent && (parent.kind === T.KIND.task || parent.kind === T.KIND.step || T.isSection(state.idx, parent));
@@ -183,7 +183,9 @@ export function createTask({ title, parentId = null, brief = '', useTemplate = t
     if (t) set.push(...fromTemplate(t.template, n.id, at));
   }
   // A task added inside a job is activity on the job (and the tasks above it).
-  write({ set, patch: inJob && parent ? touchJob(parentId, at) : [], updates: inJob ? [] : [{ taskId: n.id, at, by: state.me, kind: 'create', text: '' }] });
+  write({ set, patch: inJob && parent ? touchJob(parentId, at) : [], updates: inJob ? [] : [{ taskId: n.id, at, by: state.me, kind: 'create', text: '' }] },
+    onFail ? `"${title.length > 60 ? `${title.slice(0, 57)}…` : title}" was not added (it is back in the box)` : undefined)
+    .catch(() => onFail?.());
   return n.id;
 }
 
@@ -373,7 +375,7 @@ export function postUpdate(id, text, photos = [], { onFail = null } = {}) {
 }
 
 /** Firestore holds writes made with no connection and sends them later. */
-const offline = () => Store.mode === 'firestore' && !navigator.onLine;
+const offline = () => Store.offline();
 
 // ---------------------------------------------------------------------------
 // fields
@@ -735,6 +737,13 @@ export async function exportBackup() {
 let converting = false;
 export async function convertSteps() {
   if (state.role !== 'lead' || converting) return null;
+  // Offline, the archived steps would come from this device's cache, which
+  // may not hold them all: some would be left the old way, with the strip
+  // gone. And the write would wait for the connection anyway.
+  if (offline()) {
+    toast('Converting needs a connection: it reads every archived step from the server first. Try again when back online.', { warn: true, ms: 9000 });
+    return null;
+  }
   converting = true;
   try {
     const archived = (await Store.loadArchived()).filter(M.isStep);

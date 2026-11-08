@@ -404,6 +404,8 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
 .input { height: 36px; padding: 0 12px; }
 .textarea { resize: vertical; min-height: 88px; }
 .textarea:focus, .input:focus { border-color: var(--focus); outline: none; }
+/* The field a form error is about, marked on the field itself as well as in words. */
+.input[aria-invalid="true"] { border-color: var(--red-text); }
 .hint { font-size: var(--fs-sm); color: var(--text3); }
 .form-err { font-size: var(--fs-sm); color: var(--red-text); min-height: 0; }
 .form-err:empty { display: none; }
@@ -570,7 +572,9 @@ input::-ms-reveal { display: none; }
 
 .toast {
   position: fixed; left: 50%; bottom: 24px; z-index: 95; display: flex; align-items: center; gap: var(--sp-3);
-  max-width: min(560px, calc(100vw - 32px)); padding: 10px 10px 10px 16px; border-radius: var(--radius);
+  /* Sized to its words, not to the half of the screen right of `left: 50%`:
+     without it a long toast on a phone squeezed into ~190px and stood tall. */
+  width: max-content; max-width: min(560px, calc(100vw - 32px)); padding: 10px 10px 10px 16px; border-radius: var(--radius);
   background: var(--toast-bg); color: var(--accent-text); box-shadow: var(--shadow-panel);
   opacity: 0; transform: translate(-50%, 8px);
   transition: opacity 150ms var(--ease-out), transform 150ms var(--ease-out);
@@ -593,6 +597,8 @@ input::-ms-reveal { display: none; }
 .timer-total:hover { background: var(--bg); }
 .timer-total svg { color: var(--text3); }
 .timer-line { white-space: normal; min-width: 0; }
+/* A task or job named in the line: one short run, so the stop after it always shows. */
+.timer-name { display: inline-block; max-width: min(30ch, 100%); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 /* A task's own time beside it; the one a timer is feeding is in progress blue. */
 .time-fig { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .time-fig.live { color: var(--st-progress-text); }
@@ -619,7 +625,8 @@ input::-ms-reveal { display: none; }
 .time-log { width: min(760px, 100%); gap: var(--sp-3); }
 .tl-head { display: flex; align-items: flex-start; gap: var(--sp-3); }
 .tl-title { flex: 1; min-width: 0; }
-.tl-title .meta { overflow-wrap: anywhere; }
+/* The job's name, two lines at most: a long one must not squeeze the entries (the panel behind has it whole). */
+.tl-title .meta { overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
 .tl-tools { gap: var(--sp-2); }
 .tl-body { display: flex; flex-direction: column; gap: var(--sp-4); max-height: min(60vh, 640px); overflow-y: auto; scrollbar-gutter: stable; padding-right: 4px; }
 .tl-day { display: flex; flex-direction: column; }
@@ -632,6 +639,11 @@ input::-ms-reveal { display: none; }
 .tl-times { color: var(--text); white-space: nowrap; }
 .tl-dur { color: var(--text3); font-size: var(--fs-sm); }
 .tl-row.live .tl-dur { color: var(--st-progress-text); }
+/* Stops before it starts: counts as nothing, and says so in amber (a thing to fix, not a failure). */
+.tl-row.wrong .tl-times { color: var(--st-waiting-text); }
+.tl-flag { font-size: var(--fs-sm); color: var(--st-waiting-text); }
+.tl-state { padding: var(--sp-3) 0; }
+.tl-state h4 { color: var(--text); }
 .tl-what { display: flex; flex-direction: column; min-width: 0; }
 .tl-task { overflow-wrap: anywhere; font-weight: 600; }
 .tl-acts { display: flex; align-items: center; gap: 2px; }
@@ -1073,6 +1085,12 @@ input::-ms-reveal { display: none; }
   .tile-top > .pill { padding: 0 8px; }
   .tile-top > .age { display: none; }
   .tile-foot > .foot-age { display: inline; margin-left: auto; flex: none; }
+  /* A tracked job's foot holds the bar, the count, its recorded time and the
+     age: more than half a phone's width takes, so it wraps rather than
+     running out of the tile. After the recorded time the age is another
+     duration, and a dot keeps "106h 55m" and "4m" apart. */
+  .tile-foot:has(> .time-mark) { flex-wrap: wrap; row-gap: 2px; }
+  .tile-foot > .time-mark + .foot-age::before { content: '·'; margin-right: 6px; color: var(--text3); }
   .tile-top .ib { width: 44px; height: 44px; margin: -8px -10px -8px -12px; }
   /* A category tile on a phone gives its name the width: tighter padding, and
      its 44px menu target sits in the corner instead of beside the name. */

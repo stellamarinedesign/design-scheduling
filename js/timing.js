@@ -193,8 +193,20 @@ export function endOf(entry, job, now) {
   return s ? s.end : now;
 }
 
-/** An entry's length in ms (never negative). `job` caps a running one. */
-export const msOf = (entry, job, now) => Math.max(0, Date.parse(endOf(entry, job, now)) - Date.parse(entry.start));
+/**
+ * An entry's length in ms: never negative, and nothing for one whose stop is
+ * before its start or whose times will not read. `job` caps a running one.
+ */
+export function msOf(entry, job, now) {
+  const ms = Date.parse(endOf(entry, job, now)) - Date.parse(entry.start);
+  return Number.isFinite(ms) && ms > 0 ? ms : 0;
+}
+
+/**
+ * A stopped entry whose stop comes before its start: two devices whose clocks
+ * disagree, or a hand edit. It counts as nothing, and the log says so.
+ */
+export const isBackwards = (e) => Boolean(e?.end) && Date.parse(e.end) < Date.parse(e.start);
 
 /** '4h 35m', '2h', '35m', '0m'. */
 export function fmt(ms) {
@@ -205,7 +217,7 @@ export function fmt(ms) {
 }
 
 /** Whole minutes, as `timeTotal` keeps them: the closed entries of a job. */
-export const closedMinutes = (entries) => Math.round(entries.filter((e) => e.end).reduce((s, e) => s + Math.max(0, Date.parse(e.end) - Date.parse(e.start)), 0) / MIN);
+export const closedMinutes = (entries) => Math.round(entries.filter((e) => e.end).reduce((s, e) => s + msOf(e, null, e.end), 0) / MIN);
 
 // ---------------------------------------------------------------------------
 // time follows the task in progress

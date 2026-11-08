@@ -1447,6 +1447,21 @@ export async function run() {
     expect([TC.hmOf(L(14, 5)), TC.clock(L(16, 30)), TC.clockAmPm(L(9, 5))], ['14:05', '4:30', '9:05 am']);
     expect([TC.fmt(0), TC.fmt(35 * 60000), TC.fmt(275 * 60000), TC.fmt(120 * 60000)], ['0m', '35m', '4h 35m', '2h']);
   });
+  test('a stop before its start counts as nothing, is flagged, and leaves the totals alone', () => {
+    const idx = tracked();
+    const fine = { id: 'a', jobId: 'j1', taskId: 't1', by: BY, start: L(8), end: L(9) };
+    const back = { id: 'b', jobId: 'j1', taskId: 't1', by: BY, start: L(14), end: L(13) };
+    expect([TC.isBackwards(fine), TC.isBackwards(back), TC.isBackwards(run1())], [false, true, false], 'running: not stopped, not backwards');
+    expect(TC.msOf(back, idx.byId.get('j1'), L(17)), 0);
+    expect(TC.closedMinutes([fine, back]), 60);
+    expect(TC.fmt(TC.totals(idx, 'j1', [fine, back], L(17)).get('j1')), '1h');
+    expect(TC.msOf({ ...fine, start: 'not a time at all, honest' }, idx.byId.get('j1'), L(17)), 0, 'times that will not read: nothing, never NaN');
+  });
+  test('a log over weeks: one heading per day, newest first, across months', () => {
+    const e = (id, d, mo = 10) => ({ id, jobId: 'j1', taskId: null, by: BY, start: new Date(2026, mo, d, 9).toISOString(), end: new Date(2026, mo, d, 10).toISOString() });
+    const list = [e('a', 28, 8), e('b', 30, 8), e('c', 2), e('d', 9), e('e', 9)];
+    expect(TC.byDay(list).map((d) => [d.day, d.entries.length]), [['2026-11-09', 2], ['2026-11-02', 1], ['2026-09-30', 1], ['2026-09-28', 1]]);
+  });
 
   group = 'writes';
   test('a template makes tasks with nobody on them - part of the job - every field written', () => {

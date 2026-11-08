@@ -674,7 +674,13 @@ function addControls(n) {
     const v = input.value.trim();
     if (!v) return;
     input.value = '';
-    A.createTask({ title: v, parentId: n.id, useTemplate: false });
+    // Refused: the name goes back in the box (the one on screen now, after
+    // any redraw), unless something else has been typed there since.
+    const putBack = () => {
+      const box = rootEl.querySelector(`[data-keep="add-${n.id}"]`);
+      if (box && !box.value) box.value = v;
+    };
+    A.createTask({ title: v, parentId: n.id, useTemplate: false, onFail: putBack });
     requestAnimationFrame(() => rootEl.querySelector('.kids .add-line .input')?.focus());
   };
   input.addEventListener('keydown', (e) => {

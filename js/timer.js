@@ -36,6 +36,9 @@ const works = () => state.role === 'lead' || state.role === 'designer';
 const isLead = () => state.role === 'lead';
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
+/** A name in a toast, cut short: a toast is read in a few seconds, and its button must stay in reach. */
+const short = (s, n = 48) => { const t = String(s ?? ''); return t.length > n ? `${t.slice(0, n - 1).trimEnd()}…` : t; };
+
 let started = false;
 let todayKey = null;
 let stopToday = null;
@@ -49,12 +52,12 @@ const dismissed = (() => {
   const KEY = 'stella.design.timerWarned';
   let set;
   try { set = new Set(JSON.parse(sessionStorage.getItem(KEY) ?? '[]')); } catch { set = new Set(); }
+  const keep = () => { try { sessionStorage.setItem(KEY, JSON.stringify([...set].slice(-20))); } catch { /* this page only */ } };
   return {
     has: (k) => set.has(k),
-    add: (k) => {
-      set.add(k);
-      try { sessionStorage.setItem(KEY, JSON.stringify([...set].slice(-20))); } catch { /* this page only */ }
-    },
+    add: (k) => { set.add(k); keep(); },
+    // The answer did not save (Keep going or Stop now refused): ask again.
+    drop: (k) => { set.delete(k); keep(); },
   };
 })();
 
@@ -95,7 +98,10 @@ export const workday = () => state.time.workday ?? TC.DEFAULT_WORKDAY;
  * jobs that lost a running entry get their total brought up to date.
  */
 function commit({ close = [], open = [], timePatch = [], timeRemove = [], patch = [], updates = [] }, what = 'The timer did not save') {
-  const tp = [...close.map((c) => ({ id: c.id, end: c.end, ...(c.pausedFor ? { pausedFor: c.pausedFor } : {}) })), ...timePatch];
+  // A stop is never before its start: an entry started on one device and
+  // stopped on another whose clock is behind would otherwise run backwards.
+  const startOf = (id) => (state.time.running.find((e) => e.id === id) ?? state.time.today.find((e) => e.id === id) ?? state.time.job.list.find((e) => e.id === id))?.start;
+  const tp = [...close.map((c) => ({ id: c.id, end: TC.latestOf(startOf(c.id), c.end), ...(c.pausedFor ? { pausedFor: c.pausedFor } : {}) })), ...timePatch];
   const ids = [...tp.map((p) => p.id), ...open.map((e) => e.id), ...timeRemove];
   const jobs = new Set([
     ...close.map((c) => state.time.running.find((e) => e.id === c.id)?.jobId ?? state.time.job.list.find((e) => e.id === c.id)?.jobId),
@@ -116,8 +122,10 @@ function commit({ close = [], open = [], timePatch = [], timeRemove = [], patch 
 async function syncTotal(jobId) {
   const job = node(jobId);
   if (!job || !canWrite(job) || !job.timeTracked && !job.timeTotal) return;
-  let list = state.time.job.id === jobId && state.time.job.loaded ? state.time.job.list : null;
-  if (!list) { try { list = await Store.getTime({ jobId }); } catch { return; } }
+  const j = state.time.job;
+  let list = j.id === jobId && j.loaded && !j.error && !j.fromCache ? j.list : null;
+  // Offline, a read gives only what this device holds: the total waits.
+  if (!list) { if (Store.offline()) return; try { list = await Store.getTime({ jobId }); } catch { return; } }
   const m = TC.closedMinutes(list);
   if ((node(jobId)?.timeTotal ?? 0) !== m && !pending.has(`total:${jobId}`)) {
     pending.add(`total:${jobId}`);
@@ -154,7 +162,7 @@ function restartAfterLunch(now) {
   const r = TC.lunchRestart(state.time.today, state.time.running, { idx: state.idx, now, workday: workday(), me: state.me });
   if (!r || pending.has(r.entry.id)) return;
   commit({ open: [r.entry] });
-  const name = T.nameOf(node(r.entry.taskId) ?? node(r.entry.jobId));
+  const name = short(T.nameOf(node(r.entry.taskId) ?? node(r.entry.jobId)));
   if (r.late) {
     toast(`Timer restarted on ${name}`, {
       action: `Back since ${TC.clock(r.lunchEnd)}`, ms: 15000,
@@ -170,10 +178,13 @@ function warn(now) {
   const e = myRunning();
   const key = e ? `${e.id}|${e.stopAt}` : null;
   const show = e && TC.warningDue(e, now) && !dismissed.has(key);
+  // Keep going or Stop now refused: the warning comes back, since the timer
+  // still stops where it did.
+  const again = () => { dismissed.drop(key); check(); };
   hooks.warn?.(show ? {
     text: TC.warningText(e, workday()),
-    keepGoing: () => { dismissed.add(key); keepGoing(e.id); },
-    stopNow: () => { dismissed.add(key); stopEntry(e.id); },
+    keepGoing: () => { dismissed.add(key); keepGoing(e.id)?.catch(again); },
+    stopNow: () => { dismissed.add(key); stopEntry(e.id)?.catch(again); },
     okay: () => { dismissed.add(key); hooks.warn?.(null); },
   } : null);
 }
@@ -190,6 +201,8 @@ function warn(now) {
 export function startTimer(jobId) {
   const job = node(jobId);
   if (!job?.timeTracked) return;
+  // Before this person's running timers are in hand, the other one could not be paused.
+  if (!state.time.loaded) { toast('Your timer is still loading: try again in a moment.', { warn: true }); return; }
   if (!TC.onBench(job)) {
     toast(`${S.LABEL[job.status] ?? 'Finished'}: the timer runs only while a job is being worked on.`, { warn: true });
     return;
@@ -208,7 +221,7 @@ export function startTimer(jobId) {
   };
   commit({ close: others.map((e) => ({ id: e.id, end: now })), open: [entry], patch, updates }, 'The timer did not start');
   const paused = others.filter((e) => e.jobId !== jobId).map((e) => node(e.jobId)?.title).filter(Boolean);
-  toast(`Timer started${patch.length ? ' · job started' : ''}${paused.length ? ` · ${paused[0]} paused` : ''}`);
+  toast(`Timer started${patch.length ? ' · job started' : ''}${paused.length ? ` · ${short(paused[0])} paused` : ''}`);
 }
 
 /** Pause this person's timer on a job. Pause never restarts by itself. */
@@ -223,20 +236,22 @@ export function pauseTimer(jobId) {
 /** Stop one running entry now (Stop now, the restart toast's Stop). Never restarts. */
 export function stopEntry(id) {
   const e = state.time.running.find((x) => x.id === id && !x.end) ?? state.time.today.find((x) => x.id === id && !x.end);
-  if (!e) return;
-  commit({ close: [{ id, end: TC.latestOf(e.start, nowISO()) }] });
+  if (!e) return null;
+  const p = commit({ close: [{ id, end: TC.latestOf(e.start, nowISO()) }] });
   hooks.warn?.(null);
   toast('Timer stopped');
+  return p;
 }
 
 /** Keep going: the stop moves to the next boundary (lunch to finish, finish to an hour on). */
 export function keepGoing(id) {
   const e = state.time.running.find((x) => x.id === id && !x.end);
-  if (!e) return;
+  if (!e) return null;
   const next = TC.keepGoing(e, workday());
-  commit({ timePatch: [{ id, stopAt: next.stopAt, stopFor: next.stopFor }] });
+  const p = commit({ timePatch: [{ id, stopAt: next.stopAt, stopFor: next.stopFor }] });
   hooks.warn?.(null);
   toast(`Keeping going: the timer now stops at ${TC.clock(next.stopAt)}`);
+  return p;
 }
 
 /**
@@ -270,17 +285,26 @@ export function watchJob(jobId) {
   if (!jobId) return;
   jobUnsub = Store.watchTime({ jobId }, (list, meta) => {
     if (state.time.job.id !== jobId) return;
-    setTime({ job: { id: jobId, list: list ?? state.time.job.list, loaded: true, error: meta?.error ?? null } });
-    syncTotal(jobId);
-  });
+    const fromCache = Boolean(list && meta?.fromCache);
+    setTime({ job: { id: jobId, list: list ?? state.time.job.list, loaded: true, fromCache, error: list ? null : meta?.error ?? new Error('The time entries could not be read.') } });
+    // A failed read is not an empty job, and this device's cache may not
+    // hold every entry: the total kept on the job stands until the server
+    // has answered.
+    if (list && !fromCache) syncTotal(jobId);
+  }, { cached: true });
 }
 
-/** + Add time: a stretch the timer missed, as yourself. */
-export function addTime({ jobId, taskId = null, start, end }) {
+/**
+ * + Add time: a stretch the timer missed, as yourself. Returns why it will
+ * not do, or null; `onFail` runs if the write is refused, so the log can put
+ * what was typed back.
+ */
+export function addTime({ jobId, taskId = null, start, end }, { onFail = null } = {}) {
   const now = nowISO();
   const problem = TC.entryProblem({ start, end }, now);
   if (problem) return problem;
-  commit({ open: [{ id: Store.newId(), jobId, taskId, by: state.me, start, end, stopAt: null, stopFor: null, source: 'manual', day: TC.dayOfInstant(start), createdAt: now }] }, 'The time was not added');
+  commit({ open: [{ id: Store.newId(), jobId, taskId, by: state.me, start, end, stopAt: null, stopFor: null, source: 'manual', day: TC.dayOfInstant(start), createdAt: now }] }, 'The time was not added')
+    .catch(() => onFail?.());
   toast(`Added ${TC.fmt(Date.parse(end) - Date.parse(start))}`);
   return null;
 }
@@ -289,7 +313,7 @@ export function addTime({ jobId, taskId = null, start, end }) {
 export const canEditEntry = (e) => Boolean(e) && (isLead() || (state.role === 'designer' && e.by === state.me));
 
 /** Fix an entry's start, stop or task. It shows as edited, by whom and when. */
-export function editEntry(e, { start, end, taskId }) {
+export function editEntry(e, { start, end, taskId }, { onFail = null } = {}) {
   if (!canEditEntry(e)) return 'Only whoever recorded it, or the Design lead, changes it.';
   const now = nowISO();
   const running = !e.end;
@@ -297,7 +321,7 @@ export function editEntry(e, { start, end, taskId }) {
   if (problem) return problem;
   const p = { id: e.id, start, taskId: taskId ?? null, day: TC.dayOfInstant(start), editedBy: state.me, editedAt: now };
   if (!running) p.end = end;
-  commit({ timePatch: [p] }, 'The change did not save');
+  commit({ timePatch: [p] }, 'The change did not save').catch(() => onFail?.());
   toast('Time changed');
   return null;
 }

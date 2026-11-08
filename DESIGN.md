@@ -612,13 +612,18 @@ progress blue, the warning's edge is Waiting amber.
 - **Timer bar** (job panel, under the properties): Start or Pause as a small button (Pause on
   the In progress tint), then the total as a clock icon and figure in body strong with tabular
   numbers (a button that opens the Time log, 44px tall on phones), then a meta line: "On
-  Drawings · stops 12:00 for lunch", and who else is timing.
+  Drawings · stops 12:00 for lunch", and who else is timing. A task or job named in the line
+  is cut to 30ch with an ellipsis (the whole name is its tooltip), so the stop always shows.
+  Start is disabled until this person's running timers have loaded. When the job's entries do
+  not load, the total kept on the job stands, and the line says so.
 - **Figures:** every task tile, list row and section tile in a tracked job carries its time
   ("1h 20m", meta, tabular numbers). A figure a running timer feeds is In progress blue and
   moves on every ten seconds without a redraw. A task inside a tracked job shows "Time" in its
   property row.
 - **Clock mark** on a tracked job's tile, list row and designer row: a 14px clock and the
-  recorded total in meta, In progress blue while your own timer runs on it.
+  recorded total in meta, In progress blue while your own timer runs on it. On a phone the
+  tile's age follows it in the foot, after a dot ("106h 55m · 4m"), and that foot wraps
+  rather than running out of the tile.
 - **The five-minute warning:** a 400px card at the bottom right (full width less the gutters,
   above the tab bar, on phones), Shadow Grey with a Waiting amber edge and 11px corners. The
   head is the clock and the sentence in body strong. Below it are Keep going and Stop now on the
@@ -630,7 +635,16 @@ progress blue, the warning's edge is Waiting amber.
   start–stop over the length, then the task (body strong) over the person and the record
   ("paused for lunch", "added by Alex, 8 Nov", "edited by you, 9 Nov"), then Edit and a delete
   icon for whoever may change it. Adding and editing open an inset form in place: day, start,
-  stop and task.
+  stop and task. Day headings carry the weekday ("Mon 3 Nov"), so a log running over weeks
+  reads by week. The job's name under the title stops at two lines.
+  - **An entry whose stop comes before its start** (clocks that disagreed, a hand edit)
+    counts as nothing. Its times are in Waiting amber, with a line under the task: "Stops
+    before it starts, so it counts as nothing. Edit it to fix." The last sentence is left off
+    for someone who cannot edit it.
+  - **A refused add or edit** comes back as typed, with "That did not save, so it is back
+    here as you typed it." in the form's error line, beside the warning toast.
+  - **Not loaded:** the standard error block (heading "The time log did not load"). Offline,
+    a line above the days says these are the entries this device holds.
 
 ### Callouts (task panel)
 
@@ -830,7 +844,16 @@ A read-only list of the jobs the lead has shared: no ticks, no drag, no status m
   shared any more", with a way on (Open the archive).
 - **Failed writes:** the warning toast, in plain words ("That did not save: this account is not
   allowed to make that change. Reload to see what you can do now."). A refused post keeps its
-  draft.
+  draft, a refused "Add a task" puts the name back in the box, and a refused Keep going or Stop
+  now brings the five-minute warning back.
+- **Toasts** are as wide as their words, up to 560px or the screen less 16px each side. A name
+  inside one is cut to 48 characters, so the toast reads in a glance and its button stays in
+  reach.
+- **Form errors** mark the field as well as saying why: the field gets a red edge and
+  aria-invalid, is described by the error line, and takes focus. Typing clears both.
+- **Offline:** whatever would wait for the connection says so at once instead of hanging. A
+  workday saved offline is "kept on this device". Convert steps refuses offline, because it
+  must read every archived step from the server.
 
 ## Do's and Don'ts
 

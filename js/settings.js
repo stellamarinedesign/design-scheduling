@@ -145,16 +145,43 @@ function workday(markClean) {
     return el('label', { class: 'field workday-field' }, el('span', { class: 'lbl' }, label), input);
   };
   const fields = [field('lunchStart', 'Lunch starts'), field('lunchEnd', 'Lunch ends'), field('finish', 'Finish')];
-  const err = el('div', { class: 'form-err', role: 'alert' });
+  const inputs = fields.map((f) => f.querySelector('input'));
+  const err = el('div', { class: 'form-err', role: 'alert', id: 'workday-err' });
+  const flag = (bad) => {
+    for (const i of inputs) {
+      if (i === bad) { i.setAttribute('aria-invalid', 'true'); i.setAttribute('aria-describedby', 'workday-err'); }
+      else { i.removeAttribute('aria-invalid'); i.removeAttribute('aria-describedby'); }
+    }
+  };
+  for (const i of inputs) i.addEventListener('input', () => { err.textContent = ''; flag(null); });
   const save = async () => {
-    const next = Object.fromEntries(fields.map((f) => { const i = f.querySelector('input'); return [i.dataset.key, i.value]; }));
+    const next = Object.fromEntries(inputs.map((i) => [i.dataset.key, i.value]));
     const problem = TC.workdayProblem(next);
-    if (problem) { err.textContent = problem; return; }
+    if (problem) {
+      // The time that breaks the order is marked and focused: an empty one,
+      // else lunch's end when it is not after its start, else finish.
+      const [ls, le, fi] = inputs;
+      const bad = inputs.find((i) => !TC.isHM(i.value)) ?? (!(ls.value < le.value) ? le : fi);
+      err.textContent = problem;
+      flag(bad);
+      bad.focus();
+      return;
+    }
     err.textContent = '';
-    try {
-      await Store.saveWorkday(next);
+    flag(null);
+    const said = `lunch ${TC.clock(TC.onDay(new Date().toISOString(), next.lunchStart))} to ${TC.clock(TC.onDay(new Date().toISOString(), next.lunchEnd))}, finish ${TC.clock(TC.onDay(new Date().toISOString(), next.finish))}`;
+    const p = Store.saveWorkday(next);
+    // Offline the save waits for the connection: say so now rather than hang.
+    if (Store.offline()) {
       markClean();
-      toast(`Workday saved: lunch ${TC.clock(TC.onDay(new Date().toISOString(), next.lunchStart))} to ${TC.clock(TC.onDay(new Date().toISOString(), next.lunchEnd))}, finish ${TC.clock(TC.onDay(new Date().toISOString(), next.finish))}`);
+      toast(`Workday kept on this device (${said}): it reaches the team when back online`);
+      p.catch((e) => toast(isRefusal(e) ? 'The workday did not save: only the Design lead sets it.' : `The workday did not save: ${e.message}`, { warn: true }));
+      return;
+    }
+    try {
+      await p;
+      markClean();
+      toast(`Workday saved: ${said}`);
     } catch (e) { toast(isRefusal(e) ? 'Could not save: only the Design lead sets the workday.' : `Could not save: ${e.message}`, { warn: true }); }
   };
   return section('Workday',
