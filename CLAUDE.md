@@ -77,7 +77,8 @@ parent. Starting here is what loads this file, the project skills and the Impecc
     back to In progress). `state.isMine`'s "unassigned is the lead's" applies to jobs only.
   - `kind: 'step'` survives only in data written before the change. The lead's app converts
     it (`js/migrate.js`), once, when asked; until then each step is read as the task it
-    becomes. The rules keep their step branches until the live migration has run.
+    becomes. The live data was converted on 2026-11-09, so `firestore.rules` no longer
+    accepts steps from a designer.
 - **Words on screen** (`PRODUCT.md`, "Capabilities and Constraints"):
   - **Category:** a group.
   - **Job:** a task whose parent is a group.

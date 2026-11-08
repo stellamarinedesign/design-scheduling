@@ -36,9 +36,8 @@ rules_version = '2';
 //                under: no jobs or tasks at all
 //
 // STEPS (`kind: 'step'`) were light ticks inside a job until they merged into
-// tasks (2026-11-06). The lead's app converts them, once, when asked; until
-// that has run on the live data, the step branches below stay, so ticks on
-// steps not yet converted still save. Take them out after the migration.
+// tasks (2026-11-06). The lead converted the live data on 2026-11-09, so the
+// rules no longer know the kind: a stray one is the lead's alone to write.
 //
 // TIME (`time`): the lead and designers record their own stretches of work on
 // jobs with tracking on, and fix their own; the lead fixes anyone's. The
@@ -114,7 +113,7 @@ service cloud.firestore {
         && request.resource.data.name is string && request.resource.data.name.size() <= 60;
     }
 
-    // ---- the tree: groups, products and tasks (and steps, until converted) -
+    // ---- the tree: groups, products and tasks ------------------------------
     match /tasks/{id} {
       function data() { return request.resource.data; }
       function was() { return resource.data; }
@@ -128,14 +127,13 @@ service cloud.firestore {
       // DEEPER (Phase 2): a task the lead's template made has the lead as its
       // createdBy, so a designer ticking a task INSIDE it in their own job
       // would be refused. When the parent is not theirs, the walk goes on up
-      // through sections and tasks with nobody on them (and steps not yet
-      // converted) to the task they sit in, at most four levels (rules cannot
-      // loop; templates nest two deep). It stops at a task someone has: what
+      // through sections and tasks with nobody on them to the task they sit
+      // in, at most four levels (rules cannot loop; templates nest two deep). It stops at a task someone has: what
       // is inside that is theirs. Repeated gets of one document within a
       // request are counted once.
       function nodeAfter(id) { return getAfter(/databases/$(database)/documents/tasks/$(id)).data; }
       function taskMine(n) { return n.kind == 'task' && isMine(n); }
-      function partOfJob(n) { return n.kind in ['step', 'group'] || (n.kind == 'task' && n.get('assignee', null) == null); }
+      function partOfJob(n) { return n.kind == 'group' || (n.kind == 'task' && n.get('assignee', null) == null); }
       function inJob(n) { return partOfJob(n) && n.get('parentId', null) != null; }
       function walk4(id) { return taskMine(nodeAfter(id)); }
       function walk3(id) { let n = nodeAfter(id); return taskMine(n) || (inJob(n) && walk4(n.parentId)); }
@@ -182,7 +180,7 @@ service cloud.firestore {
       // kinds alone, as a rule on a query requires. A manager also reads
       // what the lead shared: the job, and - only for a job shared with its
       // stage - its top-level tasks, which the lead's app flags the same way
-      // (sharing.js stageNodes; steps, before they were converted).
+      // (sharing.js stageNodes).
       allow read: if lead() || designer()
         || (manager() && resource.data.get('sharedEffective', false) == true)
         || ((contributor() || manager()) && resource.data.kind in ['group', 'product']);
@@ -191,16 +189,16 @@ service cloud.firestore {
       // else is the lead's.
       allow create: if lead() || (designer() && data().get('checkedBy', null) == null && noSharingOnCreate() && noDoneOnCreate() && (
            (kindIs('task') && data().createdBy == email() && data().get('assignee', null) in [null, email()])
-        || ((kindIs('step') || kindIs('group')) && ownsParentOf(data()))));
+        || (kindIs('group') && ownsParentOf(data()))));
 
-      // A group or step must belong to the designer's work both where it was
-      // and where it goes: checking only the old parent let a section be
-      // moved to the top or into a lead's category, or a step into someone
-      // else's job. A task part of its job does not move at all (noMove).
+      // A section must belong to the designer's work both where it was and
+      // where it goes: checking only the old parent let a section be moved to
+      // the top or into a lead's category. A task part of its job does not
+      // move at all (noMove).
       allow update: if lead() || (designer() && noReview() && noSharingChange() && data().kind == was().kind && (
            (was().kind == 'task' && isMine(was()) && noOwnerChange() && noMove() && noNewDone())
         || (partOfMyJob() && noOwnerChange() && noMove())
-        || (was().kind in ['step', 'group'] && noNewDone() && ownsParentOf(was()) && ownsParentOf(data()))));
+        || (was().kind == 'group' && noNewDone() && ownsParentOf(was()) && ownsParentOf(data()))));
 
       // A manager's note on a shared job: the job keeps the latest one and
       // counts it open - one more than before, by them, short - and that is
