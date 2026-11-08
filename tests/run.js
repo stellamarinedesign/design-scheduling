@@ -14,6 +14,7 @@ import * as NT from '../js/notes.js';
 import * as PH from '../js/photos.js';
 import * as SH from '../js/sharing.js';
 import * as M from '../js/migrate.js';
+import * as TC from '../js/timing.js';
 import { sampleNodes, sampleStepNodes, tiledoData, tiledoArchive, excelRows } from './samples.js';
 
 const results = [];
@@ -1321,6 +1322,130 @@ export async function run() {
     for (const p of [{ status: 'waiting' }, { status: 'check' }, { assignee: 'alex@example.test' }, { brief: 'x' }, { folders: [] }]) {
       ok(M.stepPatch(raw, { id: 's2b', ...p }).error, `refused: ${Object.keys(p)[0]}`);
     }
+  });
+
+  // -------------------------------------------------------------------------
+  group = 'time tracking';
+  // Local clock times on an invented Monday, 9 Nov 2026: the logic reads local parts, as the app does.
+  const L = (h, m = 0, s = 0, d = 9) => new Date(2026, 10, d, h, m, s).toISOString();
+  const WD = TC.DEFAULT_WORKDAY;
+  const DA2 = 'alex@example.test';
+  const tracked = (patches = []) => T.buildIndex(apply(sampleNodes(), [{ id: 'j1', timeTracked: true, status: 'in_progress' }, ...patches]));
+  const run1 = (o = {}) => ({ id: 'e1', jobId: 'j1', taskId: 't1', by: BY, start: L(9), end: null, ...TC.nextStop(L(9), WD), source: 'timer', day: '2026-11-09', ...o });
+  test('the day\'s stops: lunch before lunch, finish after, an hour on after finish', () => {
+    expect(TC.nextStop(L(9), WD), { stopAt: L(12), stopFor: 'lunch' });
+    expect(TC.nextStop(L(12, 10), WD), { stopAt: L(16, 30), stopFor: 'finish' }, 'started during lunch: runs to finish');
+    expect(TC.nextStop(L(13), WD), { stopAt: L(16, 30), stopFor: 'finish' });
+    expect(TC.nextStop(L(17), WD), { stopAt: L(18), stopFor: 'finish' }, 'after finish: an hour');
+  });
+  test('Keep going: lunch to finish, finish to an hour later', () => {
+    expect(TC.keepGoing({ stopAt: L(12), stopFor: 'lunch' }, WD), { stopAt: L(16, 30), stopFor: 'finish' });
+    expect(TC.keepGoing({ stopAt: L(16, 30), stopFor: 'finish' }, WD), { stopAt: L(17, 30), stopFor: 'finish' });
+  });
+  test('the warning comes five minutes before the stop, in the owner\'s words', () => {
+    const e = run1();
+    expect([L(11, 54), L(11, 55), L(11, 59, 59), L(12)].map((t) => TC.warningDue(e, t)), [false, true, true, false]);
+    expect(TC.warningText(e, WD), 'Timer pauses at 12:00 for lunch and restarts at 12:30');
+    expect(TC.warningText({ stopAt: L(16, 30), stopFor: 'finish' }, WD), 'Timer stops at 4:30, end of day');
+    expect(TC.warningText({ stopAt: L(17, 30), stopFor: 'finish' }, WD), 'Timer stops at 5:30', 'kept going: the same warning again');
+  });
+  test('a workday out of order falls back to the defaults', () => {
+    expect(TC.workdayOf({ lunchStart: '13:00', lunchEnd: '12:30', finish: '16:30' }), WD);
+    expect(TC.workdayOf({ lunchStart: '11:45', finish: '17:00' }), { lunchStart: '11:45', lunchEnd: '12:30', finish: '17:00' });
+    ok(TC.workdayProblem({ lunchStart: '12:00', lunchEnd: '12:30', finish: '12:15' }), 'finish before lunch end');
+    expect(TC.workdayProblem(WD), null);
+  });
+  test('the stop is in the data: left running overnight, nothing past lunch counts', () => {
+    const idx = tracked();
+    const e = run1();
+    expect(TC.stopOf(e, idx.byId.get('j1'), L(11)), null, 'still going');
+    expect(TC.stopOf(e, idx.byId.get('j1'), L(7, 0, 0, 10)), { end: L(12), pausedFor: 'lunch' }, 'next morning: closed at its stop, a lunch pause');
+    expect(TC.fmt(TC.msOf(e, idx.byId.get('j1'), L(7, 0, 0, 10))), '3h');
+    const late = { ...run1(), start: L(13), ...TC.nextStop(L(13), WD) };
+    expect(TC.stopOf(late, idx.byId.get('j1'), L(20)), { end: L(16, 30), pausedFor: null }, 'end of day is no pause');
+  });
+  test('the job leaving the bench stops it when it left; untracked or gone stops it now', () => {
+    const e = run1();
+    for (const status of ['check', 'done', 'cancelled', 'waiting']) {
+      const idx = tracked([{ id: 'j1', status, statusAt: L(10, 30) }]);
+      expect(TC.stopOf(e, idx.byId.get('j1'), L(11)), { end: L(10, 30), pausedFor: null }, status);
+    }
+    expect(TC.stopOf(e, tracked([{ id: 'j1', status: 'fix' }]).byId.get('j1'), L(11)), null, 'sent back is still on the bench');
+    expect(TC.stopOf(e, tracked([{ id: 'j1', timeTracked: false }]).byId.get('j1'), L(11)), { end: L(11), pausedFor: null });
+    expect(TC.stopOf(e, undefined, L(11)), { end: L(11), pausedFor: null });
+  });
+  test('time follows the task in progress: the newest started, mine or nobody\'s, else the job', () => {
+    const idx = tracked();
+    expect(TC.followTarget(idx, 'j1', BY), 't1', 'the lead\'s own task, under way');
+    expect(TC.followTarget(idx, 'j1', DA2), null, 'someone else\'s task is theirs to time: the job');
+    const two = tracked([{ id: 's2b', status: 'in_progress', statusAt: L(10) }, { id: 't1', statusAt: L(9) }]);
+    expect(TC.followTarget(two, 'j1', BY), 's2b', 'started more recently');
+    expect(TC.followTarget(two, 'j1', DA2), 's2b', 'part of the job: anyone\'s');
+    const box = tracked([{ id: 's2', status: 'in_progress', statusAt: L(11) }, { id: 't1', status: 'todo' }]);
+    expect(TC.followTarget(box, 'j1', BY), null, 'a task holding tasks is passed over for its insides');
+  });
+  test('when the task in progress changes, one entry closes and the next opens, the same on every device', () => {
+    const idx = tracked([{ id: 't1', status: 'done' }, { id: 's2b', status: 'in_progress', statusAt: L(10) }]);
+    const r = TC.reconcileMine([run1()], { idx, now: L(10), me: BY });
+    expect(r.close, [{ id: 'e1', end: L(10) }]);
+    expect([r.open[0].taskId, r.open[0].start, r.open[0].stopAt, r.open[0].id], ['s2b', L(10), L(12), TC.followId('e1', 's2b')]);
+    expect(TC.reconcileMine([run1()], { idx, now: L(10, 0, 3), me: BY }).open[0].id, r.open[0].id, 'a second device writes the same entry');
+    expect(TC.reconcileMine([run1()], { idx: tracked(), now: L(10), me: BY }), { close: [], open: [] }, 'nothing changed: nothing written');
+  });
+  test('one timer per person: two running (devices raced), the newest stays', () => {
+    const r = TC.reconcileMine([run1(), run1({ id: 'e2', start: L(10) })], { idx: tracked(), now: L(10, 5), me: BY });
+    expect(r.close.map((c) => c.id), ['e1']);
+  });
+  test('the lead\'s app closes others\' timers whose stop has come, at the stop', () => {
+    const idx = tracked();
+    const theirs = run1({ id: 'a1', by: DA2 });
+    expect(TC.closeForOthers([theirs, run1()], { idx, now: L(13), me: BY }), [{ id: 'a1', end: L(12), pausedFor: 'lunch' }]);
+    expect(TC.closeForOthers([theirs], { idx, now: L(11), me: BY }), []);
+  });
+  test('lunch: the pause restarts once, at lunch end; opened later, from then, with lunch end offered', () => {
+    const idx = tracked();
+    const paused = run1({ end: L(12), pausedFor: 'lunch' });
+    const on = TC.lunchRestart([paused], [], { idx, now: L(12, 30, 20), workday: WD, me: BY });
+    expect([on.late, on.entry.start, on.entry.stopAt, on.entry.taskId, on.entry.id], [false, L(12, 30), L(16, 30), 't1', TC.restartId('e1')]);
+    const late = TC.lunchRestart([paused], [], { idx, now: L(13, 10), workday: WD, me: BY });
+    expect([late.late, late.entry.start, late.lunchEnd], [true, L(13, 10), L(12, 30)]);
+    expect(TC.lunchRestart([paused, { ...on.entry, end: L(13) }], [], { idx, now: L(14), workday: WD, me: BY }), null, 'once: restarted and stopped since, it stays stopped');
+    expect(TC.lunchRestart([paused], [run1({ id: 'x', start: L(12, 40) })], { idx, now: L(12, 45), workday: WD, me: BY }), null, 'a timer running already');
+    expect(TC.lunchRestart([paused], [], { idx, now: L(12, 20), workday: WD, me: BY }), null, 'still lunch');
+    expect(TC.lunchRestart([paused], [], { idx, now: L(16, 40), workday: WD, me: BY }), null, 'past finish');
+    expect(TC.lunchRestart([paused], [], { idx: tracked([{ id: 'j1', status: 'waiting' }]), now: L(12, 31), workday: WD, me: BY }), null, 'the job left the bench');
+    expect(TC.lunchRestart([run1({ end: L(11, 50) })], [], { idx, now: L(12, 31), workday: WD, me: BY }), null, 'only a lunch pause restarts, not a Pause');
+  });
+  test('roll-ups: a task\'s time includes the tasks inside it, and the live one ticks into its stage', () => {
+    const idx = tracked();
+    const e = (id, taskId, h1, h2) => ({ id, jobId: 'j1', taskId, by: BY, start: L(h1), end: L(h2), source: 'timer' });
+    const list = [e('a', 't1', 8, 9), { ...e('b', 's2b', 9, 10), end: L(9, 30) }, e('c', null, 10, 11), e('d', 'gone', 13, 14), { ...run1({ id: 'r', start: L(14), stopAt: L(16, 30), stopFor: 'finish' }) }];
+    const t = TC.totals(idx, 'j1', list, L(14, 15));
+    expect(TC.fmt(t.get('s2')), '1h 45m', '3D model: t1 (with the running quarter hour) and Head');
+    expect(TC.fmt(t.get('t1')), '1h 15m', 'with the running quarter hour');
+    expect(TC.fmt(t.get('j1')), '3h 45m', 'the job: everything, an entry on a task gone included');
+    expect(TC.closedMinutes(list), 210, 'timeTotal: closed entries only');
+    expect([...TC.liveNodes(idx, list[4])].sort(), ['j1', 's2', 't1']);
+  });
+  test('the log: by day, newest first; the CSV for a quote, with the stage', () => {
+    const idx = tracked([{ id: 't1', title: 'Swap pins, standard' }]);
+    const list = [
+      { id: 'a', jobId: 'j1', taskId: 't1', by: BY, start: L(8, 5, 0, 6), end: L(9, 35, 0, 6) },
+      { id: 'b', jobId: 'j1', taskId: null, by: DA2, start: L(13, 0), end: L(13, 45) },
+    ];
+    expect(TC.byDay(list).map((d) => [d.day, d.entries.map((x) => x.id)]), [['2026-11-09', ['b']], ['2026-11-06', ['a']]]);
+    const csv = TC.csvOf(idx, 'j1', list, { now: L(17), who: (e) => (e === BY ? 'Lead' : 'Alex') }).split('\r\n');
+    expect(csv[0], 'Day,Start,Stop,Minutes,Task,Stage,Person');
+    expect(csv[1], '2026-11-06,08:05,09:35,90,"Swap pins, standard",3D model,Lead');
+    expect(csv[2], '2026-11-09,13:00,13:45,45,Bracket redesign,,Alex');
+  });
+  test('time typed in: a start, a stop after it, not still to come', () => {
+    expect(TC.entryProblem({ start: L(9), end: L(10) }, L(12)), null);
+    ok(TC.entryProblem({ start: L(10), end: L(9) }, L(12)), 'stop before start');
+    ok(TC.entryProblem({ start: L(9), end: L(13) }, L(12)), 'in the future');
+    expect(TC.instantOf('2026-11-09', '14:05'), L(14, 5));
+    expect([TC.hmOf(L(14, 5)), TC.clock(L(16, 30)), TC.clockAmPm(L(9, 5))], ['14:05', '4:30', '9:05 am']);
+    expect([TC.fmt(0), TC.fmt(35 * 60000), TC.fmt(275 * 60000), TC.fmt(120 * 60000)], ['0m', '35m', '4h 35m', '2h']);
   });
 
   group = 'writes';

@@ -24,6 +24,7 @@ import * as A from '../actions.js';
 import { ageLabel, ageDays, dayLabel, dayOf } from '../dates.js';
 import { openTask } from '../router.js';
 import { assignable } from '../team.js';
+import { timeMark, trackItem } from './timer-ui.js';
 
 export const backlogDays = () => {
   try { return Number(JSON.parse(localStorage.getItem('stella.design.pref.backlogDays'))) || 14; } catch { return 14; }
@@ -167,6 +168,7 @@ export function taskMenu(anchor, t, { extra = [], at = null } = {}) {
     can && t.status === 'cancelled' ? { label: `Reopen · back to ${S.LABEL[S.reopenTo(t)]}`, icon: 'restore', onSelect: () => A.reopen(t.id) } : null,
     lead ? { label: 'Assign to…', icon: 'user', hint: t.assignee && t.assignee !== state.me ? personName(t.assignee) : null, onSelect: () => assignMenu(anchor, t, { at }) } : null,
     lead ? { label: 'Move to…', icon: 'move', onSelect: async () => { const { moveDialog } = await import('./pickers.js'); moveDialog(t.id); } } : null,
+    trackItem(t),
     lead && T.isJob(state.idx, t) ? { label: 'Turn into a category', icon: 'folderPlus', onSelect: () => A.turnIntoCategory(t.id) } : null,
     lead && T.isJob(state.idx, t) ? { label: 'Share with managers…', icon: 'team', onSelect: async () => (await import('./managers.js')).shareMenu(anchor, t, { at }) } : null,
     'sep',
@@ -226,6 +228,7 @@ export function tile(t, { path = false, assignee = false, variant = 'normal', me
     t.status === 'todo' && !sub && A.canWrite(t) ? btn('Start', (e) => { e.stopPropagation(); A.start(t.id); }, { cls: 'sm', ic: 'play', title: 'Start: one tap to In progress' }) : null,
     variant !== 'backlog' && prog.total ? bar(prog.done, prog.total) : el('span', { class: 'sp' }),
     variant !== 'backlog' && prog.total ? el('span', { class: 'meta' }, `${prog.done}/${prog.total}`) : null,
+    timeMark(t),
     age('foot-age'),
     assignee ? whoBadge(t.assignee) : null));
   // Right-click, long-press and Shift+F10 open the same menu as ⋯.
@@ -248,6 +251,7 @@ export function row(t, { path = false, assignee = false, drag = true } = {}) {
       subLine ? el('div', { class: `trow-sub` }, subLine) : null),
     el('div', { class: 'trow-end' },
       prog.total ? el('span', { class: 'meta' }, `${prog.done}/${prog.total}`) : null,
+      timeMark(t),
       assignee ? whoBadge(t.assignee) : null,
       el('span', { class: 'meta' }, ageLabel(t.lastActivityAt)),
       t.status === 'todo' && !isSub && A.canWrite(t) ? iconBtn('play', `Start ${t.title}`, (e) => { e.stopPropagation(); A.start(t.id); }, 'sm') : null,

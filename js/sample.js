@@ -84,10 +84,10 @@ export async function loadSample() {
 
   task('Electric plinth wiring diagram', plinths, 'in_progress', 6);
   // The designers' own work (invented): Alex is busy, Sam has gone quiet.
-  const chock = task('Sliding chock drawings', single, 'in_progress', 0.3, { assignee: alex, due: dayOf(new Date(Date.now() + 9 * DAY)), statusAt: ago(4), lastBy: alex,
+  const chock = task('Sliding chock drawings', single, 'in_progress', 0.3, { assignee: alex, due: dayOf(new Date(Date.now() + 9 * DAY)), statusAt: ago(4), lastBy: alex, timeTracked: true,
     brief: '- Drawings and laser files to the current standard\n- Same layout as the fixed chock set; revision on every sheet',
     lastNote: { text: 'GA done, drawings about half way.', by: alex, at: ago(0.3) } });
-  step('3D model', chock, 'done'); step('Drawings', chock, 'doing'); step('Laser files', chock, 'todo'); step('PDF', chock, 'done'); step('Build form', chock, 'todo'); step('Filed', chock, 'todo');
+  const ch3d = step('3D model', chock, 'done'); const chDraw = step('Drawings', chock, 'doing'); step('Laser files', chock, 'todo'); const chPdf = step('PDF', chock, 'done'); step('Build form', chock, 'todo'); step('Filed', chock, 'todo');
   say(chock, 'comment', 'GA done, drawings about half way.', 0.3, { by: alex });
   task('Exploded diagram: 650kg davit', davits, 'todo', 3, { assignee: alex, due: dayOf(new Date(Date.now() + 20 * DAY)), brief: 'Assembly only for now; A3 to match the 550.' });
   task('Garage door seal update', inboxId(alex), 'todo', 1, { assignee: alex, createdBy: alex });
@@ -132,7 +132,24 @@ export async function loadSample() {
   ask(boom, 'question', 'The customer asks whether the R3 drawings will be ready by the end of next week.', 0.15);
   ask(frame, 'customer', 'Customer has cancelled the boxed frame; they are going with the open frame instead.', 0.4, true);
 
-  await Store.commit({ set: nodes, updates });
+  // Time on a quotable job (invented): Alex's stretches over three days, one
+  // the timer missed and added by hand, one paused for lunch, and the lead's
+  // check of the model. Its total is kept on the job, as the app keeps it.
+  const at = (daysAgo, h, m) => { const d = new Date(); d.setDate(d.getDate() - daysAgo); d.setHours(h, m, 0, 0); return d.toISOString(); };
+  const time = [];
+  const stretch = (by, taskId, daysAgo, [h1, m1], [h2, m2], extra = {}) => time.push({
+    id: newId(), jobId: chock, taskId, by, start: at(daysAgo, h1, m1), end: at(daysAgo, h2, m2), stopAt: null, stopFor: null,
+    source: 'timer', day: dayOf(new Date(at(daysAgo, h1, m1))), createdAt: at(daysAgo, h1, m1), ...extra,
+  });
+  stretch(alex, ch3d, 3, [8, 10], [12, 0], { stopAt: at(3, 12, 0), stopFor: 'lunch', pausedFor: 'lunch' });
+  stretch(alex, ch3d, 3, [12, 30], [15, 45]);
+  stretch(me, ch3d, 3, [15, 50], [16, 20]);
+  stretch(alex, chPdf, 2, [9, 0], [9, 40], { source: 'manual', stopAt: null, createdAt: at(1, 16, 5) });
+  stretch(alex, chDraw, 2, [9, 45], [12, 0], { stopAt: at(2, 12, 0), stopFor: 'lunch', pausedFor: 'lunch' });
+  stretch(alex, chDraw, 1, [13, 5], [16, 30], { stopAt: at(1, 16, 30), stopFor: 'finish' });
+  nodes.find((n) => n.id === chock).timeTotal = Math.round(time.reduce((s, e) => s + (Date.parse(e.end) - Date.parse(e.start)), 0) / 60000);
+
+  await Store.commit({ set: nodes, updates, timeSet: time });
 
   // The Log: invented notes from the invented team, with drawn sample photos.
   const riley = LOCAL_AS.contributor;

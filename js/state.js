@@ -29,6 +29,10 @@ export const state = {
   // triage queue, never paged away). `limit` grows with "Show older".
   // `solo` is a note opened from a link that is older than the page.
   log: { feed: [], triage: [], more: false, limit: 40, loaded: false, error: null, solo: null },
+  // Time tracking (timer.js): the running entries this app looks after (the
+  // lead's: everyone's; a designer's: their own), this person's entries of
+  // today, the team's workday, and the entries of the job open in the panel.
+  time: { running: [], today: [], workday: null, loaded: false, job: { id: null, list: [], loaded: false } },
 };
 
 const subs = new Set();
@@ -55,6 +59,12 @@ export const node = (id) => state.idx.byId.get(id) ?? null;
 export function setLog(fields) {
   Object.assign(state.log, fields);
   for (const fn of subs) fn({ log: true });
+}
+
+/** A change to the time entries in hand; everything redraws, as for the tree. */
+export function setTime(fields) {
+  Object.assign(state.time, fields);
+  for (const fn of subs) fn({ time: true });
 }
 
 /** Every note in hand, newest first, each once. */

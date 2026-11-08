@@ -40,6 +40,10 @@ rules_version = '2';
 // that has run on the live data, the step branches below stay, so ticks on
 // steps not yet converted still save. Take them out after the migration.
 //
+// TIME (`time`): the lead and designers record their own stretches of work on
+// jobs with tracking on, and fix their own; the lead fixes anyone's. The
+// team's lunch and finish are `settings/workday`, set by the lead.
+//
 // THE LOG (`notes`) and PHOTOS (`images`): everyone listed reads and posts.
 // A note is its author's to edit, and the lead's; the lead and designers
 // triage it (link a job, dismiss); only the lead's app marks one Resolved.
@@ -88,6 +92,17 @@ service cloud.firestore {
       allow read: if listed() || (signedIn() && !accessExists());
       allow create: if signedIn() && !accessExists() && email() in request.resource.data.get('leads', []);
       allow update, delete: if master();
+    }
+
+    // ---- the team's day: lunch and finish (time tracking) -----------------
+    // Read by everyone who works on jobs (their timers stop by it); set by
+    // the lead. Times are 'HH:MM', and nothing else is kept here.
+    match /settings/workday {
+      function hm(v) { return v is string && v.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$'); }
+      allow read: if listed();
+      allow write: if lead()
+        && request.resource.data.keys().hasOnly(['lunchStart', 'lunchEnd', 'finish'])
+        && hm(request.resource.data.lunchStart) && hm(request.resource.data.lunchEnd) && hm(request.resource.data.finish);
     }
 
     // ---- people: display names --------------------------------------------
@@ -271,6 +286,40 @@ service cloud.firestore {
       allow update: if listed() && noteShape() && nd().by == nw().by
         && (lead() || authorEdit() || (designer() && triage()));
       allow delete: if lead() || (listed() && nw().by == email());
+    }
+
+    // ---- time tracking: one stretch of work per document -------------------
+    // Phase 2.5, milestone 2 (decided 2026-11-06). The lead and designers
+    // read every entry (a job's log shows who); contributors and managers
+    // none. You record time as yourself, on a job you can read that has
+    // tracking on - getAfter, so turning it on and starting can be one write.
+    // You change or delete your own entries; the lead anyone's (and the
+    // lead's app closes timers whose stop has come). An entry stays on its
+    // job and its person. One running entry per person is the app's to keep:
+    // the rules check the shape. Durations are never stored.
+    match /time/{tid} {
+      function td() { return request.resource.data; }
+      function tw() { return resource.data; }
+      function instant(v) { return v is string && v.size() >= 20 && v.size() <= 30; }
+      function maybeInstant(v) { return v == null || instant(v); }
+      function shape() {
+        return td().keys().hasOnly(['jobId', 'taskId', 'by', 'start', 'end', 'stopAt', 'stopFor', 'source',
+                                    'pausedFor', 'day', 'createdAt', 'editedBy', 'editedAt'])
+          && td().jobId is string && (td().get('taskId', null) == null || td().taskId is string)
+          && td().by is string && instant(td().start) && maybeInstant(td().get('end', null))
+          && maybeInstant(td().get('stopAt', null)) && td().get('stopFor', null) in [null, 'lunch', 'finish']
+          && td().source in ['timer', 'manual'] && td().get('pausedFor', null) in [null, 'lunch']
+          && td().day is string && td().day.size() == 10;
+      }
+      function trackedJob(id) {
+        let p = /databases/$(database)/documents/tasks/$(id);
+        return existsAfter(p) && getAfter(p).data.get('timeTracked', false) == true;
+      }
+      allow read: if lead() || designer();
+      allow create: if (lead() || designer()) && shape() && td().by == email() && trackedJob(td().jobId);
+      allow update: if (lead() || (designer() && tw().by == email()))
+        && shape() && td().by == tw().by && td().jobId == tw().jobId;
+      allow delete: if lead() || (designer() && tw().by == email());
     }
 
     // ---- photos: one per document, the JPEG as Bytes ---------------------

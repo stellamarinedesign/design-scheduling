@@ -29,6 +29,7 @@ import { openTask, go } from '../router.js';
 import { statusMenu, taskMenu, enableDrag } from './tile.js';
 import { errorState } from './home.js';
 import { openQuickAdd } from './quick-add.js';
+import { timeMark } from './timer-ui.js';
 
 let query = '';
 let doneOpen = false;
@@ -181,7 +182,8 @@ export function myRow(t, { menuExtra = [], drag = false } = {}) {
   el('div', { class: 'my-main' },
     el('div', { class: 'my-title-row' },
       statusPill(t),
-      el('span', { class: 'my-title' }, t.title)),
+      el('span', { class: 'my-title' }, t.title),
+      timeMark(t)),
     next ? el('div', { class: `my-next ${next.cls}`.trim() }, next.text) : null),
   strip(t),
   el('div', { class: 'my-when' }, dueLine(t), el('span', { class: 'meta my-place', title: place }, place || 'Not in a category')),

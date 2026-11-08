@@ -528,7 +528,8 @@ button.srow-label:hover { text-decoration: underline; }
 .menu-sep { height: 1px; background: var(--border); margin: 4px 0; }
 .menu-head { padding: 8px 10px 4px; font-size: var(--fs-micro); font-weight: 700; letter-spacing: var(--label-spacing); text-transform: uppercase; color: var(--text3); }
 
-.overlay { position: fixed; inset: 0; z-index: 70; background: var(--scrim); display: none; align-items: flex-start; justify-content: center; padding: 10vh 16px 16px; overflow: auto; }
+/* Above the phone's full-screen panel sheet (80): a dialog opened from the panel was drawn under it. Menus (90) and toasts (95) stay on top. */
+.overlay { position: fixed; inset: 0; z-index: 85; background: var(--scrim); display: none; align-items: flex-start; justify-content: center; padding: 10vh 16px 16px; overflow: auto; }
 .overlay.show { display: flex; }
 .box {
   width: min(460px, 100%); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
@@ -579,6 +580,68 @@ input::-ms-reveal { display: none; }
 .toast-msg { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .toast-act { flex: none; height: 32px; padding: 0 12px; border-radius: var(--radius); border: 1px solid rgba(255, 255, 255, .5); background: transparent; color: inherit; font-weight: 600; }
 .toast-act:hover { background: rgba(255, 255, 255, .12); }
+
+/* ── Time tracking (Phase 2.5, milestone 2) ──────────────────────── */
+/* The job panel's timer: Start / Pause, the total (opens the log), what it counts to. */
+.timer-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px var(--sp-3); margin-top: var(--sp-2); }
+.timer-btn.on { border-color: var(--st-progress); color: var(--st-progress-text); background: var(--st-progress-bg); }
+.timer-total {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 8px; margin-left: -8px;
+  border: 0; border-radius: var(--radius); background: transparent; color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums;
+  transition: background-color var(--dur-fast) ease;
+}
+.timer-total:hover { background: var(--bg); }
+.timer-total svg { color: var(--text3); }
+.timer-line { white-space: normal; min-width: 0; }
+/* A task's own time beside it; the one a timer is feeding is in progress blue. */
+.time-fig { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.time-fig.live { color: var(--st-progress-text); }
+/* A tracked job's mark on its tile or row: a clock and the recorded total. */
+.time-mark { display: inline-flex; align-items: center; gap: 3px; color: var(--text3); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.time-mark.live { color: var(--st-progress-text); }
+
+/* The five-minute warning: in at the corner, never taking focus. Shown a
+   couple of times a day, so it moves: in 200ms, out faster, transitions not
+   keyframes so a quick Keep going retargets cleanly (emil-design-eng). */
+.timer-warn {
+  position: fixed; right: 24px; bottom: 24px; z-index: 90; width: min(400px, calc(100vw - 32px));
+  display: flex; flex-direction: column; gap: 10px; padding: 12px 12px 12px 14px;
+  border-radius: var(--radius-lg); background: var(--surface); border: 1px solid var(--st-waiting); box-shadow: var(--shadow-panel);
+  opacity: 0; transform: translateY(8px);
+  transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+.timer-warn.show { opacity: 1; transform: none; transition-duration: var(--dur); }
+.timer-warn-head { display: flex; align-items: flex-start; gap: 8px; font-weight: 600; line-height: 1.35; }
+.timer-warn-head svg { flex: none; color: var(--st-waiting-text); margin-top: 1px; }
+.timer-warn-acts { display: flex; align-items: center; gap: var(--sp-2); }
+
+/* The Time log */
+.time-log { width: min(760px, 100%); gap: var(--sp-3); }
+.tl-head { display: flex; align-items: flex-start; gap: var(--sp-3); }
+.tl-title { flex: 1; min-width: 0; }
+.tl-title .meta { overflow-wrap: anywhere; }
+.tl-tools { gap: var(--sp-2); }
+.tl-body { display: flex; flex-direction: column; gap: var(--sp-4); max-height: min(60vh, 640px); overflow-y: auto; scrollbar-gutter: stable; padding-right: 4px; }
+.tl-day { display: flex; flex-direction: column; }
+.tl-day-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+.tl-row {
+  display: grid; grid-template-columns: minmax(150px, auto) minmax(0, 1fr) auto; align-items: center; gap: 4px var(--sp-3);
+  min-height: 48px; padding: 6px 0; border-bottom: 1px solid var(--bg2);
+}
+.tl-when { display: flex; flex-direction: column; font-variant-numeric: tabular-nums; }
+.tl-times { color: var(--text); white-space: nowrap; }
+.tl-dur { color: var(--text3); font-size: var(--fs-sm); }
+.tl-row.live .tl-dur { color: var(--st-progress-text); }
+.tl-what { display: flex; flex-direction: column; min-width: 0; }
+.tl-task { overflow-wrap: anywhere; font-weight: 600; }
+.tl-acts { display: flex; align-items: center; gap: 2px; }
+.tl-form { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); margin: 6px 0; border-radius: var(--radius); background: var(--bg); border: 1px solid var(--border); }
+.tl-form-fields { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-3); align-items: flex-end; }
+.tl-form-fields .input { width: auto; }
+.tl-task-field { flex: 1 1 200px; min-width: 0; }
+.tl-task-field .sel { width: 100%; }
+.tl-running { min-height: 36px; display: inline-flex; align-items: center; }
+.workday-row { gap: var(--sp-3); flex-wrap: wrap; align-items: flex-end; }
 
 /* ── Import ──────────────────────────────────────────────────────── */
 .imp { display: flex; flex-direction: column; gap: var(--sp-5); max-width: 1100px; }
@@ -1063,6 +1126,13 @@ input::-ms-reveal { display: none; }
   }
   .fab:active { transform: scale(.97); }
   .toast { bottom: calc(80px + env(safe-area-inset-bottom)); }
+  /* The warning sits above the tab bar, the width of the screen less the gutters. */
+  .timer-warn { left: 16px; right: 16px; width: auto; bottom: calc(80px + env(safe-area-inset-bottom)); }
+  .timer-warn-acts .btn { flex: 1 1 auto; }
+  .tl-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .tl-what { grid-column: 1 / -1; grid-row: 2; }
+  .tl-acts .ib { width: 44px; height: 44px; }
+  .timer-total { min-height: 44px; }
   .imp-row { grid-template-columns: minmax(0, 1fr); }
   .acct-row { grid-template-columns: 1fr; }
   .acct-name { max-width: none; height: 44px; }

@@ -46,6 +46,8 @@ import { shortPath } from '../paths.js';
 import { photoTray, acceptPhotos, thumbRow } from './photo-ui.js';
 import { jobNotesList } from './note-panel.js';
 import { shareMenu, shareText, requestCallout } from './managers.js';
+import * as TR from '../timer.js';
+import * as TU from './timer-ui.js';
 
 let rootEl = null;
 let openId = null;
@@ -53,6 +55,8 @@ let stale = false;
 let briefEditing = false;
 let briefOpen = false;
 const timeline = { id: null, list: [], more: false, limit: 20, unsub: null, loaded: false };
+/** The open job's times, when it is tracked (timer-ui.jobTimes): the tiles and rows read their figures from it. */
+let times = null;
 
 /** Is a field in the panel being edited right now? */
 export function panelEditing() {
@@ -118,6 +122,10 @@ export function renderPanel(root, id, { fresh = false } = {}) {
   const kept = !fresh && openId === id && act?.dataset?.keep && root.contains(act)
     ? { key: act.dataset.keep, value: act.value, from: act.selectionStart, to: act.selectionEnd } : null;
   openId = id;
+  // A tracked job's entries are watched while it, or anything in it, is open.
+  const job = T.jobOf(state.idx, n.id);
+  TR.watchJob(job?.timeTracked ? job.id : null);
+  times = job ? TU.jobTimes(job.id) : null;
   root.textContent = '';
   const body = el('div', { class: 'panel-body' });
   if (n.kind === T.KIND.task) {
@@ -222,6 +230,7 @@ function moreMenu(anchor, n) {
   const items = [
     lead() ? { label: 'Assign to…', icon: 'user', onSelect: () => assignMenu(anchor, n) } : null,
     lead() ? { label: 'Move to…', icon: 'move', onSelect: async () => (await import('./pickers.js')).moveDialog(n.id) } : null,
+    TU.trackItem(n),
     lead() && job ? { label: 'Turn into a category', icon: 'folderPlus', onSelect: () => A.turnIntoCategory(n.id) } : null,
     lead() && n.backlogIgnored ? { label: 'Show in the Backlog again', icon: 'restore', onSelect: () => A.setBacklogIgnored(n.id, false) }
       : lead() && BL.canHideFromBacklog(state.idx, n.id, backlogPool()) ? { label: 'Hide from the Backlog', icon: 'hide', onSelect: () => A.setBacklogIgnored(n.id, true) } : null,
@@ -314,12 +323,15 @@ function top(n) {
       : el('span', { class: 'pv-static' }, prioText)),
     pc('Due', dueInput),
     pc('Rev', rev),
+    TU.taskTime(n) ? pc('Time', TU.taskTime(n)) : null,
     // What managers see of it: the lead's choice, here or from the category above.
     lead() && T.isJob(state.idx, n) ? pc('Managers', el('button', {
       class: 'pv-btn', type: 'button', 'aria-haspopup': 'menu', 'aria-label': `Shared with managers: ${shareText(n)}. Change`,
       onclick: (e) => shareMenu(e.currentTarget, n),
     }, el('span', { class: shareText(n) === 'Not shared' ? 'pv-muted' : '' }, shareText(n)))) : null));
 
+  // A tracked job's timer: Start / Pause and its total, under the properties.
+  if (T.isJob(state.idx, n)) { const tb = TU.timerBar(n); if (tb) wrap.append(tb); }
   const chips = blockChips(n);
   if (chips) wrap.append(chips);
   return wrap;
@@ -584,7 +596,8 @@ function sectionTile(g) {
     iconBtn('more', `${name} actions`, (e) => { e.stopPropagation(); sectionMenu(e.currentTarget, g); }, 'sm')),
   el('div', { class: 'ktile-foot' },
     el('span', { class: 'meta' }, prog.total ? (open ? `${open} open` : 'All done') : 'Empty'),
-    prog.total ? el('span', { class: 'meta' }, `${prog.done}/${prog.total}`) : null));
+    prog.total ? el('span', { class: 'meta' }, `${prog.done}/${prog.total}`) : null,
+    TU.figure(times, g.id)));
   return withMenu(a, (at) => sectionMenu(a.querySelector('.ktile-top .ib') ?? a, g, { at }));
 }
 
@@ -599,6 +612,7 @@ function kidTile(c) {
   const facts = [
     !['todo', 'done', 'cancelled'].includes(shown) ? pill(shown, derived(c) || !editable(c) ? {} : { onClick: (e) => { e.stopPropagation(); statusMenu(e.currentTarget, c); } }) : null,
     prog.total ? el('span', { class: 'meta' }, `${prog.done}/${prog.total}`) : null,
+    TU.figure(times, c.id),
     whoBadge(c.assignee),
   ].filter(Boolean);
   const a = el('article', {
@@ -629,6 +643,7 @@ function listInto(list, pid, depth) {
           c.assignee ? face(c.assignee) : null,
           el('button', { class: `srow-label${inside ? ' parent' : ''}${S.isOpen(shown) ? '' : ' done'}`, type: 'button', onclick: () => openTask(c.id), dataset: { fk: `open-${c.id}` } }, name)),
         el('span', { class: 'srow-end' },
+          TU.figure(times, c.id),
           inside ? el('span', { class: 'meta' }, `${p.done}/${p.total}`) : null,
           shown !== 'todo' && shown !== 'done' ? pill(shown, derived(c) || !editable(c) ? {} : { onClick: (e) => statusMenu(e.currentTarget, c) }) : null,
           iconBtn('more', `More actions for ${name}`, (e) => taskMenu(e.currentTarget, c), 'sm')));

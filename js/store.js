@@ -40,7 +40,11 @@ export const COL = {
   updates: 'updates',       // tasks/{id}/updates/{id}: the timeline
   images: 'images',         // photos as Bytes, one per document (photos.js)
   notes: 'notes',           // the Log
+  time: 'time',             // time tracking: one stretch of work per document (timing.js)
 };
+
+/** settings/workday: the team's lunch and finish times (timing.js). */
+const WORKDAY_DOC = 'workday';
 
 const LS = 'stella.design.';
 const lsGet = (k, fallback) => {
@@ -97,6 +101,8 @@ export const Store = {
         if (e.key === `${LS}tasks`) { this._local = lsGet('tasks', []); this._notify(false); }
         if (e.key === `${LS}updates`) this._notifyUpdates();
         if (e.key === `${LS}notes`) this._notifyNotes();
+        if (e.key === `${LS}time`) this._notifyTime();
+        if (e.key === `${LS}workday`) for (const f of this._workdayWatchers ?? []) f();
       });
       return this.mode;
     }
@@ -151,16 +157,20 @@ export const Store = {
    * entries (`updates`, each {taskId, ...}); and for the Log, whole notes
    * (`noteSet`), note changes (`notes`, each {id, ...fields}), deleted notes
    * (`noteRemove`), photos (`images`, each a prepared photo from photos.js)
-   * and deleted photos (`imageRemove`). Local mode applies it at once;
-   * Firestore applies it to its cache at once and to the server in batches
-   * of BATCH_SIZE (one atomic batch for any ordinary change), so a note and
-   * its photos arrive together or not at all.
+   * and deleted photos (`imageRemove`); and time entries, whole (`timeSet`),
+   * changed (`timePatch`) or deleted (`timeRemove`). Local mode applies it at
+   * once; Firestore applies it to its cache at once and to the server in
+   * batches of BATCH_SIZE (one atomic batch for any ordinary change), so a
+   * note and its photos - or a job's change and the timer it stops - arrive
+   * together or not at all.
    */
-  async commit({ set = [], patch = [], remove = [], updates = [], noteSet = [], notes = [], noteRemove = [], images = [], imageRemove = [] } = {}) {
+  async commit({ set = [], patch = [], remove = [], updates = [], noteSet = [], notes = [], noteRemove = [], images = [], imageRemove = [], timeSet = [], timePatch = [], timeRemove = [] } = {}) {
     const log = noteSet.length || notes.length || noteRemove.length || images.length || imageRemove.length;
-    if (!set.length && !patch.length && !remove.length && !updates.length && !log) return;
+    const time = timeSet.length || timePatch.length || timeRemove.length;
+    if (!set.length && !patch.length && !remove.length && !updates.length && !log && !time) return;
     if (this.mode === 'local') {
       if (log) await this._commitLocalLog({ noteSet, notes, noteRemove, images, imageRemove });
+      if (time) this._commitLocalTime({ timeSet, timePatch, timeRemove });
       if (!set.length && !patch.length && !remove.length && !updates.length) return;
       const byId = new Map((this._local ?? []).map((n) => [n.id, n]));
       for (const n of set) byId.set(n.id, { ...n });
@@ -201,6 +211,9 @@ export const Store = {
       ...notes.map((p) => (b) => b.update(doc(this._db, COL.notes, p.id), strip(p))),
       ...noteRemove.map((id) => (b) => b.delete(doc(this._db, COL.notes, id))),
       ...imageRemove.map((id) => (b) => b.delete(doc(this._db, COL.images, id))),
+      ...timeSet.map((n) => (b) => b.set(doc(this._db, COL.time, n.id), strip(n))),
+      ...timePatch.map((p) => (b) => b.update(doc(this._db, COL.time, p.id), strip(p))),
+      ...timeRemove.map((id) => (b) => b.delete(doc(this._db, COL.time, id))),
     ];
     // Every batch is handed to Firestore at once and only then awaited.
     // Awaiting each in turn waited for the SERVER between batches, so an
@@ -395,6 +408,78 @@ export const Store = {
     return () => { stopGroups(); stopShared(); };
   },
 
+  // ---- time tracking ------------------------------------------------------
+
+  _timeWatchers: new Set(),
+  _notifyTime() { for (const w of this._timeWatchers) w(); },
+  _localTime() { return lsGet('time', []); },
+
+  _commitLocalTime({ timeSet, timePatch, timeRemove }) {
+    const byId = new Map(this._localTime().map((e) => [e.id, e]));
+    for (const e of timeSet) byId.set(e.id, { ...e });
+    for (const p of timePatch) { const cur = byId.get(p.id); if (cur) byId.set(p.id, { ...cur, ...p }); }
+    for (const id of timeRemove) byId.delete(id);
+    if (!lsSet('time', [...byId.values()])) throw new Error('This browser would not save it: its local storage is full or switched off.');
+    this._notifyTime();
+  },
+
+  /**
+   * Time entries matching equality filters - {by, end: null, day, jobId} -
+   * live. Equality alone, so Firestore needs no composite index for any of
+   * them. `cb(list, {error?})`.
+   * @returns {() => void} stop watching
+   */
+  watchTime(match, cb) {
+    const keys = Object.keys(match);
+    if (this.mode === 'local') {
+      const send = () => cb(this._localTime().filter((e) => keys.every((k) => (e[k] ?? null) === match[k])), {});
+      this._timeWatchers.add(send);
+      queueMicrotask(send);
+      return () => this._timeWatchers.delete(send);
+    }
+    const { collection, query, where, onSnapshot } = this._fs;
+    return onSnapshot(
+      query(collection(this._db, COL.time), ...keys.map((k) => where(k, '==', match[k]))),
+      (snap) => cb(snap.docs.map((d) => ({ ...d.data(), id: d.id })), {}),
+      (e) => { console.warn('[time]', e.message); cb(null, { error: e }); },
+    );
+  },
+
+  /** The same, read once. */
+  async getTime(match) {
+    const keys = Object.keys(match);
+    if (this.mode === 'local') return this._localTime().filter((e) => keys.every((k) => (e[k] ?? null) === match[k]));
+    const { collection, query, where, getDocs } = this._fs;
+    const snap = await getDocs(query(collection(this._db, COL.time), ...keys.map((k) => where(k, '==', match[k]))));
+    return snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+  },
+
+  /** settings/workday, live: {lunchStart, lunchEnd, finish} as 'HH:MM', or null when never set. */
+  watchWorkday(cb) {
+    if (this.mode === 'local') {
+      const send = () => cb(lsGet('workday', null));
+      this._workdayWatchers = (this._workdayWatchers ?? new Set()).add(send);
+      queueMicrotask(send);
+      return () => this._workdayWatchers.delete(send);
+    }
+    const { doc, onSnapshot } = this._fs;
+    return onSnapshot(doc(this._db, COL.settings, WORKDAY_DOC),
+      (d) => cb(d.exists() ? d.data() : null),
+      (e) => { console.warn('[workday]', e.message); cb(null); });
+  },
+
+  /** The lead sets the team's day. */
+  async saveWorkday({ lunchStart, lunchEnd, finish }) {
+    const w = { lunchStart, lunchEnd, finish };
+    if (this.mode === 'local') {
+      lsSet('workday', w);
+      for (const f of this._workdayWatchers ?? []) f();
+      return;
+    }
+    const { doc, setDoc } = this._fs;
+    await setDoc(doc(this._db, COL.settings, WORKDAY_DOC), w);
+  },
+
   /** A photo's full image, as a Blob; null when it is not there. */
   async getImage(id) {
     if (this.mode === 'local') {
@@ -494,18 +579,20 @@ export const Store = {
 
   /** Everything this device holds, as one JSON object (Settings → Back up). Photos stay behind: thumbnails only. */
   exportLocal() {
-    return { exportedAt: new Date().toISOString(), tasks: lsGet('tasks', []), updates: lsGet('updates', {}), notes: lsGet('notes', []) };
+    return { exportedAt: new Date().toISOString(), tasks: lsGet('tasks', []), updates: lsGet('updates', {}), notes: lsGet('notes', []), time: lsGet('time', []) };
   },
 
   /** Replace this device's local data. */
-  replaceLocal({ tasks = [], updates = {}, notes = [] }) {
+  replaceLocal({ tasks = [], updates = {}, notes = [], time = [] }) {
     if (this.mode !== 'local') throw new Error('Only in local mode.');
     lsSet('tasks', tasks);
     lsSet('updates', updates);
     lsSet('notes', notes);
+    lsSet('time', time);
     this._local = tasks;
     this._notify(true);
     this._notifyUpdates();
     this._notifyNotes();
+    this._notifyTime();
   },
 };

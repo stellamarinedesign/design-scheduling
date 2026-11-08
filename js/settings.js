@@ -1,7 +1,8 @@
 // settings.js - the cog, top right. Copied from the board and trimmed to this
 // app: who is signed in, their name, password, sign out; the theme; this
-// PC's Stella Systems folder; the Backlog threshold; local-mode backup; and,
-// for a master, the accounts, their names and their roles.
+// PC's Stella Systems folder; the Backlog threshold; the team's workday (lunch
+// and finish, where timers pause and stop); local-mode backup; and, for a
+// master, the accounts, their names and their roles.
 //
 // ACCOUNTS LIVE IN ONE PLACE. Who has which role is the `settings/access`
 // document, and the Firestore rules read that same document, so setting a
@@ -20,6 +21,7 @@ import { VERSION } from './version.js';
 import { go } from './router.js';
 import { state, realName } from './state.js';
 import { nameFor } from './team.js';
+import * as TC from './timing.js';
 
 const THEME_KEY = 'stella.design.theme';
 
@@ -32,7 +34,7 @@ export function openSettings() {
     box.append(el('h3', {}, 'Settings'));
     const lead = state.role === 'lead';
     const designs = lead || state.role === 'designer';
-    box.append(...[account(close), yourName(markClean), appearance(), designs ? thisPc(markClean) : null, lead ? backlog(markClean) : null, lead ? storage() : null, lead || Store.mode === 'local' ? data(close) : null].filter(Boolean));
+    box.append(...[account(close), yourName(markClean), appearance(), designs ? thisPc(markClean) : null, lead ? backlog(markClean) : null, lead ? workday(markClean) : null, lead ? storage() : null, lead || Store.mode === 'local' ? data(close) : null].filter(Boolean));
     const acc = el('div', { class: 'settings-section', hidden: true });
     box.append(acc);
     if (Auth.mode === 'firebase' && Auth.isMaster) { acc.hidden = false; accounts(acc, markClean); }
@@ -129,6 +131,37 @@ function backlog(markClean) {
   });
   return section('Backlog', el('div', { class: 'settings-row' },
     el('div', { class: 'settings-row-sub' }, 'Days untouched before a To-do job joins Home\'s Backlog rotation.'), input));
+}
+
+/**
+ * The team's day (lead, team-wide): lunch start and end, and finish. A
+ * running timer pauses at lunch (and restarts after it) and stops at finish;
+ * the five-minute warning names these times. settings/workday.
+ */
+function workday(markClean) {
+  const w = state.time.workday ?? TC.DEFAULT_WORKDAY;
+  const field = (key, label) => {
+    const input = el('input', { class: 'input', type: 'time', value: w[key], 'aria-label': label, dataset: { key }, style: { width: '128px' } });
+    return el('label', { class: 'field workday-field' }, el('span', { class: 'lbl' }, label), input);
+  };
+  const fields = [field('lunchStart', 'Lunch starts'), field('lunchEnd', 'Lunch ends'), field('finish', 'Finish')];
+  const err = el('div', { class: 'form-err', role: 'alert' });
+  const save = async () => {
+    const next = Object.fromEntries(fields.map((f) => { const i = f.querySelector('input'); return [i.dataset.key, i.value]; }));
+    const problem = TC.workdayProblem(next);
+    if (problem) { err.textContent = problem; return; }
+    err.textContent = '';
+    try {
+      await Store.saveWorkday(next);
+      markClean();
+      toast(`Workday saved: lunch ${TC.clock(TC.onDay(new Date().toISOString(), next.lunchStart))} to ${TC.clock(TC.onDay(new Date().toISOString(), next.lunchEnd))}, finish ${TC.clock(TC.onDay(new Date().toISOString(), next.finish))}`);
+    } catch (e) { toast(isRefusal(e) ? 'Could not save: only the Design lead sets the workday.' : `Could not save: ${e.message}`, { warn: true }); }
+  };
+  return section('Workday',
+    el('div', { class: 'settings-row-sub' }, 'For time tracking, team-wide: a running timer pauses at lunch, restarts after it, and stops at finish. Each person gets a warning five minutes before.'),
+    el('div', { class: 'row workday-row' }, ...fields),
+    err,
+    el('div', {}, btn('Save', save, { cls: 'sm' })));
 }
 
 /**

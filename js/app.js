@@ -18,6 +18,7 @@ import { initRouter, route, go, currentTab, roleTabs, isSpecial, closePanel } fr
 import { el, icon, isWide, closeMenu, installContextMenus } from './ui.js';
 import * as A from './actions.js';
 import * as TM from './team.js';
+import * as TR from './timer.js';
 import { renderSidebar } from './views/sidebar.js';
 import { renderHome } from './views/home.js';
 import { renderTasks, viewTitle } from './views/tasks.js';
@@ -347,6 +348,8 @@ async function start() {
     A.ensureInboxes();
     A.ensureSharing();
     A.reconcileNotes();
+    // A change to the tree can stop or move a timer (a task done, the job submitted).
+    if (!meta.time) TR.check();
   });
   // A name that arrives late also puts right a designer's group named from
   // the address before it did (team.js inboxRepairs).
@@ -361,6 +364,8 @@ async function start() {
   else Store.watchGroups((nodes, meta) => setNodes(nodes, meta), (e) => setError(e));
   // Everyone listed has the Log.
   A.startLog();
+  // Time tracking: the lead's and designers' timers (timer.js).
+  if (works) TR.startTimers();
 
   // ?capture=1 (the AutoHotkey hotkey, Phase 4): straight into quick add.
   if (new URLSearchParams(location.search).get('capture') === '1') {

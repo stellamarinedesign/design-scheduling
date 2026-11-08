@@ -604,6 +604,34 @@ In the Workshop theme the ground is the panel's own white, so the inset takes Ba
 - **Empty:** the dashed empty box. When the category has a tasks template, it offers a small
   "Add the … tasks" button.
 
+### Time tracking (Phase 2.5, milestone 2)
+
+Only on jobs with "Track time" on. Nothing here has a colour of its own: running time is In
+progress blue, the warning's edge is Waiting amber.
+
+- **Timer bar** (job panel, under the properties): Start or Pause as a small button (Pause on
+  the In progress tint), then the total as a clock icon and figure in body strong with tabular
+  numbers (a button that opens the Time log, 44px tall on phones), then a meta line: "On
+  Drawings · stops 12:00 for lunch", and who else is timing.
+- **Figures:** every task tile, list row and section tile in a tracked job carries its time
+  ("1h 20m", meta, tabular numbers). A figure a running timer feeds is In progress blue and
+  moves on every ten seconds without a redraw. A task inside a tracked job shows "Time" in its
+  property row.
+- **Clock mark** on a tracked job's tile, list row and designer row: a 14px clock and the
+  recorded total in meta, In progress blue while your own timer runs on it.
+- **The five-minute warning:** a 400px card at the bottom right (full width less the gutters,
+  above the tab bar, on phones), Shadow Grey with a Waiting amber edge and 11px corners. The
+  head is the clock and the sentence in body strong. Below it are Keep going and Stop now on the
+  left and Okay on the right, all small buttons. It rises 8px and fades in over 200ms on the
+  strong ease-out, and leaves in 120ms. It never takes focus: the sentence is read out as an
+  alert.
+- **Time log** (a wide dialog, 760px): the title and job, the total, Add time and Export
+  CSV, then days newest first under uppercase day labels with the day's total. Each row is
+  start–stop over the length, then the task (body strong) over the person and the record
+  ("paused for lunch", "added by Alex, 8 Nov", "edited by you, 9 Nov"), then Edit and a delete
+  icon for whoever may change it. Adding and editing open an inset form in place: day, start,
+  stop and task.
+
 ### Callouts (task panel)
 
 A callout says where the open task stands and holds what can be done about it. It has 11px
