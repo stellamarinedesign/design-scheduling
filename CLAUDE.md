@@ -120,6 +120,23 @@ parent. Starting here is what loads this file, the project skills and the Impecc
   - Images are resized in the browser and stored as `Bytes` in their own `images` documents,
     under 1 MiB each, with a small thumbnail on the note or update.
   - Everything goes through `js/photos.js`, so the backend can move to OneDrive later.
+- **Time tracking** (Phase 2.5, decided 2026-11-06) is opt-in per job: `timeTracked`, set by
+  anyone who can edit the job. The pure logic is `js/timing.js`; the store side is
+  `js/timer.js`.
+  - Each stretch of work is one `time` document with its real start and stop. Durations are
+    worked out, never stored. The job keeps `timeTotal` (minutes) for lists, recalculated only
+    from data the server has confirmed.
+  - **The stop is in the data, not a running page.** A running entry carries `stopAt` (the
+    next lunch or finish boundary from `settings/workday`, moved by Keep going). Nothing
+    counts past it, so a timer left on overnight counts nothing; the next app to load writes
+    its `end`. It also stops when the job leaves the bench (check, done, cancelled, Waiting).
+  - **Time follows the task In progress** (the most recently started one; else the job).
+    When that changes, one entry closes and the next opens.
+  - **One running timer per person.** Starting one pauses your other.
+  - **Only a lunch pause restarts by itself**, at lunch end or when the app is next opened
+    that day. Restarted and follow-on entries get ids made from the entry before, so two
+    devices write one entry, not two.
+  - You change your own entries; the lead changes anyone's.
 - **Dates:** calendar days are `YYYY-MM-DD` built from local parts, never instants. Brisbane
   is UTC+10, so an instant loses a day.
 
