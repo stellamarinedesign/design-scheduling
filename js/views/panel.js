@@ -262,12 +262,20 @@ function statusPillOf(n) {
   return pill(n.status, editable(n) ? { onClick: (e) => statusMenu(e.currentTarget, n) } : {});
 }
 
-/** The name, edited in place: a task's title, a section's name. */
+/**
+ * The name, edited in place: a task's title, a section's name.
+ *
+ * It shows three lines at most, and a textarea cannot end in "…". So a copy
+ * that can is laid over it (CSS: .title-shown), unseen by screen readers and
+ * clicked through, and the box's own text shows only while it has focus: a
+ * long name reads "…" until it is tapped, then shows in full to edit.
+ */
 function titleField(n) {
   const key = n.kind === T.KIND.task ? 'title' : 'name';
   const was = n[key] ?? '';
   const title = el('textarea', { class: 'title-edit', rows: '1', 'aria-label': n.kind === T.KIND.task ? 'Title' : 'Name', spellcheck: 'true', maxlength: '300', readonly: !editable(n) });
   title.value = was;
+  const shown = el('div', { class: 'title-shown', 'aria-hidden': 'true' }, was);
   const fit = () => { title.style.height = 'auto'; title.style.height = `${Math.min(title.scrollHeight, 3 * 1.3 * 19 + 8)}px`; };
   requestAnimationFrame(fit);
   title.addEventListener('input', fit);
@@ -277,10 +285,12 @@ function titleField(n) {
   });
   title.addEventListener('blur', () => {
     const v = title.value.replace(/\s+/g, ' ').trim();
-    if (!v) { title.value = was; return; }
-    if (v !== was) A.updateFields(n.id, { [key]: v });
+    if (!v) title.value = was;
+    else if (v !== was) A.updateFields(n.id, { [key]: v });
+    shown.textContent = title.value;
+    title.scrollTop = 0;
   });
-  return title;
+  return el('div', { class: 'title-wrap' }, title, shown);
 }
 
 function top(n) {

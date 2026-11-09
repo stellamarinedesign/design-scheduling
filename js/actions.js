@@ -651,6 +651,28 @@ export function ensureInboxes() {
   write({ set: fixes, patch: repairs }).finally(() => { for (const id of ids) inboxPending.delete(id); });
 }
 
+/** How many tasks inside jobs have the lead on them (Settings' one-off tidy). */
+export const tasksOnMe = () => (state.role === 'lead' ? TM.unassignAllPatches(state.idx, state.me, { at: '' }).length : 0);
+
+/**
+ * Take the lead off every task inside a job, in one go (team.js
+ * unassignAllPatches), with Undo. No timeline event on each: it is a tidy
+ * after the imports, and hundreds of "Unassigned" lines would bury the real
+ * ones. The store writes it in batches under Firestore's limit.
+ * @returns {number} how many
+ */
+export function unassignAllMine({ onUndo = null } = {}) {
+  if (state.role !== 'lead') return 0;
+  const patches = TM.unassignAllPatches(state.idx, state.me, { at: nowISO() });
+  if (!patches.length) return 0;
+  const inverse = inverseOf(patches);
+  write({ patch: patches }, 'The tasks were not unassigned');
+  toast(`Unassigned you from ${plural(patches.length, 'task')} · part of their jobs again`, {
+    action: 'Undo', ms: 12000, onAction: () => { write({ patch: inverse }, 'The undo did not save'); onUndo?.(); },
+  });
+  return patches.length;
+}
+
 // ---------------------------------------------------------------------------
 // the Log
 // ---------------------------------------------------------------------------

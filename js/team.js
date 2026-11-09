@@ -298,7 +298,7 @@ export function reassignPatches(idx, id, to, { at }) {
   const change = (n, extra = {}) => {
     const p = { id: n.id, assignee: who, updatedAt: at, ...extra };
     if (!isJob(idx, n)) {
-      if (!who && ['check', 'fix'].includes(n.status)) Object.assign(p, { status: 'in_progress', statusAt: at, fixNote: null, submittedBy: null, submittedAt: null });
+      if (!who) Object.assign(p, backToWork(n, at));
       if (who && isContainer(idx, n)) {
         const shown = shownStatus(idx, n);
         if (shown !== (n.status ?? 'todo')) Object.assign(p, { status: shown, statusAt: at, doneAt: shown === 'done' ? at : null });
@@ -317,6 +317,26 @@ export function reassignPatches(idx, id, to, { at }) {
     walk(id);
   }
   return out;
+}
+
+/** A task part of its job is never with the lead for check or sent back: those go back to In progress. */
+const backToWork = (n, at) => (['check', 'fix'].includes(n.status)
+  ? { status: 'in_progress', statusAt: at, fixNote: null, submittedBy: null, submittedAt: null }
+  : {});
+
+/**
+ * Settings' one-off tidy (owner, 2026-11-09): every task inside a job that
+ * has `who` on it loses them and is part of its job again, as unassigning
+ * one does (reassignPatches). The early imports put the lead on all of them.
+ * Jobs keep their person: one with nobody on it is the lead's anyway. Nothing
+ * here counts as activity, so no job's Backlog age moves.
+ * @returns {object[]} patches, one per task
+ */
+export function unassignAllPatches(idx, who, { at }) {
+  if (!who) return [];
+  return idx.nodes
+    .filter((n) => n.kind === KIND.task && !n.archivedAt && n.assignee === who && !isJob(idx, n))
+    .map((n) => ({ id: n.id, assignee: null, updatedAt: at, ...backToWork(n, at) }));
 }
 
 // ---------------------------------------------------------------------------

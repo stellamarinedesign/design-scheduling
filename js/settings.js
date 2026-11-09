@@ -1,7 +1,8 @@
 // settings.js - the cog, top right. Copied from the board and trimmed to this
 // app: who is signed in, their name, password, sign out; the theme; this
 // PC's Stella Systems folder; the Backlog threshold; the team's workday (lunch
-// and finish, where timers pause and stop); local-mode backup; and, for a
+// and finish, where timers pause and stop); the lead's one-off "Unassign me";
+// local-mode backup; and, for a
 // master, the accounts, their names and their roles.
 //
 // ACCOUNTS LIVE IN ONE PLACE. Who has which role is the `settings/access`
@@ -12,7 +13,7 @@
 
 import { Auth, setAccess, currentAccess, tidyEmail, isEmail, friendlyAuthError } from './auth.js';
 import { Store } from './store.js';
-import { openDialog } from './dialog.js';
+import { openDialog, confirmDialog } from './dialog.js';
 import { openPasswordDialog } from './password.js';
 import { ROLES, ROLE_LABEL, ROLE_WORDS, normaliseAccess, accountRows, withRole, withoutAccount, withMaster, roleOf, tempPassword } from './access.js';
 import { el, btn, toast, prefs, isRefusal } from './ui.js';
@@ -22,6 +23,7 @@ import { go } from './router.js';
 import { state, realName } from './state.js';
 import { nameFor } from './team.js';
 import * as TC from './timing.js';
+import * as A from './actions.js';
 
 const THEME_KEY = 'stella.design.theme';
 
@@ -34,7 +36,7 @@ export function openSettings() {
     box.append(el('h3', {}, 'Settings'));
     const lead = state.role === 'lead';
     const designs = lead || state.role === 'designer';
-    box.append(...[account(close), yourName(markClean), appearance(), designs ? thisPc(markClean) : null, lead ? backlog(markClean) : null, lead ? workday(markClean) : null, lead ? storage() : null, lead || Store.mode === 'local' ? data(close) : null].filter(Boolean));
+    box.append(...[account(close), yourName(markClean), appearance(), designs ? thisPc(markClean) : null, lead ? backlog(markClean) : null, lead ? workday(markClean) : null, lead ? tasksOnYou() : null, lead ? storage() : null, lead || Store.mode === 'local' ? data(close) : null].filter(Boolean));
     const acc = el('div', { class: 'settings-section', hidden: true });
     box.append(acc);
     if (Auth.mode === 'firebase' && Auth.isMaster) { acc.hidden = false; accounts(acc, markClean); }
@@ -189,6 +191,35 @@ function workday(markClean) {
     el('div', { class: 'row workday-row' }, ...fields),
     err,
     el('div', {}, btn('Save', save, { cls: 'sm' })));
+}
+
+/**
+ * One-off (owner, 2026-11-09): the first imports put the lead on every task
+ * inside a job, so each sat on the lists and went for check. Unassign me
+ * takes the lead off them all at once (actions.js unassignAllMine). Shown
+ * while any are left, until it has run once on this device (Undo brings it
+ * back); local mode and the live data are remembered apart.
+ */
+function tasksOnYou() {
+  const key = `unassignedAllMine.${Store.mode}`;
+  const n = A.tasksOnMe();
+  if (!n || prefs.get(key, false)) return null;
+  const words = `${n} task${n === 1 ? '' : 's'}`;
+  const sub = el('div', { class: 'settings-row-sub', role: 'status' }, `${words} inside jobs have you on them, most from the first imports.`);
+  const run = btn('Unassign me', async () => {
+    const ok = await confirmDialog({
+      title: `Unassign you from ${words}?`,
+      body: 'Each becomes part of its job again: ticked with the job, off Home and the lists, never sent for check. Ready for check and Sent back go back to In progress. Jobs keep you. Undo is on the message after.',
+      ok: 'Unassign',
+    });
+    if (!ok) return;
+    const done = A.unassignAllMine({ onUndo: () => prefs.set(key, false) });
+    if (!done) return;
+    prefs.set(key, true);
+    run.remove();
+    sub.textContent = `Done: you are off ${done} task${done === 1 ? '' : 's'} inside jobs.`;
+  }, { cls: 'sm' });
+  return section('Tasks on you', el('div', { class: 'settings-row' }, sub, run));
 }
 
 /**

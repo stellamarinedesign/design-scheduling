@@ -999,6 +999,20 @@ export async function run() {
     const job = TM.reassignPatches(T.buildIndex(apply(sampleNodes(), [{ id: 'j2', assignee: DA, status: 'check' }])), 'j2', null, { at: AT })[0];
     ok(!('status' in job), 'a job unassigned is the lead\'s, and keeps its check');
   });
+  test('unassign me: every task inside a job with them on it; never a job, anyone else\'s or an archived one', () => {
+    const idx = T.buildIndex(apply(sampleNodes(), [
+      { id: 'j1', assignee: BY }, { id: 't1', assignee: BY, status: 'check', submittedBy: BY }, { id: 't2', assignee: BY, status: 'done' },
+      { id: 's2b', assignee: DA }, { id: 's2', assignee: BY, archivedAt: AT },
+    ]));
+    const p = TM.unassignAllPatches(idx, BY, { at: AT });
+    expect(p.map((x) => x.id).sort(), ['t1', 't2']);
+    const byId = Object.fromEntries(p.map((x) => [x.id, x]));
+    expect([byId.t1.assignee, byId.t1.status, byId.t1.submittedBy], [null, 'in_progress', null], 'Ready for check goes back to In progress');
+    expect(byId.t2, { id: 't2', assignee: null, updatedAt: AT }, 'Done stays Done; no activity, so no Backlog age moves');
+    const after = T.buildIndex(apply(sampleNodes(), p));
+    ok(T.isLight(after, after.byId.get('t1')), 'part of its job again');
+    expect(TM.unassignAllPatches(idx, null, { at: AT }), [], 'nobody to take off');
+  });
   test('a designer\'s list: theirs only, grouped by what to do next, done only this month', () => {
     const idx = T.buildIndex(apply(teamNodes(), [{ id: 'j4', assignee: DA, doneAt: ago(1) }]));
     const g = TM.myTaskGroups(idx, DA, { now: T0 });
