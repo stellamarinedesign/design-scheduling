@@ -43,6 +43,11 @@ const P = {
   more: '<circle cx="5" cy="12" r="1.4" fill="currentColor"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/><circle cx="19" cy="12" r="1.4" fill="currentColor"/>',
   play: '<path d="M7 4.5v15l12.5-7.5z" fill="currentColor" stroke="none"/>',
   check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+  // The Progress page's cell marks: a symbol for every state, so colour is never alone.
+  half: '<circle cx="12" cy="12" r="6.5"/><path d="M12 5.5a6.5 6.5 0 0 0 0 13z" fill="currentColor" stroke="none"/>',
+  bang: '<path d="M12 5.5v8"/><circle cx="12" cy="18" r="1.4" fill="currentColor" stroke="none"/>',
+  dash: '<path d="M7 12h10"/>',
+  register: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M9 9.5v10M14.5 9.5v10"/>',
   chevDown: '<path d="m6 9 6 6 6-6"/>',
   chevRight: '<path d="m9 6 6 6-6 6"/>',
   back: '<path d="M15 18 9 12l6-6"/>',

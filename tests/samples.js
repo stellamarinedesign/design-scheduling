@@ -119,3 +119,74 @@ export const excelRows = [
   ['Zeta stand', 'Done', '', '', 'C:\\Users\\someone\\OneDrive - Example\\Stella Systems\\Example Products\\Zeta'],
   ['Eta bad path', '', '', '', 'D:\\Elsewhere\\Eta'],
 ];
+
+/**
+ * A register (the Progress page), INVENTED: a category of lift frames with a
+ * tasks template, its products and their revisions, and a category with no
+ * template. Every name is made up.
+ */
+export function registerNodes() {
+  const n = (o) => ({ archivedAt: null, createdAt: AT, updatedAt: AT, lastActivityAt: AT, ...o });
+  const job = (o) => n({ kind: 'task', assignee: LEAD, createdBy: LEAD, revision: null, ...o });
+  const part = (o) => n({ kind: 'task', assignee: null, createdBy: LEAD, ...o });
+  const later = (days) => new Date(Date.parse(AT) + days * 864e5).toISOString();
+  return [
+    n({ id: 'm', kind: 'group', parentId: null, order: 1024, name: 'Products' }),
+    n({ id: 'lf', kind: 'group', parentId: 'm', order: 1024, name: 'Lift Frames', colour: 3,
+      stepsTemplate: [{ label: 'Concept' }, { label: '3D', children: [{ label: 'Body' }, { label: 'Arm' }] }, { label: 'Drawings' }, { label: 'Build Form' }] }),
+    n({ id: 'lf-small', kind: 'group', parentId: 'lf', order: 9216, name: 'Small' }),
+    n({ id: 'misc', kind: 'group', parentId: 'm', order: 2048, name: 'Odd Parts' }),
+
+    // P1: R1 finished (older), R2 open and under way.
+    n({ id: 'p1', kind: 'product', parentId: 'lf', order: 1024, name: 'Frame 200' }),
+    job({ id: 'p1r1', parentId: 'p1', order: 1024, title: 'Frame 200 R1', status: 'done', revision: 'R1', createdAt: later(0) }),
+    part({ id: 'p1r1a', parentId: 'p1r1', order: 1024, title: 'Concept', status: 'done' }),
+    job({ id: 'p1r2', parentId: 'p1', order: 2048, title: 'Frame 200 R2', status: 'in_progress', revision: 'R2', createdAt: later(5) }),
+    part({ id: 'a1', parentId: 'p1r2', order: 1024, title: 'Concept', status: 'done' }),
+    part({ id: 'a2', parentId: 'p1r2', order: 2048, title: '3D', status: 'todo' }),
+    part({ id: 'a2a', parentId: 'a2', order: 1024, title: 'Body', status: 'done' }),
+    part({ id: 'a2b', parentId: 'a2', order: 2048, title: 'Arm', status: 'todo' }),
+    part({ id: 'a3', parentId: 'p1r2', order: 3072, title: 'drawings', status: 'fix' }),
+    part({ id: 'a4', parentId: 'p1r2', order: 4096, title: 'Build form', status: 'cancelled' }),
+
+    // P2: one job, finished; every cell done.
+    n({ id: 'p2', kind: 'product', parentId: 'lf', order: 2048, name: 'Frame 300' }),
+    job({ id: 'p2r4', parentId: 'p2', order: 1024, title: 'Frame 300 R4', status: 'done', revision: 'R4' }),
+    part({ id: 'b1', parentId: 'p2r4', order: 1024, title: 'Concept', status: 'done' }),
+    part({ id: 'b2', parentId: 'p2r4', order: 2048, title: '3D', status: 'done' }),
+    part({ id: 'b3', parentId: 'p2r4', order: 3072, title: 'Drawings', status: 'done' }),
+    part({ id: 'b4', parentId: 'p2r4', order: 4096, title: 'Build Form', status: 'done' }),
+
+    // P3: no job yet.
+    n({ id: 'p3', kind: 'product', parentId: 'lf', order: 3072, name: 'Frame 400' }),
+
+    // P4: strays from the template - no Concept, an extra task, one in a section, a waiting one.
+    n({ id: 'p4', kind: 'product', parentId: 'lf', order: 4096, name: 'Frame 500' }),
+    job({ id: 'p4r1', parentId: 'p4', order: 1024, title: 'Frame 500 R1', status: 'waiting', revision: 'Rev 2' }),
+    part({ id: 'c2', parentId: 'p4r1', order: 1024, title: '3D', status: 'waiting' }),
+    part({ id: 'cx', parentId: 'p4r1', order: 2048, title: 'Weld map', status: 'done' }),
+    n({ id: 'csec', kind: 'group', parentId: 'p4r1', order: 3072, name: 'Paperwork' }),
+    part({ id: 'c3', parentId: 'csec', order: 1024, title: 'Drawings', status: 'check', assignee: LEAD }),
+    part({ id: 'c4', parentId: 'p4r1', order: 4096, title: 'Build Form', status: 'in_progress' }),
+
+    // P5: cancelled.
+    n({ id: 'p5', kind: 'product', parentId: 'lf', order: 5120, name: 'Frame 600' }),
+    job({ id: 'p5r1', parentId: 'p5', order: 1024, title: 'Frame 600 R1', status: 'cancelled', revision: 'R1' }),
+    part({ id: 'e1', parentId: 'p5r1', order: 1024, title: 'Concept', status: 'done' }),
+
+    // A sub-category with a product, under the template above it.
+    n({ id: 'p6', kind: 'product', parentId: 'lf-small', order: 1024, name: 'Frame 50' }),
+    job({ id: 'p6r1', parentId: 'p6', order: 1024, title: 'Frame 50 R1', status: 'todo' }),
+
+    // No template: the columns are the names the jobs use.
+    n({ id: 'p7', kind: 'product', parentId: 'misc', order: 1024, name: 'Clip A' }),
+    job({ id: 'p7r1', parentId: 'p7', order: 1024, title: 'Clip A R1', status: 'in_progress' }),
+    part({ id: 'f1', parentId: 'p7r1', order: 1024, title: 'Model', status: 'done' }),
+    part({ id: 'f2', parentId: 'p7r1', order: 2048, title: 'Print', status: 'todo' }),
+    n({ id: 'p8', kind: 'product', parentId: 'misc', order: 2048, name: 'Clip B' }),
+    job({ id: 'p8r1', parentId: 'p8', order: 1024, title: 'Clip B R1', status: 'todo' }),
+    part({ id: 'g1', parentId: 'p8r1', order: 1024, title: 'Print', status: 'todo' }),
+    part({ id: 'g2', parentId: 'p8r1', order: 2048, title: 'Test fit', status: 'todo' }),
+    part({ id: 'g3', parentId: 'p8r1', order: 3072, title: 'model', status: 'todo' }),
+  ];
+}

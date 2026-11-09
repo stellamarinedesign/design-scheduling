@@ -4,6 +4,8 @@
 //   #/home                 Home (the Design lead)
 //   #/tasks                Tasks: the full list (?c=<id> reveals a category);
 //                          a designer's own action-first list
+//   #/progress             Progress: the design register (the lead; designers
+//                          read-only); ?c=<id> jumps to a category's section
 //   #/team                 Team (the Design lead)
 //   #/tasks/<id>           Focus: one category alone
 //   #/tasks/top            jobs not in any category
@@ -128,12 +130,13 @@ export function closePanel() {
 
 /**
  * The tabs each role has, first is where it lands (decided 2026-11-04):
- * the lead Home · Tasks · Team · Log; a designer Tasks · Log (no Home);
- * a contributor the Log only; a manager contributor Jobs · Log.
+ * the lead Home · Tasks · Progress · Team · Log; a designer Tasks ·
+ * Progress · Log (no Home; Progress read-only, owner 2026-11-09); a
+ * contributor the Log only; a manager contributor Jobs · Log.
  */
 export const ROLE_TABS = {
-  lead: ['home', 'tasks', 'team', 'log'],
-  designer: ['tasks', 'log'],
+  lead: ['home', 'tasks', 'progress', 'team', 'log'],
+  designer: ['tasks', 'progress', 'log'],
   contributor: ['log'],
   manager: ['jobs', 'log'],
 };

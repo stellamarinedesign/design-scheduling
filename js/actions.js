@@ -26,6 +26,7 @@ import { mergeNotes } from './notes.js';
 import * as PH from './photos.js';
 import * as SH from './sharing.js';
 import * as M from './migrate.js';
+import * as RG from './register.js';
 import { openNote, openTask } from './router.js';
 
 const ctx = () => ({ by: state.me, at: nowISO(), role: state.role, canWrite });
@@ -160,7 +161,7 @@ function nextColour() {
  * A job takes the tasks template of its nearest group unless told not to.
  * @returns {string} the new id
  */
-export function createTask({ title, parentId = null, brief = '', useTemplate = true, assignee, onFail = null }) {
+export function createTask({ title, parentId = null, brief = '', useTemplate = true, assignee, onFail = null, order: at0 = null }) {
   const at = nowISO();
   const parent = parentId ? node(parentId) : null;
   const inJob = parent && (parent.kind === T.KIND.task || parent.kind === T.KIND.step || T.isSection(state.idx, parent));
@@ -173,9 +174,10 @@ export function createTask({ title, parentId = null, brief = '', useTemplate = t
   if (state.role !== 'lead' && who && who !== state.me) who = state.me;
   // A parent that is not here yet (a designer's own group, before the lead's
   // app has made it): after whatever already names it.
-  const order = parentId && !parent
+  // `order` places it exactly (the Progress page puts a task under its column).
+  const order = at0 ?? (parentId && !parent
     ? Math.max(0, ...state.nodes.filter((x) => x.parentId === parentId).map((x) => x.order ?? 0)) + T.ORDER_GAP
-    : T.newOrder(state.idx, parentId, inJob ? 'end' : 'beforeGroups');
+    : T.newOrder(state.idx, parentId, inJob ? 'end' : 'beforeGroups'));
   const n = taskNode({ parentId, order, title, brief, at, assignee: who });
   const set = [n];
   if (useTemplate && !inJob && parentId) {
@@ -476,12 +478,26 @@ export function archive(ids, { quiet = false } = {}) {
   const merged = mergePatches(patches);
   const inverse = inverseOf(merged);
   const name = T.nameOf(node(list[0]));          // before the write: after it, the node has gone from the live tree
+  const progress = list.length === 1 ? progressAfter(list[0], all) : '';
   write({ patch: merged, updates });
   if (!quiet) {
-    toast(list.length === 1 ? `Archived ${name}` : `Archived ${plural(list.length, 'job')}`, {
+    toast(list.length === 1 ? `Archived ${name}${progress}` : `Archived ${plural(list.length, 'job')}`, {
       action: 'Undo', onAction: () => write({ patch: inverse }),
     });
   }
+}
+
+/**
+ * Archiving a product's current job changes its row on the Progress page
+ * (register.js): say what the row shows now, so it is no surprise.
+ */
+function progressAfter(id, gone) {
+  const n = node(id);
+  const product = n && T.parentOf(state.idx, n);
+  if (product?.kind !== T.KIND.product || RG.currentJob(state.idx, product.id).job?.id !== id) return '';
+  const left = T.buildIndex(state.nodes.filter((x) => !gone.has(x.id)));
+  const next = RG.currentJob(left, product.id).job;
+  return next ? ` · Progress shows ${T.nameOf(next)} for ${T.nameOf(product)} now` : ` · ${T.nameOf(product)} has no job on Progress now`;
 }
 
 /** Bring an archived node back, with the rest of what was archived with it, and its archived ancestors. */
@@ -539,6 +555,72 @@ export async function removeArchived(item, archived) {
 // ---------------------------------------------------------------------------
 // Backlog and load-time housekeeping
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// the Progress page: products and their revisions (register.js)
+// ---------------------------------------------------------------------------
+
+/** A product's new job: its revision, and the tasks template above it, fresh. */
+function revisionNodes(idx, productId, { title, revision, assignee, at, order }) {
+  const job = { ...taskNode({ parentId: productId, order, title, at, assignee }), revision: revision || null };
+  const t = T.stepsTemplateOf(idx, productId);
+  return [job, ...(t ? fromTemplate(t.template, job.id, at) : [])];
+}
+
+/**
+ * A new product in a category (the lead), and - asked for - its first job,
+ * named and numbered as Start revision names them ("Frame 200 R1"), with the
+ * category's tasks. One write, with Undo.
+ * @returns {string|null} the product's id
+ */
+export function addProduct({ name, parentId, withJob = true, assignee = state.me, onFail = null }) {
+  const at = nowISO();
+  const clean = String(name ?? '').trim();
+  const p = {
+    id: Store.newId(), kind: T.KIND.product, parentId, order: T.newOrder(state.idx, parentId, 'end'),
+    name: clean, createdBy: state.me, createdAt: at, updatedAt: at, archivedAt: null,
+  };
+  const idx = T.buildIndex([...state.nodes, p]);
+  const problem = T.nestProblem(idx, p.id, parentId);
+  if (problem) { toast(problem, { warn: true }); return null; }
+  const set = [p];
+  if (withJob) set.push(...revisionNodes(idx, p.id, { title: RG.revisionTitle(p, 'R1'), revision: 'R1', assignee, at, order: T.ORDER_GAP }));
+  const job = withJob ? set[1] : null;
+  write({ set, updates: job ? [{ taskId: job.id, at, by: state.me, kind: 'create', text: '' }] : [] },
+    `${clean.length > 48 ? `${clean.slice(0, 47)}…` : clean} was not added`)
+    .catch(() => onFail?.());
+  toast(`Added ${clean}${job ? ' · R1 started' : ''}`, {
+    action: 'Undo', onAction: () => write({ remove: set.map((x) => x.id) }),
+  });
+  return p.id;
+}
+
+/**
+ * START REVISION (owner, 2026-11-09: a box asks each time): the product's
+ * next job with the template's tasks fresh, and - ticked by default - its
+ * finished jobs moved to the archive in the same write, so the product holds
+ * one live job and the archive keeps the old ones' history. Undo takes the
+ * new job away and brings the old ones back.
+ * @returns {string|null} the new job's id
+ */
+export function startRevision({ productId, title, revision, assignee = state.me, archiveOld = true }) {
+  const product = node(productId);
+  if (!product || product.kind !== T.KIND.product || state.role !== 'lead') return null;
+  const at = nowISO();
+  const set = revisionNodes(state.idx, productId, { title: String(title).trim(), revision: String(revision ?? '').trim(), assignee, at, order: T.newOrder(state.idx, productId, 'end') });
+  const job = set[0];
+  const old = archiveOld ? RG.jobsOf(state.idx, productId).filter((j) => !S.isOpen(j.status)) : [];
+  const gone = new Set(old.flatMap((j) => [j.id, ...T.descendantIds(state.idx, j.id)]));
+  const patches = [...gone].map((id) => ({ id, archivedAt: at }));
+  const r = S.removeBlockers(state.idx, [...gone].filter((id) => node(id)?.kind === T.KIND.task), ctx());
+  const merged = mergePatches([...patches, ...r.patches]);
+  const inverse = inverseOf(merged);
+  write({ set, patch: merged, updates: [{ taskId: job.id, at, by: state.me, kind: 'create', text: '' }, ...r.updates] }, `${T.nameOf(job)} was not started`);
+  toast(`Started ${T.nameOf(job)}${old.length ? ` · ${old.length === 1 ? T.nameOf(old[0]) : plural(old.length, 'job')} archived` : ''}`, {
+    action: 'Undo', onAction: () => write({ remove: set.map((x) => x.id), patch: inverse }),
+  });
+  return job.id;
+}
 
 export function setBacklogIgnored(id, on) {
   write({ patch: [{ id, backlogIgnored: on }] });

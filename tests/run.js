@@ -15,7 +15,8 @@ import * as PH from '../js/photos.js';
 import * as SH from '../js/sharing.js';
 import * as M from '../js/migrate.js';
 import * as TC from '../js/timing.js';
-import { sampleNodes, sampleStepNodes, tiledoData, tiledoArchive, excelRows } from './samples.js';
+import * as RG from '../js/register.js';
+import { sampleNodes, sampleStepNodes, tiledoData, tiledoArchive, excelRows, registerNodes } from './samples.js';
 
 const results = [];
 let group = '';
@@ -1477,6 +1478,89 @@ export async function run() {
     const e = (id, d, mo = 10) => ({ id, jobId: 'j1', taskId: null, by: BY, start: new Date(2026, mo, d, 9).toISOString(), end: new Date(2026, mo, d, 10).toISOString() });
     const list = [e('a', 28, 8), e('b', 30, 8), e('c', 2), e('d', 9), e('e', 9)];
     expect(TC.byDay(list).map((d) => [d.day, d.entries.length]), [['2026-11-09', 2], ['2026-11-02', 1], ['2026-09-30', 1], ['2026-09-28', 1]]);
+  });
+
+  // -------------------------------------------------------------------------
+  group = 'register (Progress page)';
+  const reg = () => T.buildIndex(registerNodes());
+  const rowFor = (idx, pid) => RG.register(idx).sections.flatMap((s) => s.rows).find((r) => r.product.id === pid);
+  test('sections: every category holding products, in tree order, titled below the master', () => {
+    const r = RG.register(reg());
+    expect(r.sections.map((s) => s.id), ['lf', 'lf-small', 'misc']);
+    expect(r.sections.map((s) => s.title), ['Lift Frames', 'Lift Frames › Small', 'Odd Parts']);
+    expect(r.sections[0].rows.map((x) => x.product.id), ['p1', 'p2', 'p3', 'p4', 'p5'], 'products in manual order');
+    expect([r.products, r.complete], [8, 1]);
+  });
+  test('columns come from the template, top level only; a sub-category takes the template above it', () => {
+    const r = RG.register(reg());
+    expect(r.sections[0].columns.map((c) => c.label), ['Concept', '3D', 'Drawings', 'Build Form']);
+    ok(r.sections[0].fromTemplate, 'from the template');
+    expect(r.sections[1].columns.map((c) => c.label), ['Concept', '3D', 'Drawings', 'Build Form']);
+    expect(r.sections[1].templateFrom.id, 'lf');
+  });
+  test('no template: the names the jobs use, first seen first, matched loosely', () => {
+    const s = RG.register(reg()).sections[2];
+    ok(!s.fromTemplate, 'not from a template');
+    expect(s.columns.map((c) => c.label), ['Model', 'Print', 'Test fit']);
+    expect(s.rows[1].cells.map((c) => c.task?.id ?? null), ['g3', 'g1', 'g2'], '"model" fills Model');
+  });
+  test('the current job: the newest open one, else the newest; no job shows empty cells', () => {
+    const idx = reg();
+    expect(RG.currentJob(idx, 'p1').job.id, 'p1r2');
+    expect(RG.currentJob(idx, 'p2').job.id, 'p2r4');
+    expect(RG.currentJob(idx, 'p3').job, null);
+    const none = rowFor(idx, 'p3');
+    ok(none.cells.every((c) => c.state === 'nojob'), 'no job: every cell says so');
+    ok(!none.complete && !none.open, 'neither complete nor open');
+  });
+  test('cells: the same task documents, by name, ignoring case; their state as they show', () => {
+    const r = rowFor(reg(), 'p1');
+    expect(r.cells.map((c) => c.task?.id), ['a1', 'a2', 'a3', 'a4']);
+    expect(r.cells.map((c) => c.state), ['done', 'doing', 'fix', 'na'], '3D is worked out from its insides');
+    expect(r.cells[1].inner, { done: 1, total: 2 });
+    expect([r.done, r.total], [1, 3], 'cancelled left out');
+    ok(r.open && !r.complete, 'open, not complete');
+  });
+  test('a job that strays: an empty slot, an extra, a task in a section, the other states', () => {
+    const r = rowFor(reg(), 'p4');
+    expect(r.cells.map((c) => c.state), ['none', 'wait', 'check', 'doing']);
+    expect(r.extras.map((t) => t.id), ['cx']);
+    expect([r.done, r.total], [1, 4], 'the extra counts');
+  });
+  test('complete, cancelled and the filters', () => {
+    const idx = reg();
+    ok(rowFor(idx, 'p2').complete, 'every cell done');
+    const c = rowFor(idx, 'p5');
+    ok(c.cancelled && !c.complete && !c.open, 'cancelled: finished, not complete');
+    expect(RG.register(idx, { filter: 'incomplete' }).sections[0].rows.map((x) => x.product.id), ['p1', 'p3', 'p4']);
+    expect(RG.register(idx, { filter: 'open' }).sections[0].rows.map((x) => x.product.id), ['p1', 'p4']);
+    expect(RG.filterCounts(idx), { all: 8, incomplete: 6, open: 5 });
+    const empty = RG.register(T.buildIndex(registerNodes().filter((n) => n.id !== 'p6r1')), { filter: 'open' }).sections[1];
+    expect([empty.rows.length, empty.all], [0, 1], 'a section the filter empties still comes back, with its count');
+  });
+  test('a second open job: the newest shows, the row says one more', () => {
+    const idx = T.buildIndex([...registerNodes(), { id: 'p1r3', kind: 'task', parentId: 'p1', order: 3072, title: 'Frame 200 hotfix', status: 'todo', archivedAt: null, createdAt: '2026-12-01T00:00:00.000Z' }]);
+    const r = rowFor(idx, 'p1');
+    expect([r.job.id, r.moreOpen], ['p1r3', 1]);
+  });
+  test('the next revision: one more than the highest, keeping its letters', () => {
+    expect(RG.nextRevision([{ revision: 'R4' }, { revision: 'R2' }]), 'R5');
+    expect(RG.nextRevision([{ revision: 'R1-->R2' }]), 'R3');
+    expect(RG.nextRevision([{ revision: 'Rev 2' }]), 'Rev 3');
+    expect(RG.nextRevision([{ revision: '7' }]), 'R8');
+    expect(RG.nextRevision([{ revision: null }, { revision: 'draft' }]), 'R1');
+    expect(RG.nextRevision([]), 'R1');
+    expect(RG.revisionTitle({ kind: 'product', name: 'Frame 200' }, 'R3'), 'Frame 200 R3');
+  });
+  test('a task added for an empty column lands where its column is', () => {
+    const idx = reg();
+    const o = RG.insertOrder(idx, 'p4r1', rowFor(idx, 'p4').cells, 0);
+    ok(o < 1024, `Concept goes before 3D (${o})`);
+    expect(RG.insertOrder(idx, 'p1r2', rowFor(idx, 'p1').cells, 2), 2560, 'just after 3D');
+    expect(RG.insertOrder(idx, 'p6r1', rowFor(idx, 'p6').cells, 1), 1024, 'a job with nothing in it');
+  });
+  test('names compare loosely', () => {
+    expect([RG.labelKey('Build form'), RG.labelKey(' build-Form '), RG.labelKey('3D')], ['buildform', 'buildform', '3d']);
   });
 
   group = 'writes';

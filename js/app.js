@@ -2,8 +2,9 @@
 // the sidebar, the view and the panel whenever any of them changes.
 //
 // WHAT EACH ROLE SEES (decided 2026-11-04): the Design lead has Home ·
-// Tasks · Team · Log and the category sidebar; a designer has Tasks (their
-// own action-first list) · Log, and no Home; a contributor the Log only; a
+// Tasks · Progress · Team · Log and the category sidebar; a designer has
+// Tasks (their own action-first list) · Progress (read-only, 2026-11-09) ·
+// Log, and no Home; a contributor the Log only; a
 // manager contributor Jobs · Log. The tabs are drawn from the role
 // (router.js ROLE_TABS), and a link to a tab the role does not have lands on
 // the role's own first tab. Hiding is tidiness: firestore.rules is what
@@ -24,6 +25,7 @@ import { renderHome } from './views/home.js';
 import { renderTasks, viewTitle } from './views/tasks.js';
 import { renderMyTasks } from './views/mytasks.js';
 import { renderTeam } from './views/team.js';
+import { renderProgress } from './views/progress.js';
 import { renderPanel, panelEditing, panelUp } from './views/panel.js';
 import { renderLog } from './views/log.js';
 import { renderJobs, renderJobSheet } from './views/jobs.js';
@@ -46,6 +48,7 @@ const panel = $('panel');
 const TABS = {
   home: { label: 'Home', icon: 'home' },
   tasks: { label: 'Tasks', icon: 'tasks' },
+  progress: { label: 'Progress', icon: 'register' },
   team: { label: 'Team', icon: 'team' },
   log: { label: 'Log', icon: 'log' },
   jobs: { label: 'Jobs', icon: 'tasks' },
@@ -167,6 +170,7 @@ function drawView() {
   else if (lead() && p[0] === 'import') import('./views/import.js').then(late((m) => m.renderImport(view)));
   else if (tab === 'home') renderHome(view);
   else if (tab === 'team') renderTeam(view);
+  else if (tab === 'progress') renderProgress(view);
   else if (tab === 'tasks') { if (lead()) renderTasks(view, p[0] === 'tasks' ? (p[1] ?? null) : null); else renderMyTasks(view); }
   else if (tab === 'log') renderLog(view);
   else if (tab === 'jobs') renderJobs(view);
@@ -207,7 +211,7 @@ function drawChrome() {
     a.setAttribute('aria-label', n ? `${TABS[a.dataset.tab]?.label}, ${n} ${COUNT_WORDS[a.dataset.tab] ?? ''}` : TABS[a.dataset.tab]?.label ?? '');
   }
   const title = special ? (route.parts[0] === 'archive' ? 'Archive' : 'Import')
-    : tab === 'home' ? 'Home' : tab === 'team' ? 'Team' : tab === 'log' ? 'Log' : tab === 'jobs' ? 'Jobs'
+    : tab === 'home' ? 'Home' : tab === 'team' ? 'Team' : tab === 'log' ? 'Log' : tab === 'jobs' ? 'Jobs' : tab === 'progress' ? 'Progress'
       : tab === 'tasks' ? (lead() ? viewTitle(route.parts[0] === 'tasks' ? route.parts[1] : null) : 'Tasks') : 'Design Scheduling';
   // The + button adds what this page holds: a note on the Log; a job or a task elsewhere.
   const onLog = tab === 'log' && !special;

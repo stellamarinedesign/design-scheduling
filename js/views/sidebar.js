@@ -1,6 +1,6 @@
 // views/sidebar.js — the category tree: every group with its dot and open
 // count. Pinned on wide screens; a pop-out below 1100px (app.js). The same
-// sidebar on Home and Tasks.
+// sidebar on Home, Tasks and Progress.
 //
 // NAVIGATION ONLY (decided 2026-11-04): clicking a category shows it in the
 // one full Tasks list - scrolled to, expanded with its ancestors, briefly lit
@@ -16,6 +16,9 @@
 // ON THE LOG the same tree filters the feed instead (Log brief): a category
 // shows its notes and those of the categories inside it, the count is its
 // open issues and ideas, and "All notes" clears it.
+//
+// ON PROGRESS a category jumps to its section of the register, or the first
+// section inside it (#/progress?c=<id>).
 
 import { el, icon, iconBtn, dot, withMenu } from '../ui.js';
 import { state } from '../state.js';
@@ -26,6 +29,7 @@ import { promptDialog } from '../dialog.js';
 import * as A from '../actions.js';
 import { enableDrag } from './tile.js';
 import { revealCategory, groupMenu } from './tasks.js';
+import { revealSection } from './progress.js';
 
 export async function newMasterCategory() {
   const name = await promptDialog({ title: 'New master category', label: 'Name', placeholder: 'e.g. Production', ok: 'Add', body: 'Master categories sit at the top of Tasks, with categories inside them.' });
@@ -36,7 +40,7 @@ export async function newMasterCategory() {
 
 /** The category being shown: ?c= in the full list or the Log, or the one in Focus. */
 function currentCategory() {
-  if (route.parts[0] === 'log') return route.query.c ?? null;
+  if (route.parts[0] === 'log' || route.parts[0] === 'progress') return route.query.c ?? null;
   if (route.parts[0] !== 'tasks') return null;
   if (route.parts[1] && route.parts[1] !== 'top') return route.parts[1];
   return route.query.c ?? null;
@@ -46,6 +50,8 @@ export function renderSidebar(root, { notes = [] } = {}) {
   root.textContent = '';
   const { idx } = state;
   const onLog = route.parts[0] === 'log';
+  const onProgress = route.parts[0] === 'progress';
+  const reveal = onProgress ? revealSection : revealCategory;
   root.append(el('div', { class: 'side-head' },
     el('span', { class: 'lbl' }, 'Categories'), el('span', { class: 'sp' }),
     state.role === 'lead' && !onLog ? iconBtn('plus', 'New master category', newMasterCategory, 'sm') : null));
@@ -68,11 +74,11 @@ export function renderSidebar(root, { notes = [] } = {}) {
     // On the Log a category is a filter: an ordinary link, no drag, no menu.
     if (onLog) return el('a', { class: cls, href: routeHref('/log', { c: g.id }), 'aria-current': g.id === current ? 'page' : null }, ...kids);
     const a = el('a', {
-      class: cls, href: routeHref('/tasks', { c: g.id }),
+      class: cls, href: routeHref(onProgress ? '/progress' : '/tasks', { c: g.id }),
       'aria-current': g.id === current ? 'page' : null,
       dataset: { id: g.id, dropInto: g.id },
       draggable: lead ? 'true' : null,
-      onclick: (e) => { if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey) { e.preventDefault(); revealCategory(g.id); } },
+      onclick: (e) => { if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey) { e.preventDefault(); reveal(g.id); } },
     }, ...kids);
     return withMenu(a, (at) => groupMenu(a, g, { at }));
   };

@@ -32,6 +32,7 @@ import * as T from '../tree.js';
 import * as S from '../status.js';
 import * as A from '../actions.js';
 import * as SH from '../sharing.js';
+import * as RG from '../register.js';
 import { shareMenu, shareText } from './managers.js';
 import { ageDays } from '../dates.js';
 import { tile, row, band, enableDrag, backlogDays } from './tile.js';
@@ -437,7 +438,7 @@ async function addGroup(parentId, { kind = T.KIND.group } = {}) {
   const name = await promptDialog({
     title: `New ${what}`, label: 'Name', ok: 'Add',
     placeholder: kind === T.KIND.product ? 'e.g. Model 450' : inJob ? 'e.g. Laser' : 'e.g. Davits',
-    body: kind === T.KIND.product ? 'A product holds its jobs, one per revision. The Progress page (later) reads its tasks.' : '',
+    body: kind === T.KIND.product ? 'A product holds its jobs, one per revision. It is a row on the Progress page, with a cell for each task of its current job.' : '',
   });
   if (name) {
     const id = A.createGroup({ name, parentId, kind });
@@ -498,7 +499,7 @@ function colourMenu(anchor, g) {
   ], { label: 'Colour' });
 }
 
-async function editTemplate(g) {
+export async function editTemplate(g) {
   const v = await promptDialog({
     title: `Tasks template for ${T.nameOf(g)}`,
     label: 'One task a line; indent two spaces for the tasks inside one',
@@ -528,11 +529,16 @@ function doneFold(parentId, done, page, kind = 'done') {
   const when = (t) => String((kind === 'cancelled' ? t.cancelled?.at : t.doneAt) ?? t.updatedAt);
   const sorted = [...done].sort((a, b) => when(b).localeCompare(when(a)));
   const word = kind === 'cancelled' ? 'Cancelled' : 'Done';
+  // Inside a product, the current revision is its row on the Progress page:
+  // archiving everything finished would empty the row, so it stays.
+  const current = page?.kind === T.KIND.product ? RG.currentJob(state.idx, page.id).job?.id : null;
+  const archivable = done.filter((d) => d.id !== current);
   const wrap = el('div', { class: 'done-fold' },
     el('div', { class: 'row' },
       btn(`${word} ${done.length}`, () => { prefs.set(key, !openFold); rerender(); }, { cls: 'sm ghost', ic: openFold ? 'chevDown' : 'chevRight', attrs: { 'aria-expanded': String(openFold) } }),
       el('span', { class: 'sp' }),
-      btn(`Archive all ${word.toLowerCase()}`, () => A.archive(done.map((d) => d.id)), { cls: 'sm ghost', ic: 'archive' })));
+      archivable.length ? btn(archivable.length < done.length ? 'Archive older revisions' : `Archive all ${word.toLowerCase()}`, () => A.archive(archivable.map((d) => d.id)),
+        { cls: 'sm ghost', ic: 'archive', title: archivable.length < done.length ? 'The current revision stays: it is the product row on the Progress page' : null }) : null));
   if (openFold) {
     const shown = all ? sorted : sorted.slice(0, 4);
     const mode = viewMode(page);
