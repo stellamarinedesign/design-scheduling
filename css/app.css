@@ -692,6 +692,12 @@ input::-ms-reveal { display: none; }
 .imp-table td { padding: 6px 8px; border-bottom: 1px solid var(--bg2); vertical-align: top; overflow-wrap: anywhere; }
 .imp-table tr.skip td { color: var(--text3); }
 .imp-table .err { color: var(--red-text); }
+/* The Progress sheet preview: a family per heading, its cells as the Progress page's marks, small. */
+.imp-fam { margin-top: var(--sp-3); border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+.imp-prog caption { caption-side: top; text-align: left; padding: 6px 8px 2px; white-space: normal; }
+.imp-cells { display: inline-flex; gap: 2px; flex-wrap: wrap; }
+.imp-cells .rc { width: 18px; height: 18px; }
+.imp-cells .rc i { width: 16px; height: 16px; border-radius: 4px; }
 .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
 .imp-bar { position: sticky; bottom: -48px; display: flex; gap: var(--sp-3); align-items: center; flex-wrap: wrap; padding: var(--sp-3) 0; background: var(--ground); border-top: 1px solid var(--border); }
 
@@ -1038,6 +1044,9 @@ input::-ms-reveal { display: none; }
 .view-inner.prog { gap: var(--sp-5); max-width: 1400px; }
 .rg-list { display: flex; flex-direction: column; gap: var(--sp-6); }
 .rg-sec { --cell: 36px; display: flex; flex-direction: column; gap: var(--sp-2); border-radius: var(--radius); scroll-margin-top: var(--sp-2); }
+/* A register runs to a thousand cells and redraws on every tick: sections out
+   of sight are not laid out until they come near (their last size is kept). */
+.rg-sec:not(.flash) { content-visibility: auto; contain-intrinsic-size: auto 480px; }
 .rg-grid {
   /* Full: the names keep to a readable width and the job column takes what is left over. */
   --name: minmax(140px, 360px); --count-w: 56px; --rev-w: 52px; --job: minmax(176px, 1fr); --gap: 12px;

@@ -84,7 +84,14 @@ const P = {
 };
 
 /** An icon, aria-hidden: the button around it carries the label. */
+// Each icon is built once per name and size, then cloned: a page of a
+// thousand marks (the Progress page) would otherwise parse its markup a
+// thousand times on every redraw.
+const ICON_CACHE = new Map();
 export function icon(name, size = 18) {
+  const key = `${name}:${size}`;
+  const made = ICON_CACHE.get(key);
+  if (made) return made.cloneNode(true);
   const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   s.setAttribute('viewBox', '0 0 24 24');
   s.setAttribute('width', size);
@@ -97,7 +104,8 @@ export function icon(name, size = 18) {
   s.setAttribute('aria-hidden', 'true');
   s.setAttribute('focusable', 'false');
   s.innerHTML = P[name] ?? '';
-  return s;
+  ICON_CACHE.set(key, s);
+  return s.cloneNode(true);
 }
 
 /**

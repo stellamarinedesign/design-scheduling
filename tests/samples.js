@@ -190,3 +190,44 @@ export function registerNodes() {
     part({ id: 'g3', parentId: 'p8r1', order: 3072, title: 'model', status: 'todo' }),
   ];
 }
+
+/**
+ * The Excel tracker's Progress sheet, INVENTED, in the shape the real one
+ * has: a title, "Date:" rows before each family, a family's name on its own,
+ * header rows naming each section, a legend down the side past the last
+ * column, a blank header cell, rows with only a name, a row with no name, a
+ * note typed in a cell, cancelled rows, and a stray note before a header.
+ */
+export const progressRows = [
+  ['GENERAL PROGRESS:'],
+  [],
+  ['Date:', '2026-10-30', '', '', '', '', '', '', '', '', '', '', 'N/a'],
+  ['Hoists', '', '', '', '', '', '', '', '', '', '', '', 'Done'],
+  ['', '', '', '', '', '', '', '', '', '', '', '', 'In Progress'],
+  ['Single arm', 'Archived', 'Model', 'Laser', '', 'Drawings', 'Checked', 'Comments/ File Path', 'Revision No.', '', '', '', 'Fix'],
+  ['100kg', 'Done', 'Done', 'N/a', 'ignored', 'Done', 'Done', 'Stella Systems\\Example Products\\Hoists\\100kg', 'R4', '', '', '', 'Cancelled'],
+  ['200kg', 'Done', 'In Progress', '', '', '', '', 'Check the base plate', 'R1-->R2'],
+  ['300kg (twin)', '(see the twin note)', '', '', '', '', '', '', ''],
+  ['400kg'],
+  [],
+  ['Folding arm', 'Archived', 'Model', 'Laser', '', 'Drawings', 'Checked', 'Comments/ File Path'],
+  ['150kg', 'Done', 'Done', 'Done', '', 'Done', 'Done', ''],
+  ['', 'N/a', 'Fix', '', '', '', '', ''],
+  [],
+  ['Date:', '2026-10-30'],
+  ['Platform lifts'],
+  [],
+  ['Lift', 'Concept', 'Approval', '3D', 'Drawings', 'Comments/ File Path'],
+  ['Unit A', 'Done', 'Done', 'Done', 'Done', 'Email chain from the customer'],
+  ['Unit B', 'Cancelled', '', '', '', 'Cancelled - verbal 12/03/26'],
+  ['Unit C', 'Done', 'Cancelled', '', '', 'Customer dissolved'],
+  ['Unit D', 'Done', 'Fix', 'Waiting', '', ''],
+  ['Unit E', 'Cancelled', 'Done', '', '', ''],
+  ['Date:', '2026-10-30'],
+  ['Research'],
+  ['', '', '', 'calc, cost, sign off'],
+  ['Project', 'Research', 'Concept design', 'Comments/ File Path'],
+  ['Winch idea', 'In Progress', '', ''],
+  ['Date:', '2026-10-30'],
+  ['Empty family'],
+];

@@ -146,12 +146,15 @@ export function renderProgress(root) {
       btn('Show all', () => { prefs.set(FILTER_KEY, 'all'); rerender(); }, { cls: 'sm', attrs: { 'aria-label': `Show all products, not only ${f.label.toLowerCase()}` } })));
     return;
   }
+  // Fitted before the sections go in, from the width they will have (the
+  // view's, less its padding, up to the page's limit), so the first draw is
+  // right without laying out a thousand cells twice; the observer then
+  // follows every resize.
+  const cs = getComputedStyle(root);
+  const width = Math.min(1400, root.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight));
   const list = el('div', { class: 'rg-list' }, visible.map(section));
+  for (const sec of list.children) fitSection(sec, width);
   inner.append(list);
-  // Fitted now, from the list's width, as well as by the observer on every
-  // resize: the first draw is right without waiting for it.
-  const w = list.clientWidth;
-  for (const sec of list.children) fitSection(sec, w);
 
   const target = takeReveal();
   if (target) {

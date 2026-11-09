@@ -16,7 +16,8 @@ import * as SH from '../js/sharing.js';
 import * as M from '../js/migrate.js';
 import * as TC from '../js/timing.js';
 import * as RG from '../js/register.js';
-import { sampleNodes, sampleStepNodes, tiledoData, tiledoArchive, excelRows, registerNodes } from './samples.js';
+import * as PX from '../js/import/progress.js';
+import { sampleNodes, sampleStepNodes, tiledoData, tiledoArchive, excelRows, registerNodes, progressRows } from './samples.js';
 
 const results = [];
 let group = '';
@@ -1561,6 +1562,79 @@ export async function run() {
   });
   test('names compare loosely', () => {
     expect([RG.labelKey('Build form'), RG.labelKey(' build-Form '), RG.labelKey('3D')], ['buildform', 'buildform', '3d']);
+  });
+
+  // -------------------------------------------------------------------------
+  group = 'Progress sheet import';
+  test('families come after Date rows; sections are header rows; the legend and blank headers are not read', () => {
+    const p = PX.parseProgressRows(progressRows);
+    expect(p.families.map((f) => f.title), ['Hoists', 'Platform lifts', 'Research'], 'a name with no header under it is no family');
+    expect(p.families[0].sections.map((s) => s.name), ['Single arm', 'Folding arm']);
+    expect(p.families[0].sections[0].columns, ['Archived', 'Model', 'Laser', 'Drawings', 'Checked']);
+    const r = p.families[0].sections[0].rows[0];
+    expect([r.name, r.values, r.revision], ['100kg', ['Done', 'Done', 'N/a', 'Done', 'Done'], 'R4']);
+    expect(p.families[0].sections[0].rows.map((x) => x.name), ['100kg', '200kg', '300kg (twin)', '400kg'], 'a row with only a name is a product');
+    expect(p.families[0].sections[1].rows.map((x) => x.name), ['150kg', ''], 'a row with no name is kept, to be shown left out');
+    expect(p.families[2].sections[0].rows.map((x) => x.name), ['Winch idea'], 'the stray note before the header is not a row');
+  });
+  test('cells: blank to do, N/a and Cancelled cancelled, Fix in progress with a note, anything else to do with its words', () => {
+    expect(['', 'Done', 'in progress', 'N/a', 'Cancelled', 'Fix', 'Waiting', 'see note'].map((v) => PX.mapCell(v).status),
+      ['todo', 'done', 'in_progress', 'cancelled', 'cancelled', 'in_progress', 'waiting', 'todo']);
+    expect(PX.mapCell('see note').note, 'see note');
+  });
+  test('a row: its job status, its title from the last revision, a folder or a brief', () => {
+    const p = PX.parseProgressRows(progressRows);
+    const sec = p.families[0].sections[0];
+    const [a, b, c] = sec.rows.map((r) => PX.mapProgressRow(r, sec.columns));
+    expect([a.status, a.title, a.revision, a.folders], ['done', '100kg R4', 'R4', [{ path: 'Example Products/Hoists/100kg', label: '' }]]);
+    expect([b.status, b.title, b.revision, b.brief], ['in_progress', '200kg R2', 'R1-->R2', 'Check the base plate']);
+    expect([c.status, c.title, c.brief], ['todo', '300kg (twin)', 'Archived: (see the twin note)']);
+  });
+  test('cancelled rows: cancelled where the cells stop; one that carries on is not', () => {
+    const p = PX.parseProgressRows(progressRows);
+    const sec = p.families[1].sections[0];
+    const m = sec.rows.map((r) => PX.mapProgressRow(r, sec.columns));
+    expect(m.map((x) => x.status), ['done', 'cancelled', 'cancelled', 'in_progress', 'in_progress']);
+    expect(m[1].cells.map((c) => c.status), ['cancelled', 'cancelled', 'cancelled', 'cancelled']);
+    expect(m[2].cells.map((c) => c.status), ['done', 'cancelled', 'cancelled', 'cancelled']);
+    expect([m[1].cancelReason, m[1].cancelledAt], ['Cancelled - verbal 12/03/26', new Date(2026, 2, 12).toISOString()]);
+    expect(m[3].cells.map((c) => c.status), ['done', 'in_progress', 'waiting', 'todo']);
+    expect(m[3].brief, 'Approval: Fix in the tracker');
+    expect(m[4].cells.map((c) => c.status), ['cancelled', 'done', 'todo', 'todo']);
+  });
+  test('the build: into what is there by name, a template on each category, products with their jobs; nothing archived', () => {
+    const existing = [
+      { id: 'pm', kind: 'group', parentId: null, order: 1024, name: 'Production', archivedAt: null },
+      { id: 'ph', kind: 'group', parentId: 'pm', order: 1024, name: 'hoists', colour: 3, archivedAt: null },
+      { id: 'psa', kind: 'group', parentId: 'ph', order: 1024, name: 'Single Arm', archivedAt: null },
+      { id: 'p100', kind: 'product', parentId: 'psa', order: 1024, name: '100KG', archivedAt: null },
+    ];
+    const idx = T.buildIndex(existing);
+    const parsed = PX.parseProgressRows(progressRows);
+    const plan = PX.defaultPlan(parsed, idx);
+    expect(Object.values(plan.families).map((f) => f.parentId), ['pm', 'pm', 'pm'], 'beside the same-named category, else in the first master');
+    const resolved = PX.resolvePlan(parsed, plan, idx);
+    expect(resolved[0].sections[0].rows.map((r) => r.why), ['Already here', null, null, null]);
+    expect(resolved[0].sections[1].rows.map((r) => r.why), [null, 'No name']);
+    let k = 0;
+    const r = PX.buildProgress(parsed, plan, { idx, by: BY, at: AT, newId: () => `x${++k}` });
+    expect(r.stats, { categories: 3, products: 10, jobs: 10, tasks: 42, templates: 4, keptTemplates: 0, skipped: 2, folderErrors: 0 });
+    expect(r.patches.map((p) => [p.id, p.stepsTemplate.map((t) => t.label).join(',')]), [['psa', 'Archived,Model,Laser,Drawings,Checked']]);
+    const all = T.buildIndex([...existing, ...r.nodes]);
+    const lifts = r.nodes.find((n) => n.name === 'Platform lifts');
+    expect([lifts.parentId, typeof lifts.colour, lifts.stepsTemplate.length], ['pm', 'number', 4], 'one section: the products go in the family itself');
+    expect(r.nodes.find((n) => n.name === 'Folding arm').parentId, 'ph', 'a new section inside the existing family');
+    ok(r.nodes.every((n) => n.archivedAt === null), 'nothing archived');
+    ok(r.nodes.filter((n) => n.kind === 'task' && all.byId.get(n.parentId)?.kind === 'task').every((n) => n.assignee === null), 'cells: tasks with nobody on them');
+    const reg = RG.register(T.buildIndex([...existing.map((n) => (n.id === 'psa' ? { ...n, ...r.patches[0] } : n)), ...r.nodes]));
+    const single = reg.sections.find((s) => s.id === 'psa');
+    expect(single.rows.map((x) => x.product.name), ['100KG', '200kg', '300kg (twin)', '400kg']);
+    expect(single.rows[1].cells.map((c) => c.state), ['done', 'doing', 'todo', 'todo', 'todo'], 'the register reads the import back');
+    expect(r.updates.map((u) => u.kind), ['cancel', 'cancel']);
+  });
+  test('a sheet with no Date rows: a lone name just above a header is the family', () => {
+    const p = PX.parseProgressRows([['Gates'], ['Gate', 'Model', 'Drawings', 'Comments'], ['G1', 'Done', ''], ['G2']]);
+    expect([p.families.map((f) => f.title), p.families[0].sections[0].rows.map((r) => r.name)], [['Gates'], ['G1', 'G2']]);
   });
 
   group = 'writes';
