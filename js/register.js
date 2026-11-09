@@ -24,8 +24,12 @@ import * as T from './tree.js';
 
 const OPEN = (s) => s !== 'done' && s !== 'cancelled';
 
-/** A name compared loosely: case, spacing and punctuation ignored ("Build form" is "Build Form"). */
-export const labelKey = (s) => String(s ?? '').normalize('NFKD').toLowerCase().replace(/[^a-z0-9]+/g, '');
+/**
+ * A name compared loosely: case, spacing, punctuation and accents ignored
+ * ("Build form" is "Build Form", "Écran" is "ecran"). Letters of any
+ * script count, so a name in other letters is still a name.
+ */
+export const labelKey = (s) => String(s ?? '').normalize('NFKD').replace(/\p{M}+/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
 
 /** What a cell shows for a status (the check control's own words, tile.js BOX). */
 export const CELL = { todo: 'todo', in_progress: 'doing', check: 'check', fix: 'fix', waiting: 'wait', done: 'done', cancelled: 'na' };

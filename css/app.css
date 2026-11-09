@@ -1049,7 +1049,7 @@ input::-ms-reveal { display: none; }
 .rg-sec:not(.flash) { content-visibility: auto; contain-intrinsic-size: auto 480px; }
 .rg-grid {
   /* Full: the names keep to a readable width and the job column takes what is left over. */
-  --name: minmax(140px, 360px); --count-w: 56px; --rev-w: 52px; --job: minmax(176px, 1fr); --gap: 12px;
+  --name: minmax(140px, 360px); --count-w: 56px; --rev-w: 52px; --job: minmax(200px, 1fr); --gap: 12px;
   display: flex; flex-direction: column;
 }
 .rg-sec[data-fit="compact"] .rg-grid { --name: minmax(96px, 1fr); --count-w: 44px; --rev-w: 40px; --job: 120px; --gap: 8px; }
@@ -1135,8 +1135,9 @@ button.rc:hover i { border-color: var(--text2); }
   color: var(--text2); font-size: var(--fs-micro); font-weight: 700; cursor: pointer;
 }
 .rg-more:hover { background: var(--bg2); color: var(--text); }
+/* Short of room the job's own title gives way first, then the status ends in "…" (its menu and name say it whole). */
 .rg-job .pill { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.rg-job-title { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); color: var(--text3); }
+.rg-job-title { min-width: 0; flex: 0 1000 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); color: var(--text3); }
 .rg-who { flex: none; display: inline-flex; }
 .rg-sec[data-fit="compact"] .rg-job-title { display: none; }
 

@@ -823,6 +823,48 @@ A read-only list of the jobs the lead has shared: no ticks, no drag, no status m
     "age · +N".
   - Then Cancel job (small danger, only for a cancellation), Reply, and Answered (ghost).
 
+### Progress: the design register
+
+The Excel Progress sheet made live (Phase 4, built 2026-11-09). The lead's tab, and a designer's
+to read. One section per category holding products, one row per product, one cell per top-level
+task of the product's current job.
+
+- **Head:** "Progress", "N products · M complete", filter pills (All · Incomplete · Has an open
+  job) with counts, and Jump to where there is no pinned sidebar. On a phone the heading is hidden
+  and the pills scroll sideways, as on the Log.
+- **Labels row:** stays at the top of the view while its section scrolls by (pulled up by the
+  view's own padding, so it sits flush). The corner, over the product names, holds the category's
+  dot and path in Friz at title size, its count, and the lead's ⋯ (Add a product, the columns,
+  Show in Tasks). The column labels stand upright (read bottom to top) in the cells' width, as
+  micro uppercase labels in Muted Ash, cut at 104px with the whole name in the tooltip.
+- **Row:** 44px. The product name (body strong, two lines at most) opens the current job; then
+  the cells; the done count ("5/7", tabular); the revision in mono; and the job: its status pill
+  (the lead's opens the status menu), who has it, and its title only when it says more than the
+  name and revision do. With no open job the lead sees a ghost "Start revision" (or "Start a
+  job"). A cancelled product's name is struck through in Muted Ash. Short of room, the job's title
+  gives way first, then the pill ends in "…".
+- **Cell:** the check control's box (22px, 5px corners) in a 36px cell, with a mark for every
+  state, since a cell has no word beside it. **Done recedes:** a register is mostly done, so done
+  is a check on a Chip Grey fill, and open work is what the eye finds: to do is an empty box
+  outlined in Muted Ash; in progress a half-filled circle on Signal Blue; Ready for check a check
+  on Signal Violet; sent back an exclamation mark on Signal Red; waiting three dots on Signal
+  Amber; cancelled a dash in a dashed box. (The
+  panel's tick, where done is the finish line, keeps its solid done.) A column the job has no task
+  for is a 4px point. A task with tasks inside shows how they stand and opens rather than ticks.
+  The status word is in each cell's name and tooltip.
+- **Fit, per section:** measured against its own width and number of columns, so it holds with
+  the panel open beside it as well as at half-screen. Full: 36px cells, names up to 360px, the
+  job column takes what is left. Compact: 28–32px cells and narrower name, revision and job
+  columns. Stacked (a phone): name, revision and job on the first line; the cells on the second,
+  under the labels, with the count just past the last cell; every target 44px tall.
+- **Add product:** a row at the foot of a section, on Shadow Grey: the name, "Start R1 with the N
+  tasks" (ticked), who has it, Add (the view's one primary) and Done. It stays open for the next,
+  and a name already in the category is refused in Link Coral under the field.
+- **Start revision:** a small guarded dialog: the title (it follows the revision until typed in),
+  the revision in mono, who has it, and "Move R4 to the archive", ticked.
+- **Performance:** sections out of sight are not laid out (`content-visibility: auto`), so a
+  thousand cells redraw in about 25ms.
+
 ### Loading, empty and error states
 
 - **Skeletons:** flat Shadow Grey blocks with a hairline and 8px corners. Each is the size of

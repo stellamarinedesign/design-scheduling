@@ -1562,6 +1562,7 @@ export async function run() {
   });
   test('names compare loosely', () => {
     expect([RG.labelKey('Build form'), RG.labelKey(' build-Form '), RG.labelKey('3D')], ['buildform', 'buildform', '3d']);
+    expect([RG.labelKey('Écran'), RG.labelKey('門'), RG.labelKey('窓'), RG.labelKey(' – ')], ['ecran', '門', '窓', ''], 'any letters are a name; punctuation alone is none');
   });
 
   // -------------------------------------------------------------------------

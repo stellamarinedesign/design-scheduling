@@ -280,8 +280,8 @@ function fitSection(sec, w) {
   const n = Math.max(1, Number(sec.dataset.n) || 0);
   let fit = 'stack';
   let cell = Math.max(26, Math.min(40, Math.floor((w - 72) / n)));
-  // The fixed parts: full 480px (name 140, count, rev, job 176, gaps); compact 348px.
-  if (w >= n * 36 + 480) { fit = 'full'; cell = 36; } else if (w >= n * 28 + 348) { fit = 'compact'; cell = Math.min(32, Math.floor((w - 348) / n)); }
+  // The fixed parts: full 504px (name 140, count, rev, job 200, gaps); compact 348px.
+  if (w >= n * 36 + 504) { fit = 'full'; cell = 36; } else if (w >= n * 28 + 348) { fit = 'compact'; cell = Math.min(32, Math.floor((w - 348) / n)); }
   if (sec.dataset.fit !== fit) sec.dataset.fit = fit;
   const px = `${cell}px`;
   if (sec.style.getPropertyValue('--cell') !== px) sec.style.setProperty('--cell', px);
