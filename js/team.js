@@ -343,15 +343,20 @@ export function unassignAllPatches(idx, who, { at }) {
 // a designer's own Tasks list
 // ---------------------------------------------------------------------------
 
-/** The groups, in the order a designer acts on them. Ready for check sits under In progress. */
+/**
+ * The groups, in the order a designer acts on them. Ready for check is with
+ * the lead, so it sits below To do, out of the way of the work in hand
+ * (owner, 2026-11-09).
+ */
 export const MY_GROUPS = [
   { key: 'fix', label: 'Sent back to you', hint: 'Fix these first' },
   { key: 'progress', label: 'In progress' },
   { key: 'waiting', label: 'Waiting' },
   { key: 'todo', label: 'To do' },
+  { key: 'check', label: 'Ready for check', hint: 'With the Design lead' },
   { key: 'done', label: 'Done this month' },
 ];
-const groupKey = (s) => ({ fix: 'fix', in_progress: 'progress', check: 'progress', waiting: 'waiting', todo: 'todo', done: 'done' }[s] ?? null);
+const groupKey = (s) => ({ fix: 'fix', in_progress: 'progress', check: 'check', waiting: 'waiting', todo: 'todo', done: 'done' }[s] ?? null);
 
 export const MY_SORTS = {
   due: 'Due',

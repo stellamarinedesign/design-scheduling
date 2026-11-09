@@ -800,6 +800,13 @@ input::-ms-reveal { display: none; }
 .my-row .open-link:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 .my-main { min-width: 0; }
 .my-title-row { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+/* The whole path on top. Too long, the categories give way first and the last name (its job) stays. */
+.my-path { display: flex; min-width: 0; white-space: nowrap; margin-bottom: 4px; }
+.my-path > span { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.my-path > .my-path-head { flex: 0 1 auto; min-width: 1.5em; }
+.my-path > .my-path-sep { flex: none; padding: 0 0.4em; }
+.my-path > .my-path-tail { flex: none; max-width: calc(100% - 3em); }   /* never shrinks while the head can */
+.my-path > .my-path-tail:only-child { max-width: 100%; }
 .my-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .my-row.finished .my-title { color: var(--text3); }
 .my-next { font-size: var(--fs-sm); color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 3px; }
@@ -816,7 +823,6 @@ input::-ms-reveal { display: none; }
 .my-when { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; min-width: 0; text-align: right; }
 .my-due { font-size: var(--fs-sm); color: var(--text2); overflow-wrap: break-word; max-width: 100%; }
 .my-due.soon { color: var(--amber-text); }
-.my-place { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .my-act { display: flex; justify-content: flex-end; }
 .skel.my-skel { min-height: 64px; border-radius: 0; border-width: 0 0 1px; }
 

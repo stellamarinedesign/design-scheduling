@@ -3,15 +3,18 @@
 // layout", 2026-11-04). It replaces the Excel sheet's columns: the owner said
 // that shape was only a limitation of Excel.
 //
-// GROUPS, top to bottom: Sent back to you (fix these first) · In progress
-// (with Ready for check marked by its pill) · Waiting · To do · Done this
-// month, folded. The grouping replaces the status filter pills.
+// GROUPS, top to bottom: Sent back to you (fix these first) · In progress ·
+// Waiting · To do · Ready for check (with the lead, out of the way of the
+// work in hand; owner, 2026-11-09) · Done this month, folded. The grouping
+// replaces the status filter pills.
 //
-// A ROW: status pill and title; ONE "next" line (the send-back comment in Fix
+// A ROW: the whole path on top (categories, then its job, then any task it
+// sits in: a task inside a job is often just "Laser", owner 2026-11-09);
+// status pill and title; ONE "next" line (the send-back comment in Fix
 // colour, else what it waits on, the latest update, or the brief's first
 // line); a strip of the tasks inside with "2 of 6 done"; due date (amber
-// when close) and where it sits; and ONE action: Start, Post update, Submit
-// for check, or Open. A row opens the same task panel as the lead's.
+// when close); and ONE action: Start, Post update, Submit for check, or
+// Open. A row opens the same task panel as the lead's.
 //
 // Header: search, Sort (Due by default · Age · Last update · Manual), and
 // + Add task, which puts a task of their own in "From designers" for the
@@ -36,7 +39,24 @@ let doneOpen = false;
 
 const rerender = () => go('/tasks', { keepTask: true });
 const sortOf = () => { const s = prefs.get('mySort', 'due'); return TM.MY_SORTS[s] ? s : 'due'; };
-const pathOf = (t) => TM.placeOf(state.idx, t, (id) => T.pathText(state.idx, id));
+/**
+ * Everything above it, top first, split where the row's top line gives way:
+ * `head`, the categories, shrinks first; `tail` stays: its job and anything
+ * between (a section, the task it sits in), or a job's own category. A task
+ * of their own not filed yet has only its designer's group above it, which
+ * reads "Not filed yet" (team.js placeOf).
+ * @returns {{head: string[], tail: string[]}}
+ */
+function pathParts(t) {
+  const idx = state.idx;
+  const chain = T.ancestorChain(idx, t.id);
+  const job = T.isJob(idx, t) ? null : T.jobOf(idx, t.id);
+  const at = Math.max(job ? chain.indexOf(job) : chain.length - 1, 0);
+  const names = (list) => list.map(T.nameOf).filter(Boolean);
+  if (TM.placeOf(idx, t, () => '') === 'Not filed yet') return { head: ['Not filed yet'], tail: job ? names(chain.slice(at)) : [] };
+  return { head: names(chain.slice(0, at)), tail: names(chain.slice(at)) };
+}
+const pathOf = (t) => { const p = pathParts(t); return [...p.head, ...p.tail].join(' › '); };
 
 export function renderMyTasks(root) {
   const inner = el('div', { class: 'view-inner my' });
@@ -172,23 +192,35 @@ function action(t) {
 
 export function myRow(t, { menuExtra = [], drag = false } = {}) {
   const next = TM.nextLine(state.idx, t, { who: (e) => personName(e), waitingLine: (x) => S.waitingLine(state.idx, x) });
-  const job = T.isJob(state.idx, t) ? null : T.jobOf(state.idx, t.id);
-  const place = [job?.title, pathOf(t)].filter(Boolean).join(' › ');
   const r = el('div', {
     class: `my-row${t.status === 'done' ? ' finished' : ''}`, role: 'listitem', dataset: { id: t.id },
     'aria-current': state.openId === t.id ? 'true' : null, draggable: drag ? 'true' : null,
   },
-  el('button', { class: 'open-link', type: 'button', dataset: { fk: `open-${t.id}` }, 'aria-label': `Open ${t.title}, ${S.LABEL[t.status]}`, onclick: () => openTask(t.id) }),
+  el('button', { class: 'open-link', type: 'button', dataset: { fk: `open-${t.id}` }, 'aria-label': `Open ${t.title}${inJob(t)}, ${S.LABEL[t.status]}`, onclick: () => openTask(t.id) }),
   el('div', { class: 'my-main' },
+    pathLine(t),
     el('div', { class: 'my-title-row' },
       statusPill(t),
       el('span', { class: 'my-title' }, t.title),
       timeMark(t)),
     next ? el('div', { class: `my-next ${next.cls}`.trim() }, next.text) : null),
   strip(t),
-  el('div', { class: 'my-when' }, dueLine(t), el('span', { class: 'meta my-place', title: place }, place || 'Not in a category')),
+  el('div', { class: 'my-when' }, dueLine(t)),
   el('div', { class: 'my-act' }, action(t)));
   return withMenu(r, (at) => taskMenu(r.querySelector('.my-act .btn') ?? r, t, { extra: menuExtra, at }));
+}
+
+/** " in <its job>" for a task inside one: a screen reader hears what the top line shows. */
+const inJob = (t) => { const j = T.isJob(state.idx, t) ? null : T.jobOf(state.idx, t.id); return j ? ` in ${T.nameOf(j)}` : ''; };
+
+/** The row's top line: the whole path (pathParts). Too long for the row, the categories give way first. */
+function pathLine(t) {
+  const { head, tail } = pathParts(t);
+  if (!head.length && !tail.length) return el('div', { class: 'meta my-path' }, el('span', { class: 'my-path-tail' }, 'Not in a category'));
+  return el('div', { class: 'meta my-path', title: [...head, ...tail].join(' › ') },
+    head.length ? el('span', { class: 'my-path-head' }, head.join(' › ')) : null,
+    head.length && tail.length ? el('span', { class: 'my-path-sep', 'aria-hidden': 'true' }, '›') : null,
+    tail.length ? el('span', { class: 'my-path-tail' }, tail.join(' › ')) : null);
 }
 
 /** The status pill, a button for whoever may change it. */

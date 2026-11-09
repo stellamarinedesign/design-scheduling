@@ -1018,7 +1018,9 @@ export async function run() {
     const g = TM.myTaskGroups(idx, DA, { now: T0 });
     const ids = Object.fromEntries(g.map((x) => [x.key, x.rows.map((t) => t.id)]));
     expect(ids.fix, ['j3']);
-    expect(ids.progress.sort(), ['j1', 'j2', 't1'], 'Ready for check sits under In progress');
+    expect(ids.progress.sort(), ['j1', 't1'], 'In progress holds only the work in hand');
+    expect(ids.check, ['j2'], 'Ready for check has its own group');
+    expect(g.map((x) => x.key), ['fix', 'progress', 'waiting', 'todo', 'check', 'done'], 'below To do, above Done');
     expect(ids.done, ['j4']);
     const old = T.buildIndex(apply(teamNodes(), [{ id: 'j4', assignee: DA, doneAt: ago(60) }]));
     expect(TM.myTaskGroups(old, DA, { now: T0 }).find((x) => x.key === 'done').rows, [], 'done long ago drops off');
@@ -1027,7 +1029,7 @@ export async function run() {
   });
   test('a designer\'s list sorts by due date first, undated last', () => {
     const idx = T.buildIndex(apply(teamNodes(), [
-      { id: 'j1', due: '2026-11-20' }, { id: 't1', due: '2026-11-10' },
+      { id: 'j1', due: '2026-11-20' }, { id: 't1', due: '2026-11-10' }, { id: 'j2', status: 'in_progress' },
     ]));
     const rows = TM.myTaskGroups(idx, DA, { now: T0, sort: 'due' }).find((x) => x.key === 'progress').rows.map((t) => t.id);
     expect(rows, ['t1', 'j1', 'j2']);
