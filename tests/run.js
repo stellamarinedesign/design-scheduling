@@ -17,6 +17,7 @@ import * as M from '../js/migrate.js';
 import * as TC from '../js/timing.js';
 import * as RG from '../js/register.js';
 import * as PX from '../js/import/progress.js';
+import * as QT from '../js/quote.js';
 import { sampleNodes, sampleStepNodes, tiledoData, tiledoArchive, excelRows, registerNodes, progressRows } from './samples.js';
 
 const results = [];
@@ -1479,6 +1480,116 @@ export async function run() {
     const e = (id, d, mo = 10) => ({ id, jobId: 'j1', taskId: null, by: BY, start: new Date(2026, mo, d, 9).toISOString(), end: new Date(2026, mo, d, 10).toISOString() });
     const list = [e('a', 28, 8), e('b', 30, 8), e('c', 2), e('d', 9), e('e', 9)];
     expect(TC.byDay(list).map((d) => [d.day, d.entries.length]), [['2026-11-09', 2], ['2026-11-02', 1], ['2026-09-30', 1], ['2026-09-28', 1]]);
+  });
+
+  // -------------------------------------------------------------------------
+  group = 'time export (quote)';
+  /** Is this XML well formed enough for Word: every tag closed in order, every & an entity? */
+  const xmlProblem = (xml) => {
+    const stack = [];
+    for (const m of xml.replace(/<\?xml[^>]*\?>/, '').matchAll(/<(\/?)([A-Za-z_][\w:.-]*)[^>]*?(\/?)>/g)) {
+      if (m[3]) continue;
+      if (!m[1]) stack.push(m[2]);
+      else if (stack.pop() !== m[2]) return `</${m[2]}> closes the wrong tag`;
+    }
+    if (stack.length) return `${stack.pop()} left open`;
+    if (/&(?!amp;|lt;|gt;|quot;|apos;|#\d+;)/.test(xml)) return 'a bare &';
+    return null;
+  };
+  const SECT = '<w:sectPr w:rsidR="00BD6C7E"><w:headerReference w:type="default" r:id="rId8"/><w:footerReference w:type="default" r:id="rId9"/><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr>';
+  const LETTER = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="r"><w:body><w:p><w:pPr><w:rPr><w:lang w:val="en-US"/></w:rPr></w:pPr></w:p><w:p/>${SECT}</w:body></w:document>`;
+  const exLines = [{ id: 'a', name: 'Concept & layout', min: 90 }, { id: 'b', name: 'Drawings', min: 20 }, { id: null, name: 'General', min: 121 }];
+  test('the lines: top-level tasks with what is inside them, through sections, then General', () => {
+    const idx = tracked();
+    const e = (id, taskId, h1, m1, h2, m2) => ({ id, jobId: 'j1', taskId, by: BY, start: L(h1, m1), end: L(h2, m2), source: 'timer' });
+    const list = [e('a', 't1', 8, 0, 9, 0), e('b', 's2b', 9, 0, 9, 30), e('c', null, 10, 0, 11, 0), e('d', 'gone', 13, 0, 14, 0),
+      e('f', 't2', 14, 0, 14, 20), { ...e('g', 's3', 15, 0, 15, 0), end: L(15, 0, 10) }, { ...e('x', 's1', 8, 0, 9, 0), jobId: 'j2' }];
+    expect(QT.timeLines(idx, 'j1', list, L(17)).map((l) => [l.id, l.name, l.min]),
+      [['s2', '3D model', 90], ['t2', 'Laser files', 20], [null, 'General', 120]],
+      '3D model holds t1 and Head; the section passed through; ten seconds and another job\'s time left out; a task gone counts to General');
+    expect(QT.timeLines(idx, 'j1', [], L(17)), [], 'no time: no lines');
+  });
+  test('external rounding: each line up to the next quarter hour', () => {
+    expect([0, 1, 14, 15, 16, 59, 61].map((m) => QT.roundUp(m)), [0, 15, 15, 15, 30, 60, 75]);
+  });
+  test('figures: internal exact; external rounded and priced per line, the total the sum of the lines, GST on the subtotal', () => {
+    const inside = QT.figures(exLines, { kind: 'internal', rate: 120, gst: true });
+    expect([inside.rows.map((r) => r.min), inside.min, inside.total], [[90, 20, 121], 231, null], 'internal: no prices even with a rate');
+    const out = QT.figures(exLines, { kind: 'external', rate: 120, gst: true });
+    expect([out.rows.map((r) => [r.min, r.cents]), out.min, out.subtotal, out.gst, out.total], [[[90, 18000], [30, 6000], [135, 27000]], 255, 51000, 5100, 56100]);
+    const odd = QT.figures(exLines, { kind: 'external', rate: 95.5 });
+    expect([odd.rows.map((r) => r.cents), odd.subtotal, odd.gst, odd.total], [[14325, 4775, 21488], 40588, null, 40588], 'cents rounded per line; no GST unless ticked');
+    expect(QT.figures(exLines, { kind: 'external' }).subtotal, null, 'external with no rate: hours only');
+  });
+  test('a rate as typed, and money as printed', () => {
+    expect(['$120', '95.50', '1,200', ' 85 ', '120/h'].map((s) => QT.parseRate(s).rate), [120, 95.5, 1200, 85, 120]);
+    expect(QT.parseRate(''), { rate: null }, 'blank: no prices');
+    ok(['abc', '0', '12.345', '-5', '20000'].every((s) => QT.parseRate(s).error), 'not a rate');
+    expect([QT.money(0), QT.money(159), QT.money(123456789), QT.money(-2550)], ['$0.00', '$1.59', '$1,234,567.89', '-$25.50']);
+    expect([QT.hours(135), QT.hm(135), QT.longDate('2026-11-10'), QT.longDate('nope')], ['2.25', '2h 15m', '10 November 2026', '']);
+  });
+  test('the document, internal: times only, and says when the job is not finished', () => {
+    const m = QT.docModel({ title: ' Davit arm ', brief: 'Do it', revision: 'R2', ref: '', day: '2026-11-10', kind: 'internal', rate: 120, lines: exLines, status: 'in_progress' });
+    expect([m.label, m.title, m.meta, m.columns], ['Time summary', 'Davit arm', [['Date', '10 November 2026'], ['Revision', 'R2']], ['Task', 'Time']], 'no blank reference');
+    expect([m.rows, m.foot], [[['Concept & layout', '1h 30m'], ['Drawings', '20m'], ['General', '2h 1m']], [['Total', '3h 51m']]]);
+    expect(m.notes, ['The job is not finished: this is the time so far, to 10 November 2026.']);
+    expect(QT.docModel({ title: 'X', day: '2026-11-10', lines: exLines, status: 'done' }).notes, [], 'done: nothing to say');
+    expect(QT.docModel({ title: '', day: '2026-11-10', lines: [], status: 'done' }).title, 'Untitled job');
+  });
+  test('the document, external: hours to the quarter, prices with a rate, GST when ticked', () => {
+    const plain = QT.docModel({ title: 'J', day: '2026-11-10', kind: 'external', lines: exLines, status: 'in_progress' });
+    expect([plain.label, plain.columns, plain.rows[2], plain.foot, plain.notes], ['Quote', ['Task', 'Hours'], ['General', '2.25'], [['Total', '4.25']], ['Each line is rounded up to the next 15 minutes.']], 'no rate: hours only, and never "not finished"');
+    const gst = QT.docModel({ title: 'J', day: '2026-11-10', kind: 'external', rate: 120, gst: true, lines: exLines });
+    expect([gst.columns, gst.rows[0], gst.foot], [['Task', 'Hours', 'Amount'], ['Concept & layout', '1.50', '$180.00'],
+      [['Subtotal (ex GST)', '4.25', '$510.00'], ['GST (10%)', '', '$51.00'], ['Total (inc GST)', '', '$561.00']]]);
+    const ex = QT.docModel({ title: 'J', ref: 'Q-118', day: '2026-11-10', kind: 'external', rate: 95.5, lines: exLines });
+    expect([ex.foot, ex.notes[1], ex.meta[1]], [[['Total (ex GST)', '4.25', '$405.88']], 'Rate $95.50 an hour, ex GST.', ['Reference', 'Q-118']]);
+  });
+  test('Word XML: the letterhead keeps its page set-up, header and footer; the body is replaced', () => {
+    const m = QT.docModel({ title: 'Arm <A> & "B"\u0007', brief: 'First line\n\n- a **bold** point\n- second', revision: 'R1', day: '2026-11-10', kind: 'external', rate: 120, gst: true, lines: exLines });
+    const xml = QT.fillDocument(LETTER, m);
+    expect(xmlProblem(xml), null, 'well formed');
+    ok(xml.includes(SECT), 'the section properties, header and footer references kept');
+    ok(!xml.includes('en-US'), 'the template\'s empty lines gone');
+    ok(xml.includes('Arm &lt;A&gt; &amp; &quot;B&quot;</w:t>') && !xml.includes('\u0007'), 'escaped, control characters dropped');
+    ok(xml.includes('<w:tblHeader/>') && (xml.match(/<w:tr>/g) ?? []).length === 7, 'a header row repeated on each page, three lines, three totals');
+    ok(/<w:t xml:space="preserve">bold<\/w:t>/.test(xml) && xml.includes('<w:b/><w:bCs/></w:rPr><w:t xml:space="preserve">bold'), 'bold in the brief');
+    ok(xml.includes('•</w:t><w:tab/>'), 'bullets');
+    ok(/<\/w:tbl><w:p>[\s\S]*<\/w:p><w:sectPr/.test(xml), 'a paragraph after the table, before the section');
+    ok(xml.includes('<w:tblInd w:w="-100" w:type="dxa"/>') && xml.includes('<w:gridCol w:w="6226"/><w:gridCol w:w="1300"/><w:gridCol w:w="1700"/>'), 'columns fill the text width, the text lined up with the page\'s');
+    ok((xml.match(/<w:keepNext\/>/g) ?? []).length >= 2 + 3 + 2 * 3 + 1, 'the label and title with what follows; the last line with the totals');
+  });
+  test('Word XML: a {{content}} paragraph is where the export goes, the rest of the template stays', () => {
+    const tpl = LETTER.replace('<w:p/>', '<w:p><w:r><w:t>Dear customer</w:t></w:r></w:p><w:p><w:r><w:t>{{con</w:t></w:r><w:r><w:t>tent}}</w:t></w:r></w:p><w:p><w:r><w:t>Regards</w:t></w:r></w:p>');
+    const xml = QT.fillDocument(tpl, QT.docModel({ title: 'J', day: '2026-11-10', kind: 'external', rate: 1590, lines: [{ id: 'a', name: 'A', min: 60 }] }));
+    expect(xmlProblem(xml), null);
+    ok(xml.includes('en-US') && xml.indexOf('Dear customer') < xml.indexOf('<w:tbl>') && xml.indexOf('<w:tbl>') < xml.indexOf('Regards'), 'in place, between the template\'s own words');
+    ok(!xml.includes('{{con') && xml.includes('$1,590.00'), 'the marker gone; "$1" in a price is not read as a pattern');
+    let threw = false;
+    try { QT.fillDocument('<w:document/>', QT.docModel({ title: 'J', day: '2026-11-10', lines: [] })); } catch { threw = true; }
+    ok(threw, 'no body: refused');
+  });
+  test('Word XML: the plain page, page widths, the title in the file\'s properties', () => {
+    expect(xmlProblem(QT.fillDocument(QT.BLANK['word/document.xml'], QT.docModel({ title: 'J', day: '2026-11-10', lines: [] }))), null, 'nothing recorded still makes a document');
+    for (const [name, part] of Object.entries(QT.BLANK)) expect(xmlProblem(part), null, name);
+    expect([QT.textWidth(SECT), QT.textWidth('<w:pgSz w:w="12240"/><w:pgMar w:left="1800" w:right="1800" w:gutter="0"/>'), QT.textWidth('')], [9026, 8640, 9026]);
+    expect(QT.fillCore(QT.BLANK['docProps/core.xml'], 'A & B').match(/<dc:title>.*<\/dc:title>/)[0], '<dc:title>A &amp; B</dc:title>');
+    ok(QT.fillCore('<cp:coreProperties xmlns:cp="x"><dc:title/></cp:coreProperties>', 'T').includes('<dc:title>T</dc:title>'), 'an empty title element');
+    expect([QT.templateProblem(QT.BLANK['word/document.xml']), Boolean(QT.templateProblem(null)), Boolean(QT.templateProblem('<w:document/>'))], [null, true, true]);
+    expect(QT.partsOf(QT.BLANK['_rels/.rels']), { main: 'word/document.xml', core: 'docProps/core.xml' });
+    expect(QT.partsOf('<Relationships><Relationship Target="/word/document2.xml" Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"/></Relationships>'), { main: 'word/document2.xml', core: null }, 'read from the package, attributes in any order');
+    ok(QT.asDocument('<Override PartName="/word/document.xml" ContentType="application/vnd.ms-word.x.wordprocessingml.template.main+xml"/>').includes('wordprocessingml.document.main+xml'), 'a .dotx comes out as a document');
+  });
+  test('the file name, and a template kept in parts', () => {
+    expect(QT.fileName('Davit arm: rev "B" / twin', 'external', '2026-11-10'), 'Quote - Davit arm rev B twin - 2026-11-10.docx');
+    expect(QT.fileName('  ', 'internal', '2026-11-10'), 'Time - Job - 2026-11-10.docx');
+    expect(QT.fileName('A very long job name that goes on and on about the bracket and its many revisions', 'internal', '2026-11-10'),
+      'Time - A very long job name that goes on and on about the bracket - 2026-11-10.docx', 'cut at a word, 60 characters at most');
+    const bytes = Uint8Array.from({ length: 2_000_000 }, (_, i) => i % 251);
+    const parts = QT.splitBytes(bytes);
+    expect(parts.map((p) => p.length), [921600, 921600, 156800]);
+    ok(eq([...QT.joinBytes(parts).subarray(1_999_990)], [...bytes.subarray(1_999_990)]) && QT.joinBytes(parts).length === bytes.length, 'joined back as it was');
+    expect([QT.sizeText(969859), QT.sizeText(2_500_000), QT.MAX_TEMPLATE_BYTES > 969859], ['947 KB', '2.4 MB', true]);
   });
 
   // -------------------------------------------------------------------------

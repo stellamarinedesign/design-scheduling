@@ -231,6 +231,7 @@ function moreMenu(anchor, n) {
     lead() ? { label: 'Assign to…', icon: 'user', onSelect: () => assignMenu(anchor, n) } : null,
     lead() ? { label: 'Move to…', icon: 'move', onSelect: async () => (await import('./pickers.js')).moveDialog(n.id) } : null,
     TU.trackItem(n),
+    TU.exportItem(n),
     lead() && job ? { label: 'Turn into a category', icon: 'folderPlus', onSelect: () => A.turnIntoCategory(n.id) } : null,
     lead() && n.backlogIgnored ? { label: 'Show in the Backlog again', icon: 'restore', onSelect: () => A.setBacklogIgnored(n.id, false) }
       : lead() && BL.canHideFromBacklog(state.idx, n.id, backlogPool()) ? { label: 'Hide from the Backlog', icon: 'hide', onSelect: () => A.setBacklogIgnored(n.id, true) } : null,

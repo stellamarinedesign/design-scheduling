@@ -1,7 +1,8 @@
 // settings.js - the cog, top right. Copied from the board and trimmed to this
 // app: who is signed in, their name, password, sign out; the theme; this
 // PC's Stella Systems folder; the Backlog threshold; the team's workday (lunch
-// and finish, where timers pause and stop); the lead's one-off "Unassign me";
+// and finish, where timers pause and stop); the time export's Word template
+// and default rate (views/quote-ui.js); the lead's one-off "Unassign me";
 // local-mode backup; and, for a
 // master, the accounts, their names and their roles.
 //
@@ -24,19 +25,20 @@ import { state, realName } from './state.js';
 import { nameFor } from './team.js';
 import * as TC from './timing.js';
 import * as A from './actions.js';
+import { quoteSettings } from './views/quote-ui.js';
 
 const THEME_KEY = 'stella.design.theme';
 
 // Settings is a guarded dialog (dialog.js): a click outside it does nothing,
 // and Close or Esc asks before throwing away a path or an address typed and
-// not yet saved.
+// not yet saved. Resolves when it closes (the export box re-reads its template then).
 export function openSettings() {
-  openDialog((box, close, { dismiss, markClean }) => {
+  return openDialog((box, close, { dismiss, markClean }) => {
     box.classList.add('settings');
     box.append(el('h3', {}, 'Settings'));
     const lead = state.role === 'lead';
     const designs = lead || state.role === 'designer';
-    box.append(...[account(close), yourName(markClean), appearance(), designs ? thisPc(markClean) : null, lead ? backlog(markClean) : null, lead ? workday(markClean) : null, lead ? tasksOnYou() : null, lead ? storage() : null, lead || Store.mode === 'local' ? data(close) : null].filter(Boolean));
+    box.append(...[account(close), yourName(markClean), appearance(), designs ? thisPc(markClean) : null, lead ? backlog(markClean) : null, lead ? workday(markClean) : null, lead ? quoteSettings(section, markClean) : null, lead ? tasksOnYou() : null, lead ? storage() : null, lead || Store.mode === 'local' ? data(close) : null].filter(Boolean));
     const acc = el('div', { class: 'settings-section', hidden: true });
     box.append(acc);
     if (Auth.mode === 'firebase' && Auth.isMaster) { acc.hidden = false; accounts(acc, markClean); }

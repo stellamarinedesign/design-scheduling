@@ -91,6 +91,8 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
 }
 .seg button + button { border-left: 1px solid var(--border2); }
 .seg button[aria-pressed="true"] { background: var(--bg2); color: var(--text); }
+/* Inside the seg's clipped corners an outside ring was cut off: drawn inside instead. */
+.seg button:focus-visible { outline-offset: -2px; }
 
 /* ── Type helpers ────────────────────────────────────────────────── */
 .h1 { font-family: var(--font-head); font-weight: 700; font-size: var(--fs-lg); line-height: 1.25; }
@@ -664,6 +666,47 @@ input::-ms-reveal { display: none; }
 .tl-task-field .sel { width: 100%; }
 .tl-running { min-height: 36px; display: inline-flex; align-items: center; }
 .workday-row { gap: var(--sp-3); flex-wrap: wrap; align-items: flex-end; }
+
+/* The time export: the Export time box (the document's table, ticked line by line) and
+   Settings' Time export. Greyscale like the Time log; numbers in tabular columns. */
+.qx { gap: var(--sp-3); }
+.qx-head { display: flex; flex-direction: column; gap: 2px; }
+.qx-head h3 { margin-bottom: 2px; }
+.qx-job { color: var(--text2); overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+.qx-head .meta { font-variant-numeric: tabular-nums; }
+.qx-kind { display: flex; align-items: center; gap: var(--sp-2) var(--sp-3); flex-wrap: wrap; }
+.qx-kind-hint { flex: 1 1 260px; min-width: 0; }
+.qx-fields { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); align-items: flex-end; }
+.qx-ext { display: flex; gap: var(--sp-2) var(--sp-3); align-items: flex-end; flex-wrap: wrap; }
+.qx-ext[hidden] { display: none; }
+.qx-rate { width: 120px; font-variant-numeric: tabular-nums; }
+.qx-ref { width: 200px; }
+.qx-gst { min-height: 36px; }
+.qx-preview { max-height: min(48vh, 520px); overflow-y: auto; scrollbar-gutter: stable; }
+.qx-skel { min-height: 160px; }
+.qx-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.qx-table th, .qx-table td { padding: 4px 8px; text-align: left; vertical-align: middle; }
+.qx-table tr > :first-child { padding-left: 0; }
+.qx-table tr > :last-child { padding-right: 0; }
+.qx-table thead th { font-size: var(--fs-micro); font-weight: 700; letter-spacing: var(--label-spacing); text-transform: uppercase; color: var(--text3); border-bottom: 1px solid var(--border2); padding-bottom: 6px; }
+.qx-table tbody td { border-bottom: 1px solid var(--bg2); }
+.qx-table .num { text-align: right; white-space: nowrap; width: 1%; }
+/* A line left out: still listed, so it can be ticked back, but quiet. */
+.qx-table tbody tr.off td { color: var(--text3); }
+.qx-table tfoot th, .qx-table tfoot td { font-weight: 400; color: var(--text2); padding-top: 6px; padding-bottom: 6px; }
+.qx-table tfoot tr:first-child > * { border-top: 1px solid var(--border2); }
+.qx-table tfoot tr.last > * { font-weight: 700; color: var(--text); }
+.qx-line { display: flex; align-items: center; gap: var(--sp-2); min-height: 36px; cursor: pointer; overflow-wrap: anywhere; }
+/* Ticks in Ash, not brand red: a column of them is at rest, and red is the one primary action (the Signal Rule). */
+.qx-line input { width: 18px; height: 18px; flex: none; accent-color: var(--text2); }
+.qx-gst input { accent-color: var(--text2); }
+.qx-notes { list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-sm); color: var(--text3); }
+.qx-notes:empty { display: none; }
+.qx-link { color: var(--link); background: none; border: 0; font: inherit; text-decoration: underline; text-underline-offset: 2px; padding: 0; }
+.qx-tpl-wrap { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 260px; }
+.qx-tpl { overflow-wrap: anywhere; }
+.qx-rate-row { align-items: flex-end; gap: var(--sp-2); }
+.skel.qx-rate-skel { min-height: 58px; width: 200px; }
 
 /* ── Import ──────────────────────────────────────────────────────── */
 .imp { display: flex; flex-direction: column; gap: var(--sp-5); max-width: 1100px; }
@@ -1325,6 +1368,11 @@ button.rc:hover i { border-color: var(--text2); }
   .tl-row { grid-template-columns: minmax(0, 1fr) auto; }
   .tl-what { grid-column: 1 / -1; grid-row: 2; }
   .tl-acts .ib { width: 44px; height: 44px; }
+  .qx-line { min-height: 44px; }
+  .qx-preview { max-height: none; overflow: visible; }   /* the sheet scrolls; no scroll inside a scroll */
+  .qx-fields > .field, .qx-ref { width: 100%; }
+  .qx-gst { min-height: 44px; }
+  .qx .actions .btn { flex: 1 1 auto; }
   .timer-total { min-height: 44px; }
   .imp-row { grid-template-columns: minmax(0, 1fr); }
   .acct-row { grid-template-columns: 1fr; }

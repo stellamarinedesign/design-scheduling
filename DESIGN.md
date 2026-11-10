@@ -646,6 +646,36 @@ progress blue, the warning's edge is Waiting amber.
   - **Not loaded:** the standard error block (heading "The time log did not load"). Offline,
     a line above the days says these are the entries this device holds.
 
+### Time export (2026-11-10)
+
+The lead's, on a job with time tracked: "Export time…" in the job's ⋯ menus and beside Export
+CSV in the Time log. It makes a Word document on the uploaded template (the letterhead).
+
+- **The box** (a wide dialog, over the Time log when opened from it):
+  - the title and the job (two lines at most), then the date and revision in meta;
+  - an Internal | External seg with a one-line hint beside it;
+  - for External, Rate ($/h) and an "Add GST (10%)" tick, then Reference for both;
+  - **the document's table as it will print:** uppercase column labels over a Strong Rule,
+    lines on hairlines, numbers right-aligned in tabular figures, and the totals under a
+    Strong Rule with the last one bold. Each line has a tick, in Ash, not brand red, because
+    a column of red ticks would break the Signal Rule. A line left out stays listed in Muted
+    Ash and leaves the totals;
+  - notes in meta (not finished, a timer running, which template, or a Settings link when
+    there is none);
+  - Download .docx as the one primary action, then Cancel.
+  - On a phone the table does not scroll inside the sheet; ticks and buttons are 44px.
+- **States:** a skeleton while the times load; the standard error block ("The times did not
+  load"); the empty box when nothing is recorded (it points to the Time log when the timer
+  cannot start); offline with entries from the cache, the download waits and says why.
+- **Settings › Time export:** the template's name, size and who uploaded it, with Replace… and
+  Remove (or Upload .docx…), then Default rate ($/h) and Save. A bad file or rate is said in
+  Link Coral under it.
+- **The document itself** keeps the template's world, not the app's. It has:
+  - a small red label in the letterhead's red (`EA282C`);
+  - the job's name in the template's Title style;
+  - grey uppercase labels;
+  - a table ruled in near-black and light grey, with no fills.
+
 ### Callouts (task panel)
 
 A callout says where the open task stands and holds what can be done about it. It has 11px

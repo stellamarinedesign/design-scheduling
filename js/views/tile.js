@@ -24,7 +24,7 @@ import * as A from '../actions.js';
 import { ageLabel, ageDays, dayLabel, dayOf } from '../dates.js';
 import { openTask } from '../router.js';
 import { assignable } from '../team.js';
-import { timeMark, trackItem } from './timer-ui.js';
+import { timeMark, trackItem, exportItem } from './timer-ui.js';
 
 export const backlogDays = () => {
   try { return Number(JSON.parse(localStorage.getItem('stella.design.pref.backlogDays'))) || 14; } catch { return 14; }
@@ -169,6 +169,7 @@ export function taskMenu(anchor, t, { extra = [], at = null } = {}) {
     lead ? { label: 'Assign to…', icon: 'user', hint: t.assignee && t.assignee !== state.me ? personName(t.assignee) : null, onSelect: () => assignMenu(anchor, t, { at }) } : null,
     lead ? { label: 'Move to…', icon: 'move', onSelect: async () => { const { moveDialog } = await import('./pickers.js'); moveDialog(t.id); } } : null,
     trackItem(t),
+    exportItem(t),
     lead && T.isJob(state.idx, t) ? { label: 'Turn into a category', icon: 'folderPlus', onSelect: () => A.turnIntoCategory(t.id) } : null,
     lead && T.isJob(state.idx, t) ? { label: 'Share with managers…', icon: 'team', onSelect: async () => (await import('./managers.js')).shareMenu(anchor, t, { at }) } : null,
     'sep',

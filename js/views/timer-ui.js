@@ -77,6 +77,18 @@ export function timeMark(t) {
   }, icon('clock', 14), el('span', {}, total));
 }
 
+/**
+ * The time export (owner, 2026-11-10): the lead's, on a job with time
+ * tracked or recorded, at any time. Its box is loaded when first opened.
+ */
+export const canExportTime = (t) => state.role === 'lead' && Boolean(t) && T.isJob(state.idx, t) && (t.timeTracked === true || (t.timeTotal ?? 0) > 0);
+export const openExportTime = async (jobId) => (await import('./quote-ui.js')).openExport(jobId);
+
+/** "Export time…" for the job's ⋯ menu. */
+export function exportItem(t) {
+  return canExportTime(t) ? { label: 'Export time…', icon: 'page', onSelect: () => openExportTime(t.id) } : null;
+}
+
 /** "Track time" for the job's ⋯ menu: anyone working on it (owner, 2026-11-06). */
 export function trackItem(t) {
   if (!t || !T.isJob(state.idx, t) || !canWrite(t)) return null;
@@ -228,12 +240,14 @@ export function openTimeLog(jobId) {
     const totalEl = el('span', { class: 'meta' });
     const addBtn = btn('Add time', () => { form = { kind: 'add' }; draw(); }, { cls: 'sm', ic: 'plus' });
     const csvBtn = btn('Export CSV', () => exportCsv(jobId, entries), { cls: 'sm', ic: 'download' });
+    // The Word document, like a quote (the lead's): over this log, which stays open behind it.
+    const docBtn = canExportTime(job) ? btn('Export time…', () => openExportTime(jobId), { cls: 'sm', ic: 'page' }) : null;
     const body = el('div', { class: 'tl-body' });
     box.append(
       el('div', { class: 'tl-head' },
         el('div', { class: 'tl-title' }, el('h3', {}, 'Time log'), el('div', { class: 'meta wrap', title: job.title }, job.title)),
         totalEl),
-      el('div', { class: 'row tl-tools' }, addBtn, csvBtn),
+      el('div', { class: 'row tl-tools' }, addBtn, csvBtn, docBtn),
       body,
       el('div', { class: 'actions' }, btn('Close', dismiss)));
 

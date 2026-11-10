@@ -41,7 +41,8 @@ rules_version = '2';
 //
 // TIME (`time`): the lead and designers record their own stretches of work on
 // jobs with tracking on, and fix their own; the lead fixes anyone's. The
-// team's lunch and finish are `settings/workday`, set by the lead.
+// team's lunch and finish are `settings/workday`, set by the lead. The time
+// export's rate and Word template are `settings/quote`, the lead's alone.
 //
 // THE LOG (`notes`) and PHOTOS (`images`): everyone listed reads and posts.
 // A note is its author's to edit, and the lead's; the lead and designers
@@ -102,6 +103,32 @@ service cloud.firestore {
       allow write: if lead()
         && request.resource.data.keys().hasOnly(['lunchStart', 'lunchEnd', 'finish'])
         && hm(request.resource.data.lunchStart) && hm(request.resource.data.lunchEnd) && hm(request.resource.data.finish);
+    }
+
+    // ---- the time export: its default rate and Word template (2026-11-10) --
+    // The lead's alone: only the lead exports. A template (the letterhead
+    // now) is bigger than one document may be, so its bytes are parts under
+    // this document, each under 1 MiB, written once and deleted when it is
+    // replaced; this document names the current one. Read only to export.
+    match /settings/quote {
+      function qd() { return request.resource.data; }
+      function rateOk() {
+        return qd().get('rate', null) == null || (qd().rate is number && qd().rate > 0 && qd().rate <= 10000);
+      }
+      function templateOk() {
+        let t = qd().get('template', null);
+        return t == null || (t is map && t.keys().hasOnly(['id', 'name', 'size', 'parts', 'at', 'by'])
+          && t.id is string && t.name is string && t.name.size() <= 200
+          && t.size is int && t.parts is int && t.parts >= 1 && t.parts <= 4);
+      }
+      allow read: if lead();
+      allow create, update: if lead() && qd().keys().hasOnly(['rate', 'template']) && rateOk() && templateOk();
+
+      match /parts/{pid} {
+        allow read, delete: if lead();
+        allow create: if lead() && request.resource.data.keys().hasOnly(['data'])
+          && request.resource.data.data is bytes && request.resource.data.data.size() <= 950000;
+      }
     }
 
     // ---- people: display names --------------------------------------------

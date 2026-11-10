@@ -41,10 +41,14 @@ export const COL = {
   images: 'images',         // photos as Bytes, one per document (photos.js)
   notes: 'notes',           // the Log
   time: 'time',             // time tracking: one stretch of work per document (timing.js)
+  parts: 'parts',           // settings/quote/parts/{id}: the export's Word template, in pieces (quote.js)
 };
 
 /** settings/workday: the team's lunch and finish times (timing.js). */
 const WORKDAY_DOC = 'workday';
+
+/** settings/quote: the time export's default rate and which template is current (quote.js). */
+const QUOTE_DOC = 'quote';
 
 const LS = 'stella.design.';
 const lsGet = (k, fallback) => {
@@ -74,6 +78,10 @@ const strip = ({ id, ...rest }) => rest;
 
 /** Local mode's photos (IndexedDB: localStorage is far too small). */
 const localImages = idb('images');
+
+/** Local mode's export template, kept whole under one key. */
+const localFiles = idb('files');
+const TEMPLATE_KEY = 'quote-template';
 
 const byNewest = (a, b) => String(b.at).localeCompare(String(a.at));
 
@@ -491,6 +499,86 @@ export const Store = {
     }
     const { doc, setDoc } = this._fs;
     await setDoc(doc(this._db, COL.settings, WORKDAY_DOC), w);
+  },
+
+  // ---- the time export: settings/quote, and its template in parts ---------
+  //
+  // The lead's alone (rules: settings/quote). A Word template is bigger than
+  // one document may be (the letterhead is 947 KB; a document holds 1 MiB),
+  // so its bytes are kept in parts, settings/quote/parts/{templateId}-{i},
+  // and settings/quote names the current one. A new template's parts, the
+  // name and the old parts' removal are one batch: a reader sees the old
+  // template or the new one, never a mix. Read only when exporting.
+
+  /** settings/quote: {rate, template: {id, name, size, parts, at, by} | null}, or null when never set. */
+  async getQuote() {
+    if (this.mode === 'local') return lsGet('quote', null);
+    const { doc, getDoc } = this._fs;
+    const d = await getDoc(doc(this._db, COL.settings, QUOTE_DOC));
+    return d.exists() ? d.data() : null;
+  },
+
+  /** The default $/h for external exports; null clears it. */
+  async saveQuoteRate(rate) {
+    if (this.mode === 'local') { lsSet('quote', { ...lsGet('quote', {}), rate }); return; }
+    const { doc, setDoc } = this._fs;
+    await setDoc(doc(this._db, COL.settings, QUOTE_DOC), { rate }, { merge: true });
+  },
+
+  /**
+   * Keep a new template (its bytes already split into parts), in place of
+   * the one before.
+   * @param {{parts: Uint8Array[], name: string, size: number, by: string, at: string}} t
+   * @returns {Promise<object>} what settings/quote now says about it
+   */
+  async saveQuoteTemplate({ parts, name, size, by, at }) {
+    const meta = { id: newId(), name, size, parts: parts.length, at, by };
+    if (this.mode === 'local') {
+      await localFiles.put(TEMPLATE_KEY, { id: meta.id, parts });
+      lsSet('quote', { ...lsGet('quote', {}), template: meta });
+      return meta;
+    }
+    const { doc, writeBatch, Bytes } = this._fs;
+    const old = (await this.getQuote())?.template ?? null;
+    const b = writeBatch(this._db);
+    parts.forEach((p, i) => b.set(doc(this._db, COL.settings, QUOTE_DOC, COL.parts, `${meta.id}-${i}`), { data: Bytes.fromUint8Array(p) }));
+    b.set(doc(this._db, COL.settings, QUOTE_DOC), { template: meta }, { merge: true });
+    for (let i = 0; old && i < (old.parts ?? 0); i++) b.delete(doc(this._db, COL.settings, QUOTE_DOC, COL.parts, `${old.id}-${i}`));
+    await b.commit();
+    return meta;
+  },
+
+  /** No template: exports go out on the plain page. */
+  async removeQuoteTemplate() {
+    if (this.mode === 'local') {
+      await localFiles.del(TEMPLATE_KEY).catch(() => {});
+      lsSet('quote', { ...lsGet('quote', {}), template: null });
+      return;
+    }
+    const { doc, writeBatch } = this._fs;
+    const old = (await this.getQuote())?.template ?? null;
+    const b = writeBatch(this._db);
+    b.set(doc(this._db, COL.settings, QUOTE_DOC), { template: null }, { merge: true });
+    for (let i = 0; old && i < (old.parts ?? 0); i++) b.delete(doc(this._db, COL.settings, QUOTE_DOC, COL.parts, `${old.id}-${i}`));
+    await b.commit();
+  },
+
+  /**
+   * The current template's parts, in order, for `meta` (from getQuote).
+   * Throws when one is missing: replaced since `meta` was read.
+   * @returns {Promise<Uint8Array[]>}
+   */
+  async getQuoteTemplate(meta) {
+    const gone = () => Object.assign(new Error('The letterhead changed while this was open. Close this and export again.'), { code: 'template-changed' });
+    if (this.mode === 'local') {
+      const v = await localFiles.get(TEMPLATE_KEY);
+      if (!v || v.id !== meta.id) throw gone();
+      return v.parts;
+    }
+    const { doc, getDoc } = this._fs;
+    const snaps = await Promise.all(Array.from({ length: meta.parts }, (_, i) => getDoc(doc(this._db, COL.settings, QUOTE_DOC, COL.parts, `${meta.id}-${i}`))));
+    if (snaps.some((s) => !s.exists())) throw gone();
+    return snaps.map((s) => s.data().data.toUint8Array());
   },
 
   /** A photo's full image, as a Blob; null when it is not there. */
