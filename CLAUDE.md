@@ -90,10 +90,15 @@ parent. Starting here is what loads this file, the project skills and the Impecc
       add questions, customer updates or requests on those jobs.
 
   The data collection is still `tasks`, for every level.
-- **Tabs:** Home · Tasks · Team · Log. The full categorised list is the **Tasks** tab, not
-  "Categories". On Home, "Backlog" replaces "Gathering dust". The confirmed layouts are the
-  "Home brief", "Tasks brief", "Task panel brief" and "Designer view" at the end of
-  `../handoff/PLAN.md`.
+- **Tabs:** Home · Tasks · Progress · Team · Log for the lead. Designers see Tasks · Progress ·
+  Log, with Progress read-only (a cell opens its job). The full categorised list is the
+  **Tasks** tab, not "Categories". On Home, "Backlog" replaces "Gathering dust". The confirmed
+  layouts are the "Home brief", "Tasks brief", "Task panel brief" and "Designer view" at the
+  end of `../handoff/PLAN.md`.
+- **Progress** is the design register (`js/register.js`, `js/views/progress.js`): one row per
+  product, its latest job's top-level tasks as cells, with columns from the category's tasks
+  template. A cell is that task, never a copy. The Excel Progress sheet imports into it
+  (`js/import/progress.js`).
 - **Designers see a flat "Tasks" list** of what's assigned to them, like the Excel sheet.
   The Tasks tree is the Design lead's view only. That restriction is in the UI; the rules still
   let designers read all tasks.
