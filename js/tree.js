@@ -135,7 +135,76 @@ export function rowListed(idx, job) {
   const line = lineOfRow(idx, job);
   if (!line) return true;
   if (typeof job.listed === 'boolean') return job.listed;
+  // A sub-job follows the row it is part of, unless it has a switch of its own.
+  const up = subParentOf(idx, job);
+  if (up) return rowListed(idx, up);
   return line.listed !== false;
+}
+
+// ---------------------------------------------------------------------------
+// sub-jobs: rows folding into a row (owner, 2026-11-19)
+// ---------------------------------------------------------------------------
+
+/**
+ * SUB-JOBS. A row of a product line may have rows under it ("300kg base" →
+ * "with post", "with gussets"). A sub-job is a job in the SAME line, linked
+ * by `subOf: <job id>`: not a child task of its parent, whose child tasks are
+ * its stages, so nothing is told apart by name. It is a full job - its own
+ * status, revision, assignee, Waiting and time, and the line's stages. Sub-
+ * jobs nest at any depth. A link to a job not in the same line, or one that
+ * comes back round to itself, is read as no link: the row stands on its own.
+ */
+export function subParentOf(idx, job) {
+  const p = job?.subOf ? idx.byId.get(job.subOf) : null;
+  if (!p || p.kind !== KIND.task || p.id === job.id || p.parentId !== job.parentId || !lineOfRow(idx, job)) return null;
+  // A loop of links (A of B, B of A): every row in it stands on its own.
+  const seen = new Set([job.id]);
+  let q = p;
+  while (q) {
+    if (seen.has(q.id)) return null;
+    seen.add(q.id);
+    const n = q.subOf ? idx.byId.get(q.subOf) : null;
+    q = n && n.kind === KIND.task && n.parentId === job.parentId ? n : null;
+  }
+  return p;
+}
+
+/** A row's sub-jobs, in their order. */
+export const subJobsOf = (idx, jobId) => {
+  const job = idx.byId.get(jobId);
+  if (!job) return [];
+  return childrenOf(idx, job.parentId).filter((c) => c.kind === KIND.task && c.subOf === jobId && subParentOf(idx, c)?.id === jobId);
+};
+
+/** Every sub-job below a row, at any depth, depth first. */
+export function subJobTree(idx, jobId) {
+  const out = [];
+  const seen = new Set([jobId]);
+  const walk = (id) => {
+    for (const c of subJobsOf(idx, id)) {
+      if (seen.has(c.id)) continue;
+      seen.add(c.id);
+      out.push(c);
+      walk(c.id);
+    }
+  };
+  walk(jobId);
+  return out;
+}
+
+/**
+ * Can `jobId` become a sub-job of `parentId` (null: a row of its own)? Null
+ * when it can, a sentence when it cannot.
+ */
+export function subProblem(idx, jobId, parentId) {
+  const job = idx.byId.get(jobId);
+  if (!job || !lineOfRow(idx, job)) return 'Only a row of a product line can be a sub-job.';
+  if (!parentId) return null;
+  const p = idx.byId.get(parentId);
+  if (!p || p.parentId !== job.parentId) return 'A sub-job sits under a row of the same product line.';
+  if (p.id === jobId) return 'A row cannot be a sub-job of itself.';
+  if (subJobTree(idx, jobId).some((d) => d.id === parentId)) return 'A row cannot go under one of its own sub-jobs.';
+  return null;
 }
 
 /**
@@ -600,6 +669,17 @@ export function restoreSet(item, archived) {
     }
   };
   walk(item.id);
+  // Sub-jobs archived with their row (same act) come back with it, and what is inside them.
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const n of archived) {
+      if (ids.has(n.id) || n.archivedAt !== item.archivedAt || !n.subOf || !ids.has(n.subOf)) continue;
+      ids.add(n.id);
+      walk(n.id);
+      grew = true;
+    }
+  }
   let p = byId.get(item.parentId);
   while (p && !ids.has(p.id)) { ids.add(p.id); p = byId.get(p.parentId); }
   return ids;

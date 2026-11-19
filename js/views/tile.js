@@ -53,11 +53,14 @@ export function subtext(t) {
   if (t.status === 'cancelled') return { text: cancelledLine(t), cls: '' };
   if (t.status === 'fix' && t.fixNote) return { text: `Sent back: ${t.fixNote}`, cls: 'fix' };
   if (t.status === 'waiting') return { text: S.waitingLine(state.idx, t), cls: 'wait' };
+  // A sub-job of a row on the Progress page says which row it is part of.
+  const part = T.subParentOf(state.idx, t);
+  const of = part ? `Part of ${T.nameOf(part)}` : '';
   if (S.isOpen(t.status)) {
     const n = T.nextTask(state.idx, t.id);
-    if (n) return { text: `Next: ${T.nameOf(n)}`, cls: '' };
+    if (n) return { text: `${of ? `${of} · ` : ''}Next: ${T.nameOf(n)}`, cls: '' };
   }
-  return null;
+  return of ? { text: of, cls: '' } : null;
 }
 
 /** What the check control shows for a task's status. */

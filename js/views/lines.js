@@ -243,7 +243,7 @@ export function nextRevisionBox(job) {
  * A row already in the line goes straight to the comparison (Match to the
  * columns).
  */
-export async function bringIn({ jobId = null, lineId = null } = {}) {
+export async function bringIn({ jobId = null, lineId = null, subOf = null } = {}) {
   if (!lead()) return;
   let job = jobId ? node(jobId) : null;
   let line = lineId ? node(lineId) : null;
@@ -257,11 +257,12 @@ export async function bringIn({ jobId = null, lineId = null } = {}) {
     const jobs = state.idx.nodes.filter((n) => T.isJob(state.idx, n) && !T.lineOfRow(state.idx, n))
       .sort((a, b) => (S.isOpen(a.status) ? 0 : 1) - (S.isOpen(b.status) ? 0 : 1) || String(b.lastActivityAt).localeCompare(String(a.lastActivityAt)));
     const items = jobs.map((n) => ({ id: n.id, label: n.title, sub: T.pathText(state.idx, n.id), lead: pill(n.status) }));
-    const id = await pickDialog({ title: `Bring a job into ${T.nameOf(line)}`, placeholder: 'Find the job', items, empty: 'No jobs outside the product lines.' });
+    const under = subOf ? node(subOf) : null;
+    const id = await pickDialog({ title: under ? `Bring a job in under ${T.nameOf(under)}` : `Bring a job into ${T.nameOf(line)}`, placeholder: 'Find the job', items, empty: 'No jobs outside the product lines.' });
     if (!id) return;
     job = node(id);
   }
-  if (job && line) compare(job, line);
+  if (job && line) compare(job, line, subOf);
 }
 
 /** What a task is called in the comparison: its name, and where it sits when not at the top. */
@@ -271,7 +272,8 @@ function taskWords(job, t) {
 }
 
 /** The comparison page: the line's stages beside what each becomes, then the job's other tasks. */
-function compare(job, line) {
+function compare(job, line, subOf = null) {
+  const under = subOf ? node(subOf) : null;
   const columns = RG.columnsFor(state.idx, line.id, [job]);
   const plan = RG.conversionPlan(state.idx, job.id, columns);
   const already = T.lineOfRow(state.idx, job)?.id === line.id;
@@ -280,7 +282,7 @@ function compare(job, line) {
   const archive = new Set();
   const waitDays = job.status === 'waiting' && job.waiting?.since ? ageDays(job.waiting.since) : null;
   return openDialog((box, close, { dismiss }) => {
-    box.append(el('h3', {}, already ? `Match ${T.nameOf(job)} to the columns` : `Bring ${T.nameOf(job)} into ${T.nameOf(line)}`),
+    box.append(el('h3', {}, already ? `Match ${T.nameOf(job)} to the columns` : under ? `Bring ${T.nameOf(job)} in under ${T.nameOf(under)}` : `Bring ${T.nameOf(job)} into ${T.nameOf(line)}`),
       el('p', { class: 'lede' }, `It stays the same job: ${waitDays !== null ? `Waiting for ${waitDays === 1 ? '1 day' : `${waitDays} days`}` : S.LABEL[job.status] ?? job.status}, with its timeline and time.`));
     const mode = el('div', { class: 'seg ln-mode', role: 'radiogroup', 'aria-label': 'Its tasks' });
     const body = el('div', { class: 'ln-compare' });
@@ -355,11 +357,11 @@ function compare(job, line) {
     const go1 = () => {
       // Only what is still left over can be archived.
       for (const id of [...archive]) if (!plan.leftovers.some((t) => t.id === id)) archive.delete(id);
-      A.convertToRow(job.id, line.id, plan, { switchTasks, archive });
+      A.convertToRow(job.id, line.id, plan, { switchTasks, archive, subOf });
       close(true);
     };
     box.append(el('div', { class: 'actions' },
-      btn(already ? 'Match it' : `Bring it into ${T.nameOf(line)}`, go1, { cls: 'primary' }),
+      btn(already ? 'Match it' : under ? `Bring it in under ${T.nameOf(under)}` : `Bring it into ${T.nameOf(line)}`, go1, { cls: 'primary' }),
       btn('Cancel', dismiss, { cls: 'ghost' })));
   }, { label: `Bring ${T.nameOf(job)} into ${T.nameOf(line)}`, wide: true });
 }

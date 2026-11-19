@@ -1113,7 +1113,7 @@ input::-ms-reveal { display: none; }
   grid-template-areas: "name cells count rev job";
   border-bottom: 1px solid var(--bg2);
 }
-.rg-row:not(.rg-cols):hover, .rg-row[aria-current="true"] { background: var(--bg); }
+.rg-row:not(.rg-cols):not(.rg-subadd):hover, .rg-row[aria-current="true"] { background: var(--bg); }
 .rg-row[aria-current="true"] .rg-name-text { color: var(--text); }
 .rg-name { grid-area: name; min-width: 0; }
 .rg-cells { grid-area: cells; display: flex; align-items: center; min-width: 0; }
@@ -1251,6 +1251,23 @@ button.rc:hover i { border-color: var(--text2); }
 .rg-add .sel:disabled { opacity: .55; }
 .rg-add-acts { display: flex; gap: var(--sp-2); align-self: center; margin-left: auto; }
 .sr-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--sp-3); }
+
+/* Sub-jobs: rows under a row, indented a step a level, a hairline from their
+   row's arrow down beside them; the arrow sits in the gutter, so names line
+   up level by level whether or not a row has sub-jobs. */
+.rg-grid.has-subs { --step: 20px; --gut: 28px; }
+.rg-grid.has-subs .rg-name { position: relative; padding-left: calc(var(--depth, 0) * var(--step) + var(--gut)); }
+.rg-fold { position: absolute; left: calc(var(--depth, 0) * var(--step) - 2px); top: 50%; transform: translateY(-50%); }
+.rg-row.sub .rg-name::before {
+  content: ''; position: absolute; top: -8px; bottom: -8px; left: calc((var(--depth, 1) - 1) * var(--step) + 13px);
+  border-left: 1px solid var(--border);
+}
+.rg-subs-sum { white-space: normal; }
+.rg-row.context .rg-name-text { color: var(--text3); }
+.rg-row.rg-subadd { display: block; padding: 6px 0; }
+.rg-subadd-cell { padding-left: calc(var(--depth, 1) * var(--step, 20px) + var(--gut, 28px)); }
+.rg-add.sub { background: var(--bg); }
+.rg-add-name .lbl { display: block; }
 
 /* The boxes behind the lines (lines.js): new line, columns, bringing a job in. */
 .ln-place { margin-left: 0; border-color: var(--border); }
@@ -1499,6 +1516,10 @@ button.rc:hover i { border-color: var(--text2); }
   .rg-head-bar .h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .rg-head-bar .filters { order: 5; width: 100%; flex-wrap: nowrap; overflow-x: auto; margin-right: -16px; padding-right: 16px; }
   .rg-head-bar > .meta { flex-basis: 100%; }
+  /* A phone: a 44px arrow, so a wider gutter; a smaller step, so names keep their room. */
+  .rg-grid.has-subs { --step: 14px; --gut: 38px; }
+  .rg-fold { left: calc(var(--depth, 0) * var(--step) - 6px); }
+  .rg-row.sub .rg-name::before { left: calc((var(--depth, 1) - 1) * var(--step) + 16px); }
   .rg-head-bar > .sp { display: none; }
   .mj-toggle { min-height: 44px; }
   .mj-row { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "pill who age" "main main main" "stage stage stage"; gap: 6px 10px; padding: 12px; }

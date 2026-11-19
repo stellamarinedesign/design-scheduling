@@ -18,6 +18,11 @@
 // punctuation and accents ignored. A column a row has no task for is an
 // empty slot; a task that fills no column is an EXTRA ("+1") and still
 // counts. Nothing here knows a category, a column or a depth.
+//
+// SUB-JOBS (owner, 2026-11-19) are rows under a row: jobs of the same line
+// linked by `subOf` (tree.subParentOf), each a full job with its own cells.
+// The rows come in tree order, each with its depth, and a filter keeps a
+// row's parents in sight when one of its sub-rows matches.
 
 import * as T from './tree.js';
 import { LABEL } from './status.js';
@@ -34,8 +39,23 @@ export const labelKey = (s) => String(s ?? '').normalize('NFKD').replace(/\p{M}+
 /** What a cell shows for a status (the check control's own words, tile.js BOX). */
 export const CELL = { todo: 'todo', in_progress: 'doing', check: 'check', fix: 'fix', waiting: 'wait', done: 'done', cancelled: 'na' };
 
-/** A line's rows: its jobs, in their manual order. */
+/** A line's rows: its jobs, in their manual order (sub-jobs among them). */
 export const rowsOf = (idx, lineId) => T.childrenOf(idx, lineId).filter((c) => c.kind === T.KIND.task);
+
+/**
+ * A line's rows in tree order: each row, then its sub-jobs (and theirs),
+ * each with its depth and the row it is part of.
+ * @returns {Array<{job: object, depth: number, parentId: string|null}>}
+ */
+export function treeOrder(idx, rows) {
+  const out = [];
+  const walk = (job, depth, parentId) => {
+    out.push({ job, depth, parentId });
+    for (const s of T.subJobsOf(idx, job.id)) walk(s, depth + 1, job.id);
+  };
+  for (const r of rows) if (!T.subParentOf(idx, r)) walk(r, 0, null);
+  return out;
+}
 
 /** The tasks directly inside a job or task, and those in its sections (a section only groups). */
 export function topTasks(idx, id) {
@@ -176,13 +196,29 @@ export function register(idx, { filter = 'all' } = {}) {
         }
         const rows = rowsOf(idx, g.id);
         const columns = columnsFor(idx, g.id, rows);
-        const all = rows.map((r) => rowOf(idx, r, columns));
+        const all = treeOrder(idx, rows).map(({ job, depth, parentId }) => ({ ...rowOf(idx, job, columns), depth, parentId }));
+        // What a folded row says of its sub-jobs: how many, and how many done.
+        for (const r of all) {
+          const subs = all.filter((x) => x.parentId === r.job.id);
+          r.subs = subs.length;
+          r.subsComplete = subs.filter((x) => x.complete).length;
+        }
+        // A row the filter keeps brings the rows it is part of along, so it is never shown out of place.
+        const kept = new Set();
+        const byJob = new Map(all.map((r) => [r.job.id, r]));
+        for (const r of all) {
+          if (!keep(r)) continue;
+          let x = r;
+          while (x && !kept.has(x.job.id)) { kept.add(x.job.id); x = x.parentId ? byJob.get(x.parentId) : null; }
+        }
         const done = all.filter((r) => r.complete).length;
         rowsAll += all.length;
         complete += done;
         lines += 1;
         byCat.get(key).lines.push({
-          line: g, id: g.id, title: T.nameOf(g), columns, rows: all.filter(keep), all: all.length, complete: done,
+          line: g, id: g.id, title: T.nameOf(g), columns,
+          rows: all.filter((r) => kept.has(r.job.id)).map((r) => (keep(r) ? r : { ...r, context: true })),
+          all: all.length, complete: done,
           listed: g.listed !== false,
         });
         continue;
@@ -194,7 +230,7 @@ export function register(idx, { filter = 'all' } = {}) {
   return { groups, rows: rowsAll, complete, lines };
 }
 
-/** How many rows each filter keeps, for the filter buttons. */
+/** How many rows each filter keeps, for the filter buttons (rows shown only for their sub-rows not counted). */
 export function filterCounts(idx) {
   const rows = register(idx).groups.flatMap((g) => g.lines.flatMap((l) => l.rows));
   return Object.fromEntries(FILTERS.map((f) => [f.key, rows.filter(f.test).length]));

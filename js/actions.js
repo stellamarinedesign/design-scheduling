@@ -477,7 +477,20 @@ function applyMove(r, what) {
  */
 export function moveInto(id, parentId, position = T.isGroupLike(node(id)) ? 'end' : 'beforeGroups') {
   const dest = parentId ? T.nameOf(node(parentId)) : 'the top level';
-  return applyMove(T.nestUnder(state.idx, id, parentId, position), `Moved to ${dest}`);
+  const r = T.nestUnder(state.idx, id, parentId, position);
+  // A row's sub-jobs go with it to another category or line, still under it;
+  // into a job it becomes a task, and they stand as rows of their own.
+  const subs = T.subJobTree(state.idx, id);
+  if (!r.error && subs.length) {
+    const into = parentId ? node(parentId) : null;
+    if (into && T.isGroupLike(into)) {
+      let order = T.newOrder(state.idx, parentId, 'end') + T.ORDER_GAP;
+      for (const sj of subs) { r.patches.push({ id: sj.id, parentId, order }); order += T.ORDER_GAP; }
+    } else {
+      for (const sj of subs) if (sj.subOf === id) r.patches.push({ id: sj.id, subOf: null });
+    }
+  }
+  return applyMove(r, `Moved to ${dest}${subs.length ? ` with ${plural(subs.length, 'sub-job')}` : ''}`);
 }
 
 /** Just before or after another node (drag reorder). Quiet: the screen shows it. */
@@ -498,7 +511,7 @@ export function archive(ids, { quiet = false } = {}) {
   const list = Array.isArray(ids) ? ids : [ids];
   const at = nowISO();
   const all = new Set();
-  for (const id of list) { all.add(id); for (const d of T.descendantIds(state.idx, id)) all.add(d); }
+  for (const id of withSubJobs(list)) { all.add(id); for (const d of T.descendantIds(state.idx, id)) all.add(d); }
   const patches = [...all].map((id) => ({ id, archivedAt: at }));
   // Every blocker in what is archived comes off its dependents in one go.
   const blockers = [...all].filter((id) => node(id)?.kind === T.KIND.task);
@@ -508,12 +521,20 @@ export function archive(ids, { quiet = false } = {}) {
   const merged = mergePatches(patches);
   const inverse = inverseOf(merged);
   const name = T.nameOf(node(list[0]));          // before the write: after it, the node has gone from the live tree
+  const subs = withSubJobs(list).length - list.length;
   write({ patch: merged, updates });
   if (!quiet) {
-    toast(list.length === 1 ? `Archived ${name}` : `Archived ${plural(list.length, 'job')}`, {
+    toast(`${list.length === 1 ? `Archived ${name}` : `Archived ${plural(list.length, 'job')}`}${subs > 0 ? ` with ${plural(subs, 'sub-job')}` : ''}`, {
       action: 'Undo', onAction: () => write({ patch: inverse }),
     });
   }
+}
+
+/** These ids and, for a row of a product line, its sub-jobs at every depth: they go where it goes. */
+function withSubJobs(ids) {
+  const out = new Set(ids);
+  for (const id of ids) for (const s of T.subJobTree(state.idx, id)) out.add(s.id);
+  return [...out];
 }
 
 /** Bring an archived node back, with the rest of what was archived with it, and its archived ancestors. */
@@ -528,7 +549,8 @@ export function restore(item, archived) {
 export async function remove(id) {
   const n = node(id);
   if (!n) return false;
-  const below = T.descendantIds(state.idx, id);
+  const subs = withSubJobs([id]).filter((x) => x !== id);
+  const below = [...new Set([...T.descendantIds(state.idx, id), ...subs.flatMap((x) => [x, ...T.descendantIds(state.idx, x)])])];
   const ok = await confirmDialog({
     title: `Delete ${T.nameOf(n) || 'this'}?`,
     body: below.length ? `Everything inside it goes too (${plural(below.length, 'item')}). This cannot be undone. Archive keeps it out of sight instead.` : 'This cannot be undone. Archive keeps it out of sight instead.',
@@ -666,7 +688,7 @@ export function restartRow(jobId, { revision, assignee }) {
  * timeline and time; with `switchTasks` its tasks become the line's stages
  * as matched, the missing ones new. One write, with Undo.
  */
-export function convertToRow(jobId, lineId, plan, { switchTasks = true, archive = new Set() } = {}) {
+export function convertToRow(jobId, lineId, plan, { switchTasks = true, archive = new Set(), subOf = null } = {}) {
   const job = node(jobId);
   const line = node(lineId);
   if (!job || !T.isLine(line) || state.role !== 'lead') return;
@@ -678,6 +700,8 @@ export function convertToRow(jobId, lineId, plan, { switchTasks = true, archive 
   // A row already in the line is only matched again: where it is and whether it is listed stay.
   const inLine = job.parentId === lineId;
   if (inLine) w.patch[0] = { id: jobId, updatedAt: at };
+  // Brought in under a row of the line: a sub-job of it.
+  if (subOf && node(subOf)?.parentId === lineId) w.patch[0].subOf = subOf;
   const inverse = inverseOf(w.patch);
   write({ set: w.set, patch: w.patch, updates: [{ taskId: jobId, at, by: state.me, kind: 'comment', text: inLine ? `Matched to the columns of ${T.nameOf(line)}` : `Brought into the product line ${T.nameOf(line)}${switchTasks ? ', its tasks matched to the line\'s' : ''}` }] },
     `${T.nameOf(job)} was not brought in`);
@@ -686,11 +710,78 @@ export function convertToRow(jobId, lineId, plan, { switchTasks = true, archive 
   });
 }
 
+// ---------------------------------------------------------------------------
+// sub-jobs: rows under a row (tree.subParentOf; owner, 2026-11-19)
+// ---------------------------------------------------------------------------
+
+/**
+ * A new sub-job of a row: a job in the same line linked to it, with the
+ * line's stages unless told not to. It follows its row on and off the lists
+ * - unless someone else has it, which puts it on theirs.
+ * @returns {string|null}
+ */
+export function addSubJob({ name, parentJobId, useTemplate = true, assignee = state.me, onFail = null }) {
+  const parent = node(parentJobId);
+  const line = parent && T.lineOfRow(state.idx, parent);
+  if (!line || state.role !== 'lead') return null;
+  const listed = assignee && assignee !== state.me && !T.rowListed(state.idx, parent) ? { listed: true } : {};
+  // After the row's last sub-job, so it reads last among them.
+  const last = T.subJobTree(state.idx, parent.id).pop() ?? parent;
+  const siblings = T.childrenOf(state.idx, line.id);
+  const next = siblings[siblings.indexOf(last) + 1];
+  const order = next ? (last.order + next.order) / 2 : last.order + T.ORDER_GAP;
+  const id = createTask({ title: name, parentId: line.id, useTemplate, assignee, onFail, order, fields: { subOf: parent.id, ...listed } });
+  toast(`Added ${short(name)} under ${short(T.nameOf(parent))}`, { action: 'Undo', onAction: () => write({ remove: [id, ...T.descendantIds(T.buildIndex(state.nodes), id)] }) });
+  return id;
+}
+
+/** Make a row a sub-job of another row of its line, or (null) a row of its own. */
+export function setSubOf(jobId, parentId) {
+  const job = node(jobId);
+  if (!job || state.role !== 'lead') return;
+  const problem = T.subProblem(state.idx, jobId, parentId);
+  if (problem) { toast(problem, { warn: true }); return; }
+  const at = nowISO();
+  const patch = { id: jobId, subOf: parentId ?? null, updatedAt: at };
+  // Under its new row it reads after that row's other sub-jobs.
+  if (parentId) {
+    const last = T.subJobTree(state.idx, parentId).filter((x) => x.id !== jobId).pop() ?? node(parentId);
+    const siblings = T.childrenOf(state.idx, job.parentId).filter((x) => x.id !== jobId);
+    const next = siblings[siblings.indexOf(last) + 1];
+    patch.order = next ? (last.order + next.order) / 2 : last.order + T.ORDER_GAP;
+  }
+  const inverse = inverseOf([patch]);
+  write({ patch: [patch] });
+  toast(parentId ? `${short(T.nameOf(job))} is under ${short(T.nameOf(node(parentId)))} now` : `${short(T.nameOf(job))} is a row of its own`, {
+    action: 'Undo', onAction: () => write({ patch: inverse }),
+  });
+}
+
+/**
+ * A row dragged beside another: it takes that row's place in the order and
+ * its level - under the same row, or a row of its own - unless that would
+ * put it under itself.
+ */
+export function moveRowNextTo(id, targetId, where) {
+  const job = node(id);
+  const target = node(targetId);
+  if (!job || !target) return;
+  const level = T.subParentOf(state.idx, target)?.id ?? null;
+  const r = T.insertRelative(state.idx, id, targetId, where);
+  if (!r.error && (job.subOf ?? null) !== level && T.lineOfRow(state.idx, job) && target.parentId === job.parentId) {
+    if (T.subProblem(state.idx, id, level)) { toast(T.subProblem(state.idx, id, level), { warn: true }); return; }
+    const mine = r.patches.find((p) => p.id === id);
+    if (mine) mine.subOf = level; else r.patches.push({ id, subOf: level });
+  }
+  applyMove(r, null);
+}
+
 /** One place up or down among the same kind of siblings: a line among the lines of its category, a row in its line. */
 export function moveStep(id, dir) {
   const n = node(id);
   const parentId = n?.parentId ?? null;
-  const same = (c) => (T.isLine(n) ? T.isLine(c) : c.kind === n.kind);
+  const level = n?.kind === T.KIND.task ? (T.subParentOf(state.idx, n)?.id ?? null) : undefined;
+  const same = (c) => (T.isLine(n) ? T.isLine(c) : c.kind === n.kind && (level === undefined || (T.subParentOf(state.idx, c)?.id ?? null) === level));
   const siblings = T.childrenOf(state.idx, parentId).filter(same);
   const i = siblings.findIndex((c) => c.id === id);
   const target = siblings[i + dir];

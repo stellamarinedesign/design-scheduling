@@ -174,8 +174,8 @@ service cloud.firestore {
       // Sharing with managers is the lead's decision alone. So is what is a
       // product line and what shows on the lists (2026-11-19): a designer
       // never marks a line, nor takes a row off - or puts one on - the lead's
-      // lists.
-      function sharingKeys() { return ['shared', 'sharedEffective', 'shareLevel', 'line', 'listed']; }
+      // lists, nor files a row under another as its sub-job (`subOf`).
+      function sharingKeys() { return ['shared', 'sharedEffective', 'shareLevel', 'line', 'listed', 'subOf']; }
       function noSharingOnCreate() { return !data().keys().hasAny(sharingKeys()); }
       function noSharingChange() { return !data().diff(was()).affectedKeys().hasAny(sharingKeys()); }
       // Only a lead marks a job, or a task with an assignee, done. A non-lead

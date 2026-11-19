@@ -899,6 +899,15 @@ The Excel Progress sheet made live (Phase 4, built 2026-11-09; product lines wit
   - A cancelled row's name is struck through in Muted Ash.
   - Right-click and long-press open the row's ⋯, and rows drag up and down their line or into
     another (desktop). On touch, Move up, Move down and Move to another line are in the ⋯.
+- **Sub-jobs** (2026-11-19) are rows under a row: full jobs of the line, linked by `subOf`.
+  - Their names are indented a step a level (20px; 14px on a phone), with a Rule Grey hairline
+    down from their row's arrow.
+  - The arrow sits in a gutter before every name of the line, so names line up level by level.
+  - Folded, a row says "2 sub-jobs · 1 done" in meta under its name. Folds are remembered on the
+    device, and rows start open.
+  - "Add a sub-job" types in under the row's last sub-row, on Band.
+  - With a filter on, a row kept only for a matching sub-row has its name in Muted Ash.
+  - The grid is a treegrid then: rows carry `aria-level` and `aria-expanded`.
 - **Cell:** the check control's box (22px, 5px corners) in a 36px cell, with a mark for every
   state, since a cell has no word beside it.
   - **Done recedes.** A register is mostly done, so done is a check on a Chip Grey fill, and open

@@ -26,6 +26,13 @@
 // compact (the panel open beside it, a half-screen window) or stacked (a
 // phone). A stage with sub-steps is a heading over their narrow columns.
 //
+// SUB-JOBS (owner, 2026-11-19) are rows under a row ("300kg base" → "with
+// post", "with gussets"): full jobs of the same line linked by `subOf`, their
+// names indented a step a level. An arrow folds them into their row, which
+// then says "2 sub-jobs · 1 done"; they start open and each fold is
+// remembered on the device. The row's ⋯ adds one (inline, under the row's
+// sub-rows), brings a job in as one, or files the row under another.
+//
 // KEYBOARD: each line is one tab stop. The arrow keys move between cells
 // (Home and End along the row), Enter or Space acts, Shift+F10 and the
 // context-menu key go back a state.
@@ -42,6 +49,14 @@ import { ageDays, dayLabel, dayOf } from '../dates.js';
 import { whoBadge, statusMenu, enableDrag } from './tile.js';
 
 const FILTER_KEY = 'progress.filter';
+const FOLD_KEY = 'progress.folded';
+const folded = () => new Set(Object.keys(prefs.get(FOLD_KEY, {})));
+function setFolded(id, on) {
+  const m = prefs.get(FOLD_KEY, {});
+  if (on) m[id] = true; else delete m[id];
+  prefs.set(FOLD_KEY, m);
+  rerender();
+}
 const filterOf = () => { const f = prefs.get(FILTER_KEY, 'all'); return RG.FILTERS.some((x) => x.key === f) ? f : 'all'; };
 const rerender = () => go(location.hash.replace(/^#/, '').split('?')[0], { keepTask: true });
 const lead = () => state.role === 'lead';
@@ -235,12 +250,34 @@ function categoryEl(g) {
 
 function lineEl(l) {
   const n = l.columns.cols.length;
+  // Rows inside a folded row are not drawn; the folded row says what it holds.
+  const shut = folded();
+  const shown = [];
+  let under = null;
+  for (const r of l.rows) {
+    if (under !== null && r.depth > under) continue;
+    under = null;
+    shown.push(r);
+    if (r.subs && shut.has(r.job.id)) under = r.depth;
+  }
+  const tree = l.rows.some((r) => r.depth || r.subs) || adding?.subOf && adding.lineId === l.id;
+  const kids = shown.map((r, i) => rowEl(l, r, i, { tree, shut: shut.has(r.job.id) }));
+  // A sub-job being added is typed in under its row's last sub-row.
+  if (adding?.subOf && adding.lineId === l.id) {
+    const at = shown.findIndex((r) => r.job.id === adding.subOf);
+    if (at >= 0) {
+      let end = at;
+      while (end + 1 < shown.length && shown[end + 1].depth > shown[at].depth) end += 1;
+      kids.splice(end + 1, 0, el('div', { class: 'rg-row rg-subadd', role: 'row', style: { '--depth': String(Math.min(shown[at].depth + 1, 4)) } },
+        el('div', { class: 'rg-subadd-cell', role: 'gridcell', 'aria-colspan': String(n + 4) }, addForm(l, adding))));
+    }
+  }
   const grid = el('div', {
-    class: 'rg-grid', role: 'grid', 'aria-labelledby': `rg-h-${l.id}`, 'aria-rowcount': String(l.rows.length + 1),
+    class: `rg-grid${tree ? ' has-subs' : ''}`, role: tree ? 'treegrid' : 'grid', 'aria-labelledby': `rg-h-${l.id}`, 'aria-rowcount': String(shown.length + 1),
     style: { '--n': String(n) },
   },
   columnLabels(l),
-  l.rows.map((r, i) => rowEl(l, r, i)));
+  kids);
   wireKeys(grid, l.id);
   const sec = el('section', { class: 'rg-sec', dataset: { section: l.id, n: String(n) } },
     grid,
@@ -334,19 +371,25 @@ const fitter = new ResizeObserver((entries) => { for (const e of entries) fitSec
 // a row
 // ---------------------------------------------------------------------------
 
-function rowEl(l, r, i) {
+function rowEl(l, r, i, { tree = false, shut = false } = {}) {
   const { job } = r;
   const name = T.nameOf(job);
-  // Said only where a row differs from its line: on the lists, or not.
-  const tag = r.listed === l.listed ? null : el('span', { class: 'grp-kind rg-row-tag', title: r.listed ? 'This row shows in Tasks' : 'This row is on the Progress page only' }, r.listed ? 'In Tasks' : 'Progress only');
-  const nameCell = el('span', { class: 'rg-name', role: 'rowheader' },
+  // Said only where a row differs from its line (or, a sub-job, from its row): on the lists, or not.
+  const like = r.parentId ? T.rowListed(state.idx, state.idx.byId.get(r.parentId)) : l.listed;
+  const tag = r.listed === like ? null : el('span', { class: 'grp-kind rg-row-tag', title: r.listed ? 'This row shows in Tasks' : 'This row is on the Progress page only' }, r.listed ? 'In Tasks' : 'Progress only');
+  const fold = r.subs ? iconBtn(shut ? 'chevRight' : 'chevDown', `${shut ? 'Show' : 'Fold'} the ${plural(r.subs, 'sub-job')} of ${name}`, (e) => { e.stopPropagation(); setFolded(job.id, !shut); }, 'sm rg-fold') : null;
+  if (fold) fold.setAttribute('aria-expanded', String(!shut));
+  const summary = r.subs && shut ? el('span', { class: 'meta rg-subs-sum' }, `${plural(r.subs, 'sub-job')} · ${r.subsComplete} done`) : null;
+  const nameCell = el('span', { class: 'rg-name', role: 'rowheader', style: tree ? { '--depth': String(Math.min(r.depth, 4)) } : null },
+    fold,
     el('button', {
-      class: 'rg-name-btn', type: 'button', dataset: { fk: `rg-name-${job.id}` }, title: `Open ${name}`,
-      'aria-label': `${name}, ${S.LABEL[job.status] ?? job.status}: open it`, onclick: () => openTask(job.id),
-    }, el('span', { class: 'rg-name-text' }, name)), tag);
-  const rowCls = `rg-row${r.cancelled ? ' cancelled' : ''}${r.complete ? ' complete' : ''}`;
+      class: 'rg-name-btn', type: 'button', dataset: { fk: `rg-name-${job.id}` }, title: r.context ? `${name}: shown for its sub-rows` : `Open ${name}`,
+      'aria-label': `${name}, ${S.LABEL[job.status] ?? job.status}${r.parentId ? `, part of ${T.nameOf(state.idx.byId.get(r.parentId))}` : ''}: open it`, onclick: () => openTask(job.id),
+    }, el('span', { class: 'rg-name-text' }, name)), summary, tag);
+  const rowCls = `rg-row${r.cancelled ? ' cancelled' : ''}${r.complete ? ' complete' : ''}${r.depth ? ' sub' : ''}${r.context ? ' context' : ''}`;
   const rowNode = el('div', {
     class: rowCls, role: 'row', 'aria-rowindex': String(i + 2), 'aria-current': job.id === openJobId ? 'true' : null,
+    'aria-level': tree ? String(r.depth + 1) : null, 'aria-expanded': r.subs ? String(!shut) : null,
     dataset: { id: job.id }, draggable: lead() && canDrag() ? 'true' : null,
   },
   nameCell,
@@ -388,22 +431,45 @@ function jobCell(l, r) {
 /** The lead's ⋯ on a row (and its right-click). */
 function rowMenu(anchor, l, r, { at = null } = {}) {
   const { job } = r;
-  const rows = RG.rowsOf(state.idx, l.id);
+  // Up and down among the rows of its own level: the rows of the line, or its row's sub-jobs.
+  const level = r.parentId ?? null;
+  const rows = RG.rowsOf(state.idx, l.id).filter((x) => (T.subParentOf(state.idx, x)?.id ?? null) === level);
   const i = rows.findIndex((x) => x.id === job.id);
+  const parent = r.parentId ? state.idx.byId.get(r.parentId) : null;
+  const like = parent ? T.rowListed(state.idx, parent) : l.listed;
+  const shut = folded().has(job.id);
   menu(anchor, [
     { label: 'Open', icon: 'open', onSelect: () => openTask(job.id) },
     { label: 'Rename', icon: 'edit', onSelect: () => A.rename(job.id) },
     { label: 'Start revision…', icon: 'restore', hint: job.revision ? `after ${job.revision}` : null, onSelect: async () => (await lines()).nextRevisionBox(job) },
     l.columns.stages.length ? { label: 'Match to the columns…', icon: 'tasks', onSelect: async () => (await lines()).bringIn({ jobId: job.id, lineId: l.id }) } : null,
     'sep',
-    { label: 'Show in Tasks', icon: 'tasks', checked: r.listed, hint: r.listed === l.listed ? 'as its line' : null, onSelect: () => A.setListed(job.id, !r.listed) },
+    { label: 'Add a sub-job', icon: 'plus', onSelect: () => openAdd(l, job.id) },
+    { label: 'Bring in a job as a sub-job…', icon: 'register', onSelect: async () => (await lines()).bringIn({ lineId: l.id, subOf: job.id }) },
+    r.subs ? { label: shut ? 'Show its sub-jobs' : 'Fold its sub-jobs', icon: shut ? 'chevDown' : 'chevRight', hint: plural(r.subs, 'sub-job'), onSelect: () => setFolded(job.id, !shut) } : null,
+    { label: 'Make it a sub-job of…', icon: 'move', onSelect: () => subOfMenu(anchor, l, job) },
+    parent ? { label: 'Make it a row of its own', icon: 'back', hint: `now under ${T.nameOf(parent)}`, onSelect: () => A.setSubOf(job.id, null) } : null,
+    'sep',
+    { label: 'Show in Tasks', icon: 'tasks', checked: r.listed, hint: r.listed === like ? (parent ? 'as its row' : 'as its line') : null, onSelect: () => A.setListed(job.id, !r.listed) },
     i > 0 ? { label: 'Move up', icon: 'chevUp', onSelect: () => A.moveStep(job.id, -1) } : null,
     i < rows.length - 1 ? { label: 'Move down', icon: 'chevDown', onSelect: () => A.moveStep(job.id, 1) } : null,
-    { label: 'Move to another line…', icon: 'move', onSelect: () => moveRow(job) },
+    { label: 'Move to another line…', icon: 'move', hint: r.subs ? `with ${plural(r.subs, 'sub-job')}` : null, onSelect: () => moveRow(job) },
     'sep',
     { label: 'Archive', icon: 'archive', onSelect: () => A.archive(job.id) },
     { label: 'Delete…', icon: 'trash', danger: true, onSelect: () => A.remove(job.id) },
   ], { label: `${T.nameOf(job)} actions`, at });
+}
+
+/** The rows a row can go under: every row of its line but itself and its own sub-jobs, indented as on the page. */
+function subOfMenu(anchor, l, job) {
+  const own = new Set([job.id, ...T.subJobTree(state.idx, job.id).map((x) => x.id)]);
+  const rows = RG.treeOrder(state.idx, RG.rowsOf(state.idx, l.id)).filter((x) => !own.has(x.job.id));
+  if (!rows.length) return;
+  menu(anchor, [{ heading: `Put ${T.nameOf(job)} under` }, ...rows.map((x) => ({
+    label: T.nameOf(x.job), checked: job.subOf === x.job.id,
+    node: el('span', { class: 'row', style: { 'padding-left': `${Math.min(x.depth, 4) * 14}px` } }, T.nameOf(x.job)),
+    onSelect: () => A.setSubOf(job.id, x.job.id),
+  }))], { label: `Put ${T.nameOf(job)} under` });
 }
 
 /** Another line for a row: every line but its own. */
@@ -508,7 +574,8 @@ function wireKeys(grid, lineId) {
  * another line in the row's ⋯.
  */
 function wireDrag(list) {
-  enableDrag(list, { onDrop: (dragId, targetId, where) => A.moveNextTo(dragId, targetId, where) });
+  // Dropped beside a row, a row takes that row's place and level (under the same row, or its own).
+  enableDrag(list, { onDrop: (dragId, targetId, where) => A.moveRowNextTo(dragId, targetId, where) });
 }
 
 // ---------------------------------------------------------------------------
@@ -516,25 +583,33 @@ function wireDrag(list) {
 // ---------------------------------------------------------------------------
 
 // What is being typed survives the redraws every write causes.
-let adding = null;   // { lineId, name, withTemplate, who, err, focus }
+let adding = null;   // { lineId, subOf, name, withTemplate, who, err, focus }
 
-function openAdd(l) {
-  adding = { lineId: l.id, name: '', withTemplate: true, who: state.me, err: '', focus: true };
-  rerender();
+function openAdd(l, subOf = null) {
+  adding = { lineId: l.id, subOf, name: '', withTemplate: true, who: state.me, err: '', focus: true };
+  // A folded row opens, so its new sub-job is seen going in.
+  if (subOf && folded().has(subOf)) setFolded(subOf, false);
+  else rerender();
 }
 function closeAdd() { adding = null; rerender(); }
 
 function addFoot(l) {
   if (!lead()) return null;
-  if (adding?.lineId !== l.id) {
+  if (adding?.lineId !== l.id || adding.subOf) {
     return el('div', { class: 'rg-foot' }, btn('Add a row', () => openAdd(l), { cls: 'sm ghost', ic: 'plus', attrs: { 'aria-label': `Add a row to ${l.title}` } }));
   }
-  const a = adding;
+  return addForm(l, adding);
+}
+
+/** The add form: a row of the line, or (a.subOf) a sub-job of a row, typed straight in. */
+function addForm(l, a) {
+  const parent = a.subOf ? state.idx.byId.get(a.subOf) : null;
+  const where = parent ? `under ${T.nameOf(parent)}` : `to ${l.title}`;
   const tpl = T.stepsTemplateOf(state.idx, l.id);
   const errId = `rg-add-err-${l.id}`;
   const name = el('input', {
-    class: 'input', type: 'text', placeholder: 'Job name, e.g. Model 500', maxlength: '300', autocomplete: 'off', value: a.name,
-    dataset: { fk: `rg-add-${l.id}` }, 'aria-label': `New row in ${l.title}`,
+    class: 'input', type: 'text', placeholder: parent ? 'Sub-job name, e.g. with post' : 'Job name, e.g. Model 500', maxlength: '300', autocomplete: 'off', value: a.name,
+    dataset: { fk: `rg-add-${l.id}` }, 'aria-label': parent ? `New sub-job of ${T.nameOf(parent)}` : `New row in ${l.title}`,
     'aria-invalid': a.err ? 'true' : null, 'aria-describedby': a.err ? errId : null,
   });
   const err = el('div', { class: 'form-err', id: errId, role: 'alert' }, a.err);
@@ -552,22 +627,26 @@ function addFoot(l) {
     const v = name.value.trim();
     const say = (m) => { a.err = m; err.textContent = m; name.setAttribute('aria-invalid', 'true'); name.setAttribute('aria-describedby', errId); name.focus(); };
     if (!v) return say('Give it a name.');
-    const clash = RG.rowsOf(state.idx, l.id).find((c) => RG.labelKey(T.nameOf(c)) === RG.labelKey(v));
-    if (clash) return say(`${T.nameOf(clash)} is already a row here.`);
+    // A name is taken among the rows of its own level (two rows may each have a "with post").
+    const level = RG.rowsOf(state.idx, l.id).filter((c) => (T.subParentOf(state.idx, c)?.id ?? null) === (a.subOf ?? null));
+    const clash = level.find((c) => RG.labelKey(T.nameOf(c)) === RG.labelKey(v));
+    if (clash) return say(parent ? `${T.nameOf(clash)} is already under ${T.nameOf(parent)}.` : `${T.nameOf(clash)} is already a row here.`);
     a.name = '';
     a.focus = true;
     // The form stays open for the next one: rows often come in a run.
-    A.addRow({ name: v, lineId: l.id, useTemplate: Boolean(tpl) && a.withTemplate, assignee: a.who, onFail: () => { if (adding === a) { a.name = v; rerender(); } } });
+    const onFail = () => { if (adding === a) { a.name = v; rerender(); } };
+    if (parent) A.addSubJob({ name: v, parentJobId: parent.id, useTemplate: Boolean(tpl) && a.withTemplate, assignee: a.who, onFail });
+    else A.addRow({ name: v, lineId: l.id, useTemplate: Boolean(tpl) && a.withTemplate, assignee: a.who, onFail });
   };
   name.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); submit(); }
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeAdd(); }
   });
-  return el('div', { class: 'rg-add', role: 'group', 'aria-label': `Add a row to ${l.title}` },
-    el('div', { class: 'rg-add-name' }, name, err),
+  return el('div', { class: `rg-add${parent ? ' sub' : ''}`, role: 'group', 'aria-label': parent ? `Add a sub-job ${where}` : `Add a row ${where}` },
+    el('div', { class: 'rg-add-name' }, parent ? el('span', { class: 'lbl' }, `Sub-job of ${T.nameOf(parent)}`) : null, name, err),
     tpl ? el('label', { class: 'check-line' }, withTemplate, `With the ${plural(tpl.template.length, 'stage')}`) : el('span', { class: 'meta' }, 'No columns yet'),
     who,
     el('div', { class: 'rg-add-acts' },
       btn('Add', submit, { cls: 'primary sm' }),
-      btn('Done', closeAdd, { cls: 'ghost sm', attrs: { 'aria-label': 'Stop adding rows' } })));
+      btn('Done', closeAdd, { cls: 'ghost sm', attrs: { 'aria-label': parent ? 'Stop adding sub-jobs' : 'Stop adding rows' } })));
 }

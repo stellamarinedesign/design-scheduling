@@ -1729,6 +1729,64 @@ export async function run() {
   });
 
   // -------------------------------------------------------------------------
+  group = 'register: sub-jobs (rows under a row)';
+  // INVENTED: "Custom 45" gets two variants as sub-jobs, one with a sub-job of
+  // its own; a link to another line and a loop of links are read as no link.
+  const subNodes = () => {
+    const n = (o) => ({ archivedAt: null, createdAt: AT, updatedAt: AT, lastActivityAt: AT, kind: 'task', assignee: null, createdBy: BY, ...o });
+    return [
+      ...lineNodes(),
+      n({ id: 's1', parentId: 'cl', order: 9000, title: 'with post', status: 'todo', subOf: 'r1' }),
+      n({ id: 's1c', parentId: 's1', order: 1024, title: 'Concept', status: 'in_progress' }),
+      n({ id: 's1a', parentId: 'cl', order: 9500, title: 'post, long', status: 'waiting', subOf: 's1', waiting: { note: 'Steel', since: AT, prevStatus: 'todo', blockedBy: [] } }),
+      n({ id: 's2', parentId: 'cl', order: 9100, title: 'with gussets', status: 'done', subOf: 'r1' }),
+      n({ id: 'bad', parentId: 'cl', order: 9200, title: 'Linked elsewhere', status: 'todo', subOf: 'f1' }),
+      n({ id: 'l1', parentId: 'cl', order: 9300, title: 'Loop one', status: 'todo', subOf: 'l2' }),
+      n({ id: 'l2', parentId: 'cl', order: 9400, title: 'Loop two', status: 'todo', subOf: 'l1' }),
+    ];
+  };
+  test('sub-jobs: jobs of the same line linked to their row; a link elsewhere or a loop is no link', () => {
+    const idx = T.buildIndex(subNodes());
+    expect(['s1', 's1a', 's2', 'bad', 'l1', 'l2', 'r1'].map((id) => T.subParentOf(idx, idx.byId.get(id))?.id ?? null), ['r1', 's1', 'r1', null, null, null, null]);
+    expect(T.subJobsOf(idx, 'r1').map((x) => x.id), ['s1', 's2']);
+    expect(T.subJobTree(idx, 'r1').map((x) => x.id), ['s1', 's1a', 's2']);
+    ok(T.isJob(idx, idx.byId.get('s1')), 'a sub-job is a job: its parent is the line');
+  });
+  test('rows in tree order, each with its depth; a row counts its sub-jobs and those done', () => {
+    const line = RG.register(T.buildIndex(subNodes())).groups[0].lines[0];
+    expect(line.rows.map((r) => [r.job.id, r.depth]), [['r1', 0], ['s1', 1], ['s1a', 2], ['s2', 1], ['r2', 0], ['r3', 0], ['r4', 0], ['bad', 0], ['l1', 0], ['l2', 0]]);
+    const r1 = line.rows[0];
+    expect([r1.subs, r1.subsComplete], [2, 1]);
+    expect(line.rows[1].cells.map((c) => c.state), ['doing', 'none', 'none', 'none', 'none', 'none', 'none'], 'a sub-job has cells of its own');
+    expect(line.all, 10, 'every row counts, sub-jobs too');
+  });
+  test('a filter keeps the rows a matching sub-row is part of, marked as context', () => {
+    const line = RG.register(T.buildIndex(subNodes()), { filter: 'waiting' }).groups[0].lines[0];
+    expect(line.rows.map((r) => [r.job.id, Boolean(r.context)]), [['r1', true], ['s1', true], ['s1a', false], ['r2', false]]);
+    expect(RG.filterCounts(T.buildIndex(subNodes())).waiting, 2, 'counted once each, parents not counted for their sub-rows');
+  });
+  test('on the lists a sub-job follows its row, unless it has a switch of its own', () => {
+    const idx = T.buildIndex(subNodes().map((x) => (x.id === 's2' ? { ...x, listed: true } : x)));
+    expect(['s1', 's1a', 's2'].map((id) => T.rowListed(idx, idx.byId.get(id))), [false, false, true]);
+    const idx2 = T.buildIndex(subNodes().map((x) => (x.id === 'r1' ? { ...x, listed: true } : x)));
+    expect(['s1', 's1a'].map((id) => T.rowListed(idx2, idx2.byId.get(id))), [true, true]);
+  });
+  test('where a row may go: under a row of its line, never under its own sub-jobs', () => {
+    const idx = T.buildIndex(subNodes());
+    ok(!T.subProblem(idx, 'r2', 'r1'), 'a row under another');
+    ok(!T.subProblem(idx, 's1', null), 'back to a row of its own');
+    ok(T.subProblem(idx, 'r1', 's1a'), 'not under its own sub-job');
+    ok(T.subProblem(idx, 'r1', 'f1'), 'not under a row of another line');
+    ok(T.subProblem(idx, 'oj', 'r1'), 'a job in no line cannot be a sub-job');
+  });
+  test('restoring a row brings back the sub-jobs archived with it, and what is inside them', () => {
+    const when = '2026-11-19T00:00:00.000Z';
+    const archived = subNodes().filter((x) => ['r1', 'r1c', 's1', 's1c', 's1a', 's2'].includes(x.id)).map((x) => ({ ...x, archivedAt: when }));
+    const ids = T.restoreSet(archived.find((x) => x.id === 'r1'), archived);
+    expect([...ids].sort(), ['r1', 'r1c', 's1', 's1a', 's1c', 's2']);
+  });
+
+  // -------------------------------------------------------------------------
   group = 'Progress sheet import';
   test('families come after Date rows; sections are header rows; the legend and blank headers are not read', () => {
     const p = PX.parseProgressRows(progressRows);
