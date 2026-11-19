@@ -57,9 +57,11 @@ parent. Starting here is what loads this file, the project skills and the Impecc
 ## Behaviour rules worth knowing
 
 - **Groups anywhere.** Categories are not a fixed list. Every node is a `tasks` document with
-  `kind: 'group' | 'product' | 'task'`.
-  - Products are rows of the Progress page; their jobs are revisions, and the row shows the
-    latest job's top-level tasks.
+  `kind: 'group' | 'task'`. (`product`, the 2026-11-09 Progress row, was never used live and
+  is read as a group.)
+  - A category marked `line: true` is a **product line**: a table on the Progress page. Its
+    jobs are the rows, and its tasks template (`stepsTemplate`) gives the columns: stages,
+    with sub-steps as sub-columns.
   - Groups can sit at the top (master categories), inside groups (categories,
     sub-categories) or inside jobs (sections).
   - A node's category path, colour and tasks template (stored as `stepsTemplate`) come from
@@ -95,10 +97,19 @@ parent. Starting here is what loads this file, the project skills and the Impecc
   **Tasks** tab, not "Categories". On Home, "Backlog" replaces "Gathering dust". The confirmed
   layouts are the "Home brief", "Tasks brief", "Task panel brief" and "Designer view" at the
   end of `../handoff/PLAN.md`.
-- **Progress** is the design register (`js/register.js`, `js/views/progress.js`): one row per
-  product, its latest job's top-level tasks as cells, with columns from the category's tasks
-  template. A cell is that task, never a copy. The Excel Progress sheet imports into it
-  (`js/import/progress.js`).
+- **Progress** is the design register (`js/register.js`, `js/views/progress.js`,
+  `js/views/lines.js`), as the Excel Progress sheet has it: categories are the headings,
+  product lines the tables, one row per job. The cells are the job's own tasks, never a copy.
+  - A stage marked `waits` ("Waits on the customer") puts its job into Waiting when it
+    starts; ticking it Done ends the wait.
+  - A job's own status is set from its pill. Ticking stages never changes it (owner,
+    2026-11-19).
+  - Rows can stay off the Tasks lists (`listed: false`); assigning someone lists them.
+  - A new revision resets a row's stages in place, keeping its history and time.
+  - Existing jobs come in with "Bring into a product line…", keeping their status, Waiting
+    age, timeline and time.
+  - The Excel Progress sheet imports straight into lines and rows
+    (`js/import/progress.js`).
 - **Designers see a flat "Tasks" list** of what's assigned to them, like the Excel sheet.
   The Tasks tree is the Design lead's view only. That restriction is in the UI; the rules still
   let designers read all tasks.
