@@ -106,6 +106,11 @@ parent. Starting here is what loads this file, the project skills and the Impecc
     2026-11-19).
   - Rows can stay off the Tasks lists (`listed: false`); assigning someone lists them.
   - A new revision resets a row's stages in place, keeping its history and time.
+  - **Sub-jobs:** a row can have sub-jobs (`subOf: <row id>`). They are full jobs in the same
+    line, shown as indented rows that fold into their row, with folding remembered per
+    device. They're linked rather than nested, so a row's stages never mix with its
+    sub-jobs. They can have sub-jobs of their own, and archiving, moving or listing a row
+    takes its sub-jobs with it.
   - Existing jobs come in with "Bring into a product line…", keeping their status, Waiting
     age, timeline and time.
   - The Excel Progress sheet imports straight into lines and rows
