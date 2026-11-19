@@ -52,7 +52,7 @@ function draw() {
   inner.append(el('div', { class: 'imp-sources' },
     source('TileDo', 'data.json, and archive.json if you want the archive too. TileDo keeps them in the .tiledo folder in your Windows profile.', '.json,application/json', true, loadTiledo, st.tiledo?.names),
     source('Excel tracker: Todo sheet', 'The Drafting Progress Tracker workbook. Its Todo sheet becomes jobs.', '.xlsx,.xlsm,.xls', false, loadExcel, st.excel?.name ? [st.excel.name] : null),
-    source('Excel tracker: Progress sheet', 'The same workbook. Its Progress sheet becomes the products on the Progress page, each with a job whose tasks are its cells.', '.xlsx,.xlsm,.xls', false, loadProgress, st.progress?.name ? [st.progress.name] : null)));
+    source('Excel tracker: Progress sheet', 'The same workbook. Its Progress sheet becomes the product lines on the Progress page: each table a line, each row a job in it, its cells the job\'s tasks.', '.xlsx,.xlsm,.xls', false, loadProgress, st.progress?.name ? [st.progress.name] : null)));
   if (st.error) inner.append(el('div', { class: 'form-err', role: 'alert' }, st.error));
   if (st.busy) inner.append(el('div', { class: 'meta', 'aria-busy': 'true' }, 'Reading…'));
 
@@ -72,12 +72,12 @@ function source(title, words, accept, multiple, onFiles, loaded) {
     loaded?.length ? el('div', { class: 'meta' }, `Loaded: ${loaded.join(', ')}`) : null);
 }
 
-/** Existing categories (not sections), indented, for the "Into" choices; `groupsOnly` leaves out products, which hold jobs alone. */
+/** Existing categories (not sections), indented, for the "Into" choices; `groupsOnly` leaves out product lines (and old products), which hold jobs alone. */
 function placeOptions({ groupsOnly = false } = {}) {
   const out = [];
   const walk = (pid, depth) => {
     for (const c of T.childrenOf(state.idx, pid)) {
-      if (!T.isGroupLike(c) || (groupsOnly && c.kind !== T.KIND.group)) continue;
+      if (!T.isGroupLike(c) || (groupsOnly && (c.kind !== T.KIND.group || T.isLine(c)))) continue;
       out.push({ id: c.id, name: T.nameOf(c), depth });
       walk(c.id, depth + 1);
     }
@@ -268,7 +268,7 @@ function progressPreview() {
     el('h2', { class: 'h2' }, 'Excel Progress sheet'),
     el('span', { class: 'meta' }, `${rows.length} rows in ${parsed.families.length} ${parsed.families.length === 1 ? 'family' : 'families'} · ${rows.filter((r) => !r.why).length} to bring in`)));
   sec.append(el('p', { class: 'hint', style: { 'max-width': '75ch' } },
-    'Each family becomes a category, under the place you choose (one already there by that name is used). A family with several sections gets a category for each. Each row becomes a product with one job, its revision in the title, and a task for each column. Nothing is archived: a product\'s job is its row on the Progress page.'));
+    'Each family (a red header line) becomes a category, under the place you choose; one already there by that name is used. Each of its tables becomes a product line in it, with the table\'s columns as the line\'s tasks. Each row becomes a job in its line: its name as the title, its revision in Rev, and a task for each column. The lines start on the Progress page only; switch one onto the Tasks list from its ⋯. Nothing is archived.'));
   resolved.forEach((fam, fi) => {
     const f = parsed.families[fi];
     const under = fam.parentId ? T.ancestorChain(state.idx, fam.parentId).concat(state.idx.byId.get(fam.parentId)).map(T.nameOf).join(' › ') : 'Top level';
@@ -279,7 +279,7 @@ function progressPreview() {
       intoSelect(fam.parentId, (v) => { plan.families[fi] = { parentId: v }; draw(); }, { label: `Put ${f.title} under`, groupsOnly: true })));
     fam.sections.forEach((s, si) => {
       const columns = f.sections[si].columns;
-      const where = s.holderExisting ? `${s.name} (already there${s.keepsTemplate ? ', keeps its own tasks template' : ''})` : f.sections.length > 1 ? `${s.name} (new category)` : `${s.name}`;
+      const where = s.lineExisting ? `${s.name} (already there${s.keepsTemplate ? ', keeps its own columns' : ''})` : `${s.name} (new product line)`;
       const table = el('table', { class: 'imp-table imp-prog' },
         el('caption', { class: 'meta' }, `${where} · columns: ${columns.join(', ')}`),
         el('thead', {}, el('tr', {}, ['', 'Product', 'Rev', 'Cells', 'Job', 'Brief or folder'].map((h) => el('th', {}, h)))));
@@ -311,7 +311,7 @@ function progressPreview() {
 function build() {
   const at = nowISO();
   const o = { idx: state.idx, by: state.me, at, newId, archiveDone: st.archiveDone };
-  const out = { nodes: [], patches: [], updates: [], views: {}, stats: { groups: 0, jobs: 0, tasks: 0, products: 0, archived: 0, skipped: 0, folderErrors: 0 } };
+  const out = { nodes: [], patches: [], updates: [], views: {}, stats: { groups: 0, lines: 0, jobs: 0, tasks: 0, archived: 0, skipped: 0, folderErrors: 0 } };
   if (st.tiledo) {
     const r = TD.buildTiledo(st.tiledo.parsed, st.tiledo.plan, o);
     out.nodes.push(...r.nodes);
@@ -336,7 +336,7 @@ function build() {
     out.stats.groups += r.stats.categories;
     out.stats.jobs += r.stats.jobs;
     out.stats.tasks += r.stats.tasks;
-    out.stats.products += r.stats.products;
+    out.stats.lines += r.stats.lines;
     out.stats.skipped += r.stats.skipped;
     out.stats.folderErrors += r.stats.folderErrors;
   }
@@ -346,7 +346,7 @@ function build() {
 function applyBar() {
   const preview = build();
   const s = preview.stats;
-  const words = [plural(s.groups, 'group'), s.products ? plural(s.products, 'product') : null, plural(s.jobs, 'job'), s.tasks ? plural(s.tasks, 'task') : null, s.archived ? `${s.archived} straight to the archive` : null, s.skipped ? `${s.skipped} skipped` : null, s.folderErrors ? `${plural(s.folderErrors, 'folder path')} left out` : null].filter(Boolean).join(' · ');
+  const words = [plural(s.groups, 'group'), s.lines ? plural(s.lines, 'product line') : null, plural(s.jobs, 'job'), s.tasks ? plural(s.tasks, 'task') : null, s.archived ? `${s.archived} straight to the archive` : null, s.skipped ? `${s.skipped} skipped` : null, s.folderErrors ? `${plural(s.folderErrors, 'folder path')} left out` : null].filter(Boolean).join(' · ');
   const box = el('input', { type: 'checkbox', checked: st.archiveDone });
   box.addEventListener('change', () => { st.archiveDone = box.checked; draw(); });
   const apply = btn('Apply', async () => {
@@ -357,7 +357,7 @@ function applyBar() {
       const p = Store.commit({ set: result.nodes, patch: result.patches, updates: result.updates });
       for (const [id, v] of Object.entries(result.views)) prefs.set(`view.${id}`, v);
       if (state.mode === 'local') await p; else p.catch((e) => toastError(e, 'Part of the import did not save'));
-      toast(`Imported ${result.stats.products ? `${plural(result.stats.products, 'product')}, ` : ''}${plural(result.stats.jobs, 'job')}${result.stats.tasks ? ` and ${plural(result.stats.tasks, 'task')}` : ''}`);
+      toast(`Imported ${result.stats.lines ? `${plural(result.stats.lines, 'product line')}, ` : ''}${plural(result.stats.jobs, 'job')}${result.stats.tasks ? ` and ${plural(result.stats.tasks, 'task')}` : ''}`);
       const onlyProgress = st.progress && !st.tiledo && !st.excel;
       st.tiledo = null;
       st.excel = null;
@@ -369,7 +369,7 @@ function applyBar() {
     }
   }, { cls: 'primary', ic: 'upload' });
   return el('div', { class: 'imp-bar' },
-    // The Progress sheet's jobs are never archived (each is its product's row): the choice is for the others.
+    // The Progress sheet's jobs are never archived (each is a row of its line): the choice is for the others.
     st.tiledo || st.excel ? el('label', { class: 'check-line' }, box, st.progress ? 'Send done TileDo and Todo jobs straight to the archive' : 'Send done jobs straight to the archive') : null,
     el('span', { class: 'meta', style: { 'white-space': 'normal' } }, `Will add ${words}.`),
     el('span', { class: 'sp' }),

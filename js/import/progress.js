@@ -1,5 +1,6 @@
 // import/progress.js — the Drafting Progress Tracker's Progress sheet into
-// the register (PLAN, "Progress page build", milestone 3). Read in the
+// the register (PLAN, "Progress page build" and "Progress page redesign:
+// product lines, jobs as rows"). Read in the
 // browser with SheetJS like the Todo sheet (import/excel.js); from the rows
 // on, everything here is pure and tested against invented rows.
 //
@@ -11,20 +12,21 @@
 //     "Revision No.". Columns are found by their header text, never by
 //     position; a blank header cell is a column nobody uses, and anything
 //     past the comments and revision (the legend down the side) is not read;
-//   - every row under a header is a PRODUCT: its name, one value per step
+//   - every row under a header is a product: its name, one value per step
 //     (Done, In Progress, Fix, N/a, Cancelled, or blank), the comments and
 //     the revision. A row may hold only a name.
 // A sheet with no "Date:" rows falls back to a lone name just above a header.
 //
-// WHAT IT BECOMES:
-//   family   → a category, under the place the lead picks (the one already
-//              there by that name is used);
-//   section  → a category inside it, when the family has more than one
-//              (the family itself when it has one), with the step columns as
-//              its tasks template;
-//   row      → a product, holding one job: its revision ("R4") in the title
-//              and the revision field, its cells as tasks with nobody on them
-//              (part of the job), in column order.
+// WHAT IT BECOMES (product lines, owner 2026-11-19):
+//   family   → a category (the sheet's red header line), under the place the
+//              lead picks; the one already there by that name is used;
+//   section  → a PRODUCT LINE inside it (the table's bold title), its step
+//              columns the line's tasks template, kept on the Progress page
+//              (off the Tasks list) as a line made there is; one already
+//              there by that name is used and marked a line;
+//   row      → a JOB directly in the line, the row's name its title and the
+//              sheet's revision its Rev, its cells as tasks with nobody on
+//              them (part of the job), in column order.
 //   blank → To do · Done → Done · In Progress → In progress · N/a and
 //   Cancelled → Cancelled · Fix → In progress (a task inside a job is never
 //   sent back on its own; the brief says it was Fix) · anything else typed in
@@ -33,7 +35,7 @@
 //   are the reason, and the day in them its date.
 //   Comments that are a Stella Systems path become a folder link; any other
 //   comments are the job's brief.
-// Nothing is archived: a product's job is its row on the Progress page.
+// Nothing is archived: a job is its row on the Progress page.
 
 import { normaliseFolder } from '../folders.js';
 import { ORDER_GAP, newOrder, KIND, childrenOf, nameOf, isSection, blankTask } from '../tree.js';
@@ -138,9 +140,6 @@ export function mapCell(value) {
 /** Comments that name a place in Stella Systems (or any full path), as against plain words. */
 const looksLikePath = (c) => /stella systems/i.test(c) || /^["']?[a-z]:[\\/]/i.test(c) || /^["']?\\\\/.test(c);
 
-/** The last revision in what the sheet holds, for a title: "R1-->R2" → "R2". */
-const lastRevision = (rev) => /([A-Za-z]*\s*\d+)\D*$/.exec(norm(rev))?.[1]?.replace(/\s+/g, ' ') ?? norm(rev);
-
 /**
  * One row's meaning: its cells as tasks, the job's status, title, brief,
  * folder and revision.
@@ -175,7 +174,7 @@ export function mapProgressRow(row, columns) {
   const revision = norm(row.revision) || null;
   return {
     name: norm(row.name),
-    title: revision ? `${norm(row.name)} ${lastRevision(revision)}` : norm(row.name),
+    title: norm(row.name),
     revision, status, cells, folders, folderError,
     brief: briefLines.join('\n'),
     cancelReason: status === 'cancelled' ? (comments || 'Cancelled in the tracker') : '',
@@ -183,7 +182,7 @@ export function mapProgressRow(row, columns) {
   };
 }
 
-/** A category already in the tree under `parentId` by this name (not a section, not a product). */
+/** A category already in the tree under `parentId` by this name (not a section). */
 function groupNamed(idx, parentId, name) {
   const key = labelKey(name);
   return childrenOf(idx, parentId).find((c) => c.kind === KIND.group && !isSection(idx, c) && labelKey(nameOf(c)) === key) ?? null;
@@ -201,32 +200,30 @@ export function defaultPlan(parsed, idx) {
   return { families, skip: new Set() };
 }
 
-/** Section names as categories: a blank one is numbered. */
-const sectionName = (s, si) => s.name || `Section ${si + 1}`;
+/** A section's line name: its header's first cell, or the family's name when that is blank. */
+const lineName = (f, s) => s.name || f.title;
 
 /**
  * What each family and section lands in, and which rows are left out (no
- * name, or a product of that name already there). Pure: the preview and the
- * build both read it.
+ * name, or a job of that name already in the line). Pure: the preview and
+ * the build both read it.
  */
 export function resolvePlan(parsed, plan, idx) {
   return parsed.families.map((f, fi) => {
     const parentId = plan.families?.[fi]?.parentId ?? null;
     const famExisting = groupNamed(idx, parentId, f.title);
-    const single = f.sections.length === 1;
     const seen = new Set();
     return {
       parentId, famExisting,
-      sections: f.sections.map((s, si) => {
-        const holderExisting = single ? famExisting : (famExisting ? groupNamed(idx, famExisting.id, sectionName(s, si)) : null);
-        const have = new Set(holderExisting ? childrenOf(idx, holderExisting.id).filter((c) => c.kind === KIND.product).map((c) => labelKey(nameOf(c))) : []);
-        // A section that adds to the same holder as another (one family, several
-        // sections of the same name) shares its names too.
-        const scope = single ? 'f' : labelKey(sectionName(s, si));
+      sections: f.sections.map((s) => {
+        const name = lineName(f, s);
+        const lineExisting = famExisting ? groupNamed(idx, famExisting.id, name) : null;
+        const have = new Set(lineExisting ? childrenOf(idx, lineExisting.id).filter((c) => c.kind === KIND.task).map((c) => labelKey(nameOf(c))) : []);
+        // Two sections of one name in a family fill one line, and share its names.
+        const scope = labelKey(name);
         return {
-          name: single ? f.title : sectionName(s, si),
-          holderExisting,
-          keepsTemplate: Boolean(holderExisting?.stepsTemplate?.length),
+          name, lineExisting,
+          keepsTemplate: Boolean(lineExisting?.stepsTemplate?.length),
           rows: s.rows.map((r) => {
             const key = `${scope}|${labelKey(r.name)}`;
             let why = null;
@@ -261,7 +258,7 @@ export function buildProgress(parsed, plan, { idx, by, at, newId }) {
   const nodes = [];
   const patches = [];
   const updates = [];
-  const stats = { categories: 0, products: 0, jobs: 0, tasks: 0, templates: 0, keptTemplates: 0, skipped: 0, folderErrors: 0 };
+  const stats = { categories: 0, lines: 0, jobs: 0, tasks: 0, templates: 0, keptTemplates: 0, skipped: 0, folderErrors: 0 };
   const nextOrder = new Map();
   const orderFor = (parentId) => {
     const key = parentId ?? '';
@@ -269,46 +266,47 @@ export function buildProgress(parsed, plan, { idx, by, at, newId }) {
     nextOrder.set(key, o + ORDER_GAP);
     return o;
   };
-  const group = (name, parentId) => {
+  const group = (name, parentId, extra = {}) => {
     const parent = parentId ? idx.byId.get(parentId) ?? nodes.find((n) => n.id === parentId) : null;
-    const g = { id: newId(), kind: KIND.group, parentId, order: orderFor(parentId), name, createdBy: by, createdAt: at, updatedAt: at, archivedAt: null };
+    const g = { id: newId(), kind: KIND.group, parentId, order: orderFor(parentId), name, createdBy: by, createdAt: at, updatedAt: at, archivedAt: null, ...extra };
     // A category straight inside a master category gets a colour of its own, as one made by hand does.
     if (parent && parent.kind === KIND.group && !parent.parentId) g.colour = leastColour([...idx.nodes, ...nodes]);
     nodes.push(g);
-    stats.categories += 1;
+    if (extra.line) stats.lines += 1; else stats.categories += 1;
     return g;
   };
   const template = (columns) => columns.map((label) => ({ label }));
   resolvePlan(parsed, plan, idx).forEach((fam, fi) => {
     const f = parsed.families[fi];
-    const live = fam.sections.some((s) => s.rows.some((r) => !r.why));
     stats.skipped += fam.sections.reduce((n, s) => n + s.rows.filter((r) => r.why).length, 0);
-    if (!live) return;
+    if (!fam.sections.some((s) => s.rows.some((r) => !r.why))) return;
     const famNode = fam.famExisting ?? group(f.title, fam.parentId);
     fam.sections.forEach((sec, si) => {
       const rows = sec.rows.filter((r) => !r.why);
       if (!rows.length) return;
       const columns = f.sections[si].columns;
-      let holder = sec.holderExisting;
-      if (!holder) {
-        holder = f.sections.length === 1 ? famNode : (nodes.find((n) => n.parentId === famNode.id && n.kind === KIND.group && labelKey(n.name) === labelKey(sec.name)) ?? group(sec.name, famNode.id));
+      let line = sec.lineExisting ?? nodes.find((n) => n.parentId === famNode.id && n.line && labelKey(n.name) === labelKey(sec.name));
+      if (!line) {
+        line = group(sec.name, famNode.id, { line: true, listed: false, stepsTemplate: template(columns) });
+        stats.templates += 1;
+      } else if (idx.byId.has(line.id)) {
+        // A category already there by that name: it becomes the line, and keeps a template it has.
+        const p = { id: line.id, updatedAt: at };
+        if (!line.line) { p.line = true; stats.lines += 1; }
+        if (line.stepsTemplate?.length) stats.keptTemplates += 1;
+        else { p.stepsTemplate = template(columns); stats.templates += 1; }
+        if (Object.keys(p).length > 2) patches.push(p);
       }
-      // The step columns are the category's tasks template, unless it has one already.
-      if (holder.stepsTemplate?.length) { if (sec.holderExisting) stats.keptTemplates += 1; }
-      else if (idx.byId.has(holder.id)) { patches.push({ id: holder.id, stepsTemplate: template(columns), updatedAt: at }); holder = { ...holder, stepsTemplate: template(columns) }; stats.templates += 1; }
-      else { holder.stepsTemplate = template(columns); stats.templates += 1; }
       for (const { row } of rows) {
         const m = mapProgressRow(row, columns);
         if (m.folderError) stats.folderErrors += 1;
-        const product = { id: newId(), kind: KIND.product, parentId: holder.id, order: orderFor(holder.id), name: m.name, createdBy: by, createdAt: at, updatedAt: at, archivedAt: null };
         const jobId = newId();
-        const job = {
-          ...blankTask({ id: jobId, parentId: product.id, order: ORDER_GAP, title: m.title, brief: m.brief, at, by, status: m.status, assignee: by }),
+        nodes.push({
+          ...blankTask({ id: jobId, parentId: line.id, order: orderFor(line.id), title: m.title, brief: m.brief, at, by, status: m.status, assignee: by }),
           revision: m.revision, folders: m.folders,
           doneAt: m.status === 'done' ? at : null,
           cancelled: m.status === 'cancelled' ? { by, at: m.cancelledAt ?? at, reason: m.cancelReason, prevStatus: 'todo' } : null,
-        };
-        nodes.push(product, job);
+        });
         m.cells.forEach((c, k) => {
           nodes.push({
             ...blankTask({ id: newId(), parentId: jobId, order: (k + 1) * ORDER_GAP, title: c.label, at, by, status: c.status, assignee: null }),
@@ -319,7 +317,6 @@ export function buildProgress(parsed, plan, { idx, by, at, newId }) {
           stats.tasks += 1;
         });
         if (m.status === 'cancelled') updates.push({ taskId: jobId, at: m.cancelledAt ?? at, by, kind: 'cancel', from: 'todo', to: 'cancelled', text: m.cancelReason });
-        stats.products += 1;
         stats.jobs += 1;
       }
     });

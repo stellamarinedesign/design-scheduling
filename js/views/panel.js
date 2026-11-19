@@ -233,6 +233,7 @@ function moreMenu(anchor, n) {
     TU.trackItem(n),
     TU.exportItem(n),
     lead() && job ? { label: 'Turn into a category', icon: 'folderPlus', onSelect: () => A.turnIntoCategory(n.id) } : null,
+    lead() && job && !T.lineOfRow(state.idx, n) ? { label: 'Bring into a product line…', icon: 'register', onSelect: async () => (await import('./lines.js')).bringIn({ jobId: n.id }) } : null,
     lead() && n.backlogIgnored ? { label: 'Show in the Backlog again', icon: 'restore', onSelect: () => A.setBacklogIgnored(n.id, false) }
       : lead() && BL.canHideFromBacklog(state.idx, n.id, backlogPool()) ? { label: 'Hide from the Backlog', icon: 'hide', onSelect: () => A.setBacklogIgnored(n.id, true) } : null,
     'sep',

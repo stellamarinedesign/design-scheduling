@@ -33,7 +33,7 @@
 // Everything here is pure: it reads an index (tree.js) and returns patches and
 // updates for the store to write in one batch.
 
-import { ancestorChain, descendantIds, childrenOf, nameOf, KIND, isLight, isContainer } from './tree.js';
+import { ancestorChain, descendantIds, childrenOf, nameOf, KIND, isLight, isContainer, jobOf } from './tree.js';
 
 export const STATUSES = ['todo', 'in_progress', 'waiting', 'check', 'fix', 'done', 'cancelled'];
 
@@ -95,6 +95,8 @@ export function taskForward(t, role, light = false) {
     case 'todo': case 'fix': return 'in_progress';
     case 'in_progress': return role === 'lead' || light ? 'done' : 'check';
     case 'check': return role === 'lead' || light ? 'done' : null;
+    // A waiting stage (Approval) is ticked Done when the customer answers.
+    case 'waiting': return light && t.waits ? 'done' : null;
     default: return null;
   }
 }
@@ -114,8 +116,64 @@ export function taskBack(t, role, me, light = false) {
     case 'check': return canTakeBack(t, me) || light ? 'in_progress' : null;
     case 'fix': return light ? 'in_progress' : null;
     case 'cancelled': return light ? reopenTo(t) : null;
+    case 'waiting': return light && t.waits ? 'todo' : null;
     default: return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// a waiting stage (owner, 2026-11-19)
+// ---------------------------------------------------------------------------
+
+/**
+ * A STAGE THAT WAITS ON THE CUSTOMER: a task part of its job made from a
+ * template stage marked "(waits)", such as Approval. Starting it puts it
+ * into Waiting rather than In progress, and puts its job into Waiting too,
+ * so the job's waiting age counts from then (stageWaitJob). Ticking it Done
+ * ends the wait.
+ */
+export const isWaitStage = (idx, t) => Boolean(t?.waits) && t.kind === KIND.task && isLight(idx, t);
+
+/** What a waiting stage says while it waits ("Waiting: On the customer"). */
+export const STAGE_WAIT_NOTE = 'On the customer';
+
+/**
+ * Where a change to a stage really goes: starting a waiting stage is
+ * Waiting, with its note.
+ * @returns {{to: string, note?: string}}
+ */
+export function stageTarget(idx, t, to) {
+  if (to === 'in_progress' && isWaitStage(idx, t) && t.status !== 'waiting') return { to: 'waiting', note: STAGE_WAIT_NOTE };
+  return { to };
+}
+
+/**
+ * A waiting stage's effect on its job. Entering Waiting puts an open job
+ * into Waiting too, the stage named in its note and remembered
+ * (`waiting.stageId`); a job already waiting, or with the lead for check,
+ * keeps what it has. Leaving Waiting ends only the wait the stage started,
+ * and the job goes back to where it was.
+ * @returns {{patches: object[], updates: object[]}}
+ */
+export function stageWaitJob(idx, stageId, to, ctx) {
+  const none = { patches: [], updates: [] };
+  const t = idx.byId.get(stageId);
+  if (!isWaitStage(idx, t)) return none;
+  const job = jobOf(idx, stageId);
+  if (!job || job.id === stageId) return none;
+  if (to === 'waiting' && t.status !== 'waiting') {
+    if (!isOpen(job.status) || job.status === 'waiting' || job.status === 'check') return none;
+    // "Waiting: Approval with the customer" on the job's tile and row.
+    const r = changeStatus(idx, job.id, 'waiting', { ...ctx, note: `${nameOf(t)} with the customer` });
+    if (r.error || !r.patches.length) return none;
+    r.patches[0].waiting = { ...r.patches[0].waiting, stageId };
+    return r;
+  }
+  if (t.status === 'waiting' && to !== 'waiting' && job.status === 'waiting' && job.waiting?.stageId === stageId) {
+    const r = changeStatus(idx, job.id, restoreTo(job), ctx);
+    return r.error ? none : r;
+  }
+  return none;
 }
 
 /**
@@ -566,6 +624,7 @@ export function eventLabel(u) {
     case 'assign': return 'Assigned';
     case 'create': return 'Created';
     case 'import': return 'Imported';
+    case 'revision': return u.to ? `Revision ${u.to} started` : 'New revision started';
     case 'cancel': return 'Cancelled';
     case 'reopen': return `Reopened · ${LABEL[u.to] ?? u.to}`;
     // A manager's note on a shared job (sharing.js).

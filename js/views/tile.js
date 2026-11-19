@@ -171,6 +171,7 @@ export function taskMenu(anchor, t, { extra = [], at = null } = {}) {
     trackItem(t),
     exportItem(t),
     lead && T.isJob(state.idx, t) ? { label: 'Turn into a category', icon: 'folderPlus', onSelect: () => A.turnIntoCategory(t.id) } : null,
+    lead && T.isJob(state.idx, t) && !T.lineOfRow(state.idx, t) ? { label: 'Bring into a product line…', icon: 'register', onSelect: async () => (await import('./lines.js')).bringIn({ jobId: t.id }) } : null,
     lead && T.isJob(state.idx, t) ? { label: 'Share with managers…', icon: 'team', onSelect: async () => (await import('./managers.js')).shareMenu(anchor, t, { at }) } : null,
     'sep',
     can ? { label: 'Archive', icon: 'archive', onSelect: () => A.archive(t.id) } : null,

@@ -78,8 +78,9 @@ export function renderMyTasks(root) {
     inner.append(head(null, search, sortBtn, add), el('div', { class: 'my-list', 'aria-busy': 'true', 'aria-label': 'Loading' }, [1, 2, 3].map(() => el('div', { class: 'skel my-skel' }))));
     return;
   }
-  const groups = TM.myTaskGroups(state.idx, state.me, { sort, query, pathOf });
-  const all = TM.myTaskGroups(state.idx, state.me, { sort, pathOf });
+  // A row kept on the Progress page is on nobody's list until it is listed (state.js, listIdx).
+  const groups = TM.myTaskGroups(state.listIdx, state.me, { sort, query, pathOf });
+  const all = TM.myTaskGroups(state.listIdx, state.me, { sort, pathOf });
   const openCount = all.filter((g) => g.key !== 'done').reduce((n, g) => n + g.rows.length, 0);
   const fixCount = all.find((g) => g.key === 'fix').rows.length;
   inner.append(head({ openCount, fixCount }, search, sortBtn, add));

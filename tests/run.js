@@ -18,7 +18,7 @@ import * as TC from '../js/timing.js';
 import * as RG from '../js/register.js';
 import * as PX from '../js/import/progress.js';
 import * as QT from '../js/quote.js';
-import { sampleNodes, sampleStepNodes, tiledoData, tiledoArchive, excelRows, registerNodes, progressRows } from './samples.js';
+import { sampleNodes, sampleStepNodes, tiledoData, tiledoArchive, excelRows, lineNodes, progressRows } from './samples.js';
 
 const results = [];
 let group = '';
@@ -1593,87 +1593,139 @@ export async function run() {
   });
 
   // -------------------------------------------------------------------------
-  group = 'register (Progress page)';
-  const reg = () => T.buildIndex(registerNodes());
-  const rowFor = (idx, pid) => RG.register(idx).sections.flatMap((s) => s.rows).find((r) => r.product.id === pid);
-  test('sections: every category holding products, in tree order, titled below the master', () => {
-    const r = RG.register(reg());
-    expect(r.sections.map((s) => s.id), ['lf', 'lf-small', 'misc']);
-    expect(r.sections.map((s) => s.title), ['Lift Frames', 'Lift Frames › Small', 'Odd Parts']);
-    expect(r.sections[0].rows.map((x) => x.product.id), ['p1', 'p2', 'p3', 'p4', 'p5'], 'products in manual order');
-    expect([r.products, r.complete], [8, 1]);
+  group = 'register: product lines (Progress page)';
+  const lines = () => T.buildIndex(lineNodes());
+  const rowFor = (idx, id) => RG.register(idx).groups.flatMap((g) => g.lines.flatMap((l) => l.rows)).find((r) => r.job.id === id);
+  test('product lines under their categories, in tree order; a line is not looked inside; a group with a template but no mark is no line', () => {
+    const r = RG.register(lines());
+    expect(r.groups.map((g) => [g.title, g.lines.map((l) => l.title)]), [['Lifters', ['Custom Lifters']], ['Lifters › Small lifters', ['Compact']], ['Davits', ['Fixed arm']]]);
+    expect(r.groups[0].lines[0].rows.map((x) => x.job.id), ['r1', 'r2', 'r3', 'r4'], 'rows: the jobs in the line, in their order');
+    expect([r.rows, r.complete, r.lines], [7, 2, 3]);
   });
-  test('columns come from the template, top level only; a sub-category takes the template above it', () => {
-    const r = RG.register(reg());
-    expect(r.sections[0].columns.map((c) => c.label), ['Concept', '3D', 'Drawings', 'Build Form']);
-    ok(r.sections[0].fromTemplate, 'from the template');
-    expect(r.sections[1].columns.map((c) => c.label), ['Concept', '3D', 'Drawings', 'Build Form']);
-    expect(r.sections[1].templateFrom.id, 'lf');
+  test('columns: the template two levels deep, sub-steps under their stage; the waiting stage marked', () => {
+    const c = RG.register(lines()).groups[0].lines[0].columns;
+    expect(c.stages.map((s) => [s.label, s.waits, s.subs.map((x) => x.label)]), [['Concept', false, []], ['Approval', true, []], ['Engineering', false, ['3D Model', 'Drawing', 'Laser', 'PDF']], ['Production', false, []]]);
+    expect(c.cols.map((x) => x.label), ['Concept', 'Approval', '3D Model', 'Drawing', 'Laser', 'PDF', 'Production']);
+    expect(c.cols.filter((x) => x.sub).map((x) => x.stage.label), ['Engineering', 'Engineering', 'Engineering', 'Engineering']);
   });
-  test('no template: the names the jobs use, first seen first, matched loosely', () => {
-    const s = RG.register(reg()).sections[2];
-    ok(!s.fromTemplate, 'not from a template');
-    expect(s.columns.map((c) => c.label), ['Model', 'Print', 'Test fit']);
-    expect(s.rows[1].cells.map((c) => c.task?.id ?? null), ['g3', 'g1', 'g2'], '"model" fills Model');
+  test('a row: its own tasks as cells, sub-steps found inside their stage, by name; a missing one an empty slot; extras counted', () => {
+    const r = rowFor(lines(), 'r1');
+    expect(r.cells.map((c) => c.state), ['done', 'done', 'done', 'doing', 'todo', 'none', 'todo']);
+    expect(r.cells[3].task.id, 'r1e2', '"drawing" fills Drawing');
+    expect(r.cells[5].stageTask.id, 'r1e', 'the empty PDF slot knows its stage');
+    expect(r.extras.map((t) => t.id), ['r1e9'], 'a sub-step outside the template');
+    expect([r.done, r.total], [3, 7]);
+    ok(r.open && !r.complete && !r.waiting, 'open');
   });
-  test('the current job: the newest open one, else the newest; no job shows empty cells', () => {
-    const idx = reg();
-    expect(RG.currentJob(idx, 'p1').job.id, 'p1r2');
-    expect(RG.currentJob(idx, 'p2').job.id, 'p2r4');
-    expect(RG.currentJob(idx, 'p3').job, null);
-    const none = rowFor(idx, 'p3');
-    ok(none.cells.every((c) => c.state === 'nojob'), 'no job: every cell says so');
-    ok(!none.complete && !none.open, 'neither complete nor open');
+  test('waiting at Approval: the cell and the row; a row on the lists by its own switch', () => {
+    const idx = lines();
+    const r = rowFor(idx, 'r2');
+    expect([r.cells[1].state, r.waiting, r.listed], ['wait', true, true]);
+    expect(r.extras.map((t) => t.id), ['r2x']);
+    expect([rowFor(idx, 'r3').cancelled, rowFor(idx, 'r4').complete], [true, true], 'cancelled; done with no tasks is complete');
   });
-  test('cells: the same task documents, by name, ignoring case; their state as they show', () => {
-    const r = rowFor(reg(), 'p1');
-    expect(r.cells.map((c) => c.task?.id), ['a1', 'a2', 'a3', 'a4']);
-    expect(r.cells.map((c) => c.state), ['done', 'doing', 'fix', 'na'], '3D is worked out from its insides');
-    expect(r.cells[1].inner, { done: 1, total: 2 });
-    expect([r.done, r.total], [1, 3], 'cancelled left out');
-    ok(r.open && !r.complete, 'open, not complete');
+  test('a line with no template: the names its rows use', () => {
+    const l = RG.register(lines()).groups[1].lines[0];
+    ok(!l.columns.fromTemplate, 'not from a template');
+    expect(l.columns.cols.map((x) => x.label), ['Frame', 'Print', 'Fit']);
+    expect(l.rows[1].cells.map((c) => c.task?.id ?? null), ['c2c', 'c2a', 'c2b']);
   });
-  test('a job that strays: an empty slot, an extra, a task in a section, the other states', () => {
-    const r = rowFor(reg(), 'p4');
-    expect(r.cells.map((c) => c.state), ['none', 'wait', 'check', 'doing']);
-    expect(r.extras.map((t) => t.id), ['cx']);
-    expect([r.done, r.total], [1, 4], 'the extra counts');
+  test('filters: all, open, waiting', () => {
+    expect(RG.filterCounts(lines()), { all: 7, open: 4, waiting: 1 });
+    expect(RG.register(lines(), { filter: 'waiting' }).groups[0].lines[0].rows.map((r) => r.job.id), ['r2']);
   });
-  test('complete, cancelled and the filters', () => {
-    const idx = reg();
-    ok(rowFor(idx, 'p2').complete, 'every cell done');
-    const c = rowFor(idx, 'p5');
-    ok(c.cancelled && !c.complete && !c.open, 'cancelled: finished, not complete');
-    expect(RG.register(idx, { filter: 'incomplete' }).sections[0].rows.map((x) => x.product.id), ['p1', 'p3', 'p4']);
-    expect(RG.register(idx, { filter: 'open' }).sections[0].rows.map((x) => x.product.id), ['p1', 'p4']);
-    expect(RG.filterCounts(idx), { all: 8, incomplete: 6, open: 5 });
-    const empty = RG.register(T.buildIndex(registerNodes().filter((n) => n.id !== 'p6r1')), { filter: 'open' }).sections[1];
-    expect([empty.rows.length, empty.all], [0, 1], 'a section the filter empties still comes back, with its count');
+  test('the lists leave out rows kept on Progress: by the row switch, else the line; a line with none listed goes too', () => {
+    const idx = lines();
+    expect(['r1', 'r2', 'r3', 'c1', 'f1', 'oj'].map((id) => T.rowListed(idx, idx.byId.get(id))), [false, true, false, false, true, true]);
+    const kept = new Set(T.listedNodes(idx).map((n) => n.id));
+    ok(kept.has('cl') && kept.has('r2') && kept.has('r2e1'), 'the line stays for its listed row, with the row and its tasks');
+    ok(!kept.has('r1') && !kept.has('r1e1') && !kept.has('r4'), 'rows kept on Progress, and their tasks, are off the lists');
+    ok(!kept.has('cp') && !kept.has('c1'), 'a line with nothing listed is off the lists');
+    ok(kept.has('fx') && kept.has('f1') && kept.has('minor') && kept.has('oj'), 'listed lines and ordinary jobs stay');
   });
-  test('a second open job: the newest shows, the row says one more', () => {
-    const idx = T.buildIndex([...registerNodes(), { id: 'p1r3', kind: 'task', parentId: 'p1', order: 3072, title: 'Frame 200 hotfix', status: 'todo', archivedAt: null, createdAt: '2026-12-01T00:00:00.000Z' }]);
-    const r = rowFor(idx, 'p1');
-    expect([r.job.id, r.moreOpen], ['p1r3', 1]);
+  test('the next revision: one more than the row has, keeping its letters', () => {
+    expect(['R4', 'R1-->R2', 'Rev 2', '7', null, 'draft'].map(RG.nextRevision), ['R5', 'R3', 'Rev 3', 'R8', 'R1', 'R1']);
   });
-  test('the next revision: one more than the highest, keeping its letters', () => {
-    expect(RG.nextRevision([{ revision: 'R4' }, { revision: 'R2' }]), 'R5');
-    expect(RG.nextRevision([{ revision: 'R1-->R2' }]), 'R3');
-    expect(RG.nextRevision([{ revision: 'Rev 2' }]), 'Rev 3');
-    expect(RG.nextRevision([{ revision: '7' }]), 'R8');
-    expect(RG.nextRevision([{ revision: null }, { revision: 'draft' }]), 'R1');
-    expect(RG.nextRevision([]), 'R1');
-    expect(RG.revisionTitle({ kind: 'product', name: 'Frame 200' }, 'R3'), 'Frame 200 R3');
+  test('a new revision resets the row in place: every task To do, the job reopened, the old stages said once', () => {
+    const r = RG.resetRow(lines(), 'r1', { revision: 'R3', at: AT, by: BY });
+    expect(r.patches[0], { id: 'r1', status: 'todo', waiting: null, doneAt: null, cancelled: null, fixNote: null, checkedBy: null, checkedAt: null, statusAt: AT, updatedAt: AT, revision: 'R3', lastActivityAt: AT });
+    expect(r.patches.length, 9, 'the job and its eight tasks');
+    ok(r.patches.every((p) => p.status === 'todo'), 'all To do');
+    expect([r.update.kind, r.update.from, r.update.to], ['revision', 'R2', 'R3']);
+    ok(r.update.text.startsWith('R2 stood: Concept done · Approval done · Engineering › 3D Model done · Engineering › Drawing in progress'), r.update.text);
   });
-  test('a task added for an empty column lands where its column is', () => {
-    const idx = reg();
-    const o = RG.insertOrder(idx, 'p4r1', rowFor(idx, 'p4').cells, 0);
-    ok(o < 1024, `Concept goes before 3D (${o})`);
-    expect(RG.insertOrder(idx, 'p1r2', rowFor(idx, 'p1').cells, 2), 2560, 'just after 3D');
-    expect(RG.insertOrder(idx, 'p6r1', rowFor(idx, 'p6').cells, 1), 1024, 'a job with nothing in it');
+  test('an empty cell adds its task where its column is; a missing stage is made with it', () => {
+    const idx = lines();
+    let k = 0;
+    const o = { newId: () => `n${++k}`, make: (x) => ({ kind: 'task', ...x }) };
+    const r1 = rowFor(idx, 'r1');
+    const pdf = RG.missingCell(idx, r1, 5, o).set;
+    expect(pdf.map((t) => [t.parentId, t.title, t.order]), [['r1e', 'PDF', 3584]], 'under Engineering, between Laser and FEA');
+    const r4 = rowFor(idx, 'r4');
+    const both = RG.missingCell(idx, r4, 2, o).set;
+    expect(both.map((t) => [t.parentId, t.title]), [['r4', 'Engineering'], ['n2', '3D Model']]);
+    const appr = RG.missingCell(idx, r4, 1, o).set;
+    expect([appr[0].title, appr[0].waits], ['Approval', true], 'a waiting stage stays one');
   });
-  test('names compare loosely', () => {
+  test('bringing a job in: matched by name at any depth, missing stages new, the rest kept as extras; the job itself only moves', () => {
+    const idx = lines();
+    const cols = RG.columnsFor(idx, 'cl');
+    const plan = RG.conversionPlan(idx, 'oj', cols);
+    expect(plan.stages.map((s) => [s.stage.label, s.task?.id ?? null, s.subs.map((x) => x.task?.id ?? null)]),
+      [['Concept', 'oj1', []], ['Approval', 'oj3', []], ['Engineering', null, ['oj2', 'oj5', null, null]], ['Production', null, []]]);
+    expect(plan.leftovers.map((t) => t.id), ['oj4']);
+    let k = 0;
+    const o = { at: AT, newId: () => `n${++k}`, make: (x) => ({ kind: 'task', status: 'todo', ...x }) };
+    const w = RG.conversionWrites(idx, 'oj', 'cl', plan, o);
+    expect(w.patch[0], { id: 'oj', parentId: 'cl', order: 5120, listed: true, updatedAt: AT });
+    ok(!w.patch.some((p) => p.id === 'oj' && ('status' in p || 'waiting' in p)), 'its status and wait are not touched');
+    expect(w.set.map((t) => t.title), ['Engineering', 'Laser', 'PDF', 'Production']);
+    const eng = w.set[0].id;
+    expect(w.patch.filter((p) => ['oj2', 'oj5'].includes(p.id)).map((p) => [p.id, p.parentId, p.title]), [['oj2', eng, '3D Model'], ['oj5', eng, 'Drawing']]);
+    expect(w.patch.find((p) => p.id === 'oj3').waits, true, 'Approval becomes the waiting stage');
+    const after = T.buildIndex([...lineNodes().map((n) => ({ ...n, ...w.patch.filter((p) => p.id === n.id).reduce((a, p) => ({ ...a, ...p }), {}) })), ...w.set]);
+    const row = rowFor(after, 'oj');
+    expect(row.cells.map((c) => c.state), ['done', 'todo', 'doing', 'done', 'todo', 'todo', 'todo']);
+    expect([row.job.status, row.job.waiting.blockedBy, row.extras.map((t) => t.id)], ['waiting', ['f1'], ['oj4']]);
+    const arch = RG.conversionWrites(idx, 'oj', 'cl', plan, { ...o, archive: new Set(['oj4']) });
+    expect(arch.patch.filter((p) => p.archivedAt).map((p) => p.id), ['oj4', 'oj4a']);
+    const keep = RG.conversionWrites(idx, 'oj', 'cl', plan, { ...o, switchTasks: false });
+    expect([keep.set.length, keep.patch.length], [0, 1], 'keeping its tasks: it only moves');
+  });
+  test('a waiting stage: starting it is Waiting and puts the job into Waiting; ticking it Done ends the wait', () => {
+    const idx = lines();
+    const c = { by: BY, at: AT };
+    expect(S.stageTarget(idx, idx.byId.get('r1p'), 'in_progress'), { to: 'in_progress' });
+    const appr = { ...idx.byId.get('r1a'), status: 'todo' };
+    const idx2 = T.buildIndex([...lineNodes().filter((n) => n.id !== 'r1a'), appr]);
+    expect(S.stageTarget(idx2, appr, 'in_progress'), { to: 'waiting', note: 'On the customer' });
+    const enter = S.stageWaitJob(idx2, 'r1a', 'waiting', c);
+    expect([enter.patches[0].id, enter.patches[0].status, enter.patches[0].waiting.prevStatus, enter.patches[0].waiting.stageId, enter.patches[0].waiting.since],
+      ['r1', 'waiting', 'in_progress', 'r1a', AT]);
+    expect(enter.patches[0].waiting.note, 'Approval with the customer');
+    const leave = S.stageWaitJob(idx, 'r2a', 'done', c);
+    expect([leave.patches[0].id, leave.patches[0].status, leave.patches[0].waiting], ['r2', 'in_progress', null]);
+    expect([S.taskForward(idx.byId.get('r2a'), 'designer', true), S.taskBack(idx.byId.get('r2a'), 'designer', BY, true)], ['done', 'todo']);
+    const other = { ...idx.byId.get('r2'), waiting: { ...idx.byId.get('r2').waiting, stageId: 'elsewhere' } };
+    const idx3 = T.buildIndex([...lineNodes().filter((n) => n.id !== 'r2'), other]);
+    expect(S.stageWaitJob(idx3, 'r2a', 'done', c).patches, [], 'a wait the stage did not start is left alone');
+  });
+  test('templates keep the waiting mark through their text, and the tasks they make carry it', () => {
+    const t = T.templateFromText('Concept\nApproval (waits)\nEngineering\n  3D Model\n  PDF');
+    expect(t, [{ label: 'Concept' }, { label: 'Approval', waits: true }, { label: 'Engineering', children: [{ label: '3D Model' }, { label: 'PDF' }] }]);
+    expect(T.templateToText(t), 'Concept\nApproval (waits)\nEngineering\n  3D Model\n  PDF');
+    let k = 0;
+    expect(T.tasksFromTemplate(t, 'j', { at: AT, by: BY, newId: () => `t${++k}` }).map((x) => [x.title, x.waits ?? false]), [['Concept', false], ['Approval', true], ['Engineering', false], ['3D Model', false], ['PDF', false]]);
+  });
+  test('a product line holds rows, not groups, and stays out of jobs', () => {
+    const idx = T.buildIndex([...lineNodes(), { id: 'gx', kind: 'group', parentId: 'm', order: 9000, name: 'Loose', archivedAt: null }]);
+    ok(T.nestProblem(idx, 'gx', 'cl'), 'a group into a line refused');
+    ok(T.nestProblem(idx, 'fx', 'r1'), 'a line into a job refused');
+    ok(!T.nestProblem(idx, 'oj', 'cl'), 'a job into a line allowed');
+  });
+  test('names compare loosely, in any letters', () => {
     expect([RG.labelKey('Build form'), RG.labelKey(' build-Form '), RG.labelKey('3D')], ['buildform', 'buildform', '3d']);
-    expect([RG.labelKey('Écran'), RG.labelKey('門'), RG.labelKey('窓'), RG.labelKey(' – ')], ['ecran', '門', '窓', ''], 'any letters are a name; punctuation alone is none');
+    expect([RG.labelKey('Écran'), RG.labelKey('門'), RG.labelKey(' – ')], ['ecran', '門', '']);
   });
 
   // -------------------------------------------------------------------------
@@ -1694,12 +1746,12 @@ export async function run() {
       ['todo', 'done', 'in_progress', 'cancelled', 'cancelled', 'in_progress', 'waiting', 'todo']);
     expect(PX.mapCell('see note').note, 'see note');
   });
-  test('a row: its job status, its title from the last revision, a folder or a brief', () => {
+  test('a row: its job status, its name as the title, the revision in its field, a folder or a brief', () => {
     const p = PX.parseProgressRows(progressRows);
     const sec = p.families[0].sections[0];
     const [a, b, c] = sec.rows.map((r) => PX.mapProgressRow(r, sec.columns));
-    expect([a.status, a.title, a.revision, a.folders], ['done', '100kg R4', 'R4', [{ path: 'Example Products/Hoists/100kg', label: '' }]]);
-    expect([b.status, b.title, b.revision, b.brief], ['in_progress', '200kg R2', 'R1-->R2', 'Check the base plate']);
+    expect([a.status, a.title, a.revision, a.folders], ['done', '100kg', 'R4', [{ path: 'Example Products/Hoists/100kg', label: '' }]]);
+    expect([b.status, b.title, b.revision, b.brief], ['in_progress', '200kg', 'R1-->R2', 'Check the base plate']);
     expect([c.status, c.title, c.brief], ['todo', '300kg (twin)', 'Archived: (see the twin note)']);
   });
   test('cancelled rows: cancelled where the cells stop; one that carries on is not', () => {
@@ -1714,33 +1766,36 @@ export async function run() {
     expect(m[3].brief, 'Approval: Fix in the tracker');
     expect(m[4].cells.map((c) => c.status), ['cancelled', 'done', 'todo', 'todo']);
   });
-  test('the build: into what is there by name, a template on each category, products with their jobs; nothing archived', () => {
+  test('the build: families into categories, each section a product line with its template, each row a job in it; nothing archived', () => {
     const existing = [
       { id: 'pm', kind: 'group', parentId: null, order: 1024, name: 'Production', archivedAt: null },
       { id: 'ph', kind: 'group', parentId: 'pm', order: 1024, name: 'hoists', colour: 3, archivedAt: null },
       { id: 'psa', kind: 'group', parentId: 'ph', order: 1024, name: 'Single Arm', archivedAt: null },
-      { id: 'p100', kind: 'product', parentId: 'psa', order: 1024, name: '100KG', archivedAt: null },
+      { id: 'j100', kind: 'task', parentId: 'psa', order: 1024, title: '100KG', status: 'todo', archivedAt: null },
     ];
     const idx = T.buildIndex(existing);
     const parsed = PX.parseProgressRows(progressRows);
     const plan = PX.defaultPlan(parsed, idx);
     expect(Object.values(plan.families).map((f) => f.parentId), ['pm', 'pm', 'pm'], 'beside the same-named category, else in the first master');
     const resolved = PX.resolvePlan(parsed, plan, idx);
+    expect(resolved.map((f) => f.sections.map((s) => s.name)), [['Single arm', 'Folding arm'], ['Lift'], ['Project']], 'each section is a line, named by its header');
     expect(resolved[0].sections[0].rows.map((r) => r.why), ['Already here', null, null, null]);
     expect(resolved[0].sections[1].rows.map((r) => r.why), [null, 'No name']);
     let k = 0;
     const r = PX.buildProgress(parsed, plan, { idx, by: BY, at: AT, newId: () => `x${++k}` });
-    expect(r.stats, { categories: 3, products: 10, jobs: 10, tasks: 42, templates: 4, keptTemplates: 0, skipped: 2, folderErrors: 0 });
-    expect(r.patches.map((p) => [p.id, p.stepsTemplate.map((t) => t.label).join(',')]), [['psa', 'Archived,Model,Laser,Drawings,Checked']]);
-    const all = T.buildIndex([...existing, ...r.nodes]);
-    const lifts = r.nodes.find((n) => n.name === 'Platform lifts');
-    expect([lifts.parentId, typeof lifts.colour, lifts.stepsTemplate.length], ['pm', 'number', 4], 'one section: the products go in the family itself');
-    expect(r.nodes.find((n) => n.name === 'Folding arm').parentId, 'ph', 'a new section inside the existing family');
+    expect(r.stats, { categories: 2, lines: 4, jobs: 10, tasks: 42, templates: 4, keptTemplates: 0, skipped: 2, folderErrors: 0 });
+    expect(r.patches.map((p) => [p.id, p.line, p.stepsTemplate.map((t) => t.label).join(',')]), [['psa', true, 'Archived,Model,Laser,Drawings,Checked']], 'the category there by that name becomes the line');
+    ok(!r.nodes.some((n) => n.kind === 'product'), 'no products');
+    const lift = r.nodes.find((n) => n.name === 'Lift');
+    expect([lift.line, lift.listed, r.nodes.find((n) => n.id === lift.parentId).name, lift.stepsTemplate.length], [true, false, 'Platform lifts', 4], 'a line inside its new category, kept on Progress');
+    expect(r.nodes.find((n) => n.name === 'Folding arm').parentId, 'ph', 'a new line inside the existing family');
     ok(r.nodes.every((n) => n.archivedAt === null), 'nothing archived');
+    const all = T.buildIndex([...existing.map((n) => (n.id === 'psa' ? { ...n, ...r.patches[0] } : n)), ...r.nodes]);
     ok(r.nodes.filter((n) => n.kind === 'task' && all.byId.get(n.parentId)?.kind === 'task').every((n) => n.assignee === null), 'cells: tasks with nobody on them');
-    const reg = RG.register(T.buildIndex([...existing.map((n) => (n.id === 'psa' ? { ...n, ...r.patches[0] } : n)), ...r.nodes]));
-    const single = reg.sections.find((s) => s.id === 'psa');
-    expect(single.rows.map((x) => x.product.name), ['100KG', '200kg', '300kg (twin)', '400kg']);
+    const reg = RG.register(all);
+    expect(reg.groups.map((g) => [g.title, g.lines.map((l) => l.title)]), [['hoists', ['Single Arm', 'Folding arm']], ['Platform lifts', ['Lift']], ['Research', ['Project']]]);
+    const single = reg.groups[0].lines[0];
+    expect(single.rows.map((x) => [T.nameOf(x.job), x.job.revision ?? null]), [['100KG', null], ['200kg', 'R1-->R2'], ['300kg (twin)', null], ['400kg', null]]);
     expect(single.rows[1].cells.map((c) => c.state), ['done', 'doing', 'todo', 'todo', 'todo'], 'the register reads the import back');
     expect(r.updates.map((u) => u.kind), ['cancel', 'cancel']);
   });

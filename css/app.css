@@ -1081,21 +1081,28 @@ input::-ms-reveal { display: none; }
 .ev.request .ev-text { color: var(--text); }
 
 /* ── Progress: the design register ───────────────────────────────── */
-/* One grid per section, every row the same columns. How wide the columns
-   are is the section's own fit (progress.js measures it against its column
-   count): full, compact, or stacked (name and job over the cells). */
+/* Product lines, jobs as rows (owner, 2026-11-19): a heading per category,
+   a table per product line under it. One grid per line, every row the same
+   columns. How wide the columns are is the line's own fit (progress.js
+   measures it against its column count): full, compact, or stacked (name and
+   status over the cells). */
 .view-inner.prog { gap: var(--sp-5); max-width: 1400px; }
 .rg-list { display: flex; flex-direction: column; gap: var(--sp-6); }
+/* A category: the sheet's red header line, as a heading with its dot; its lines below. */
+.rg-cat { display: flex; flex-direction: column; gap: var(--sp-5); }
+.rg-cat-head { display: flex; align-items: center; gap: var(--sp-2); min-height: 36px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.rg-cat-title { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: var(--fs-lg); overflow-wrap: break-word; -webkit-hyphens: auto; hyphens: auto; }
+.rg-cat-title .dot { flex: none; }
 .rg-sec { --cell: 36px; display: flex; flex-direction: column; gap: var(--sp-2); border-radius: var(--radius); scroll-margin-top: var(--sp-2); }
 /* A register runs to a thousand cells and redraws on every tick: sections out
    of sight are not laid out until they come near (their last size is kept). */
 .rg-sec:not(.flash) { content-visibility: auto; contain-intrinsic-size: auto 480px; }
 .rg-grid {
   /* Full: the names keep to a readable width and the job column takes what is left over. */
-  --name: minmax(140px, 360px); --count-w: 56px; --rev-w: 52px; --job: minmax(200px, 1fr); --gap: 12px;
+  --name: minmax(140px, 360px); --count-w: 56px; --rev-w: 52px; --job: minmax(220px, 1fr); --gap: 12px;
   display: flex; flex-direction: column;
 }
-.rg-sec[data-fit="compact"] .rg-grid { --name: minmax(96px, 1fr); --count-w: 44px; --rev-w: 40px; --job: 120px; --gap: 8px; }
+.rg-sec[data-fit="compact"] .rg-grid { --name: minmax(96px, 1fr); --count-w: 44px; --rev-w: 40px; --job: 136px; --gap: 8px; }
 .rg-sec[data-fit="compact"] .rg-start svg { display: none; }
 .rg-row {
   display: grid; align-items: center; column-gap: var(--gap); min-height: var(--row-h); padding: 4px var(--sp-2);
@@ -1125,7 +1132,17 @@ input::-ms-reveal { display: none; }
 .rg-title .dot { flex: none; transform: translateY(-1px); }
 .rg-cols .lbl { align-self: end; padding-bottom: 3px; font-size: var(--fs-micro); color: var(--text3); }
 .rg-cols .rg-cells { align-items: flex-end; }
-.rg-col { width: var(--cell); flex: none; display: flex; justify-content: center; }
+.rg-col { width: var(--cell); flex: none; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+/* A stage that waits on the customer: a clock over its label. */
+.rg-col.waits svg { color: var(--text3); flex: none; }
+/* A stage with sub-steps: its name across their columns, over their upright labels. */
+.rg-stagecol { width: calc(var(--k) * var(--cell)); flex: none; display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
+.rg-stage-label {
+  display: block; padding: 0 2px 3px; border-bottom: 1px solid var(--border2); text-align: center;
+  font-size: var(--fs-micro); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rg-subs { display: flex; align-items: flex-end; }
 /* Upright, read bottom to top, as a spreadsheet turns a narrow column's label. */
 .rg-col-text {
   writing-mode: vertical-rl; transform: rotate(180deg); max-height: 104px;
@@ -1182,6 +1199,10 @@ button.rc:hover i { border-color: var(--text2); }
 .rg-job .pill { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .rg-job-title { min-width: 0; flex: 0 1000 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); color: var(--text3); }
 .rg-who { flex: none; display: inline-flex; }
+.rg-age { flex: none; font-variant-numeric: tabular-nums; }
+.rg-job > .ib { margin-left: auto; flex: none; }
+.rg-name { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.rg-row-tag { line-height: 1.2; }
 .rg-sec[data-fit="compact"] .rg-job-title { display: none; }
 
 /* Stacked (a phone): the name, revision and job on one line, the cells on the
@@ -1209,6 +1230,7 @@ button.rc:hover i { border-color: var(--text2); }
 
 .rg-corner-foot { display: flex; align-items: center; gap: 4px; min-height: 30px; }
 .rg-corner .meta { white-space: normal; min-width: 0; }
+.rg-corner-foot { flex-wrap: wrap; }
 .rg-corner-foot .ib { margin: -4px 0; }
 .rg-start { flex: none; }
 .rg-sec:not([data-fit="full"]) .rg-job.has-start .pill { display: none; }
@@ -1226,6 +1248,33 @@ button.rc:hover i { border-color: var(--text2); }
 .rg-add .sel:disabled { opacity: .55; }
 .rg-add-acts { display: flex; gap: var(--sp-2); align-self: center; margin-left: auto; }
 .sr-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--sp-3); }
+
+/* The boxes behind the lines (lines.js): new line, columns, bringing a job in. */
+.ln-place { margin-left: 0; border-color: var(--border); }
+.ln-stages { list-style: none; display: flex; flex-direction: column; gap: var(--sp-3); counter-reset: none; }
+.ln-stage { display: flex; flex-direction: column; gap: 6px; padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); }
+.ln-stage-row, .ln-sub { display: flex; align-items: center; gap: 4px; }
+.ln-stage-row .input, .ln-sub .input { flex: 1; min-width: 0; }
+.ln-num { width: 20px; flex: none; text-align: center; font-size: var(--fs-sm); color: var(--text3); font-variant-numeric: tabular-nums; }
+.ln-subs { list-style: none; display: flex; flex-direction: column; gap: 4px; padding-left: 24px; }
+.ln-subs:empty { display: none; }
+.ln-waits { padding-left: 24px; font-size: var(--fs-sm); }
+.ln-stage > .btn { align-self: flex-start; margin-left: 20px; }
+.ln-mode { align-self: flex-start; }
+.ln-mode button[aria-checked="true"] { background: var(--bg2); color: var(--text); }
+.ln-compare { display: flex; flex-direction: column; gap: var(--sp-3); }
+.ln-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.ln-table th, .ln-table td { padding: 6px 8px; border-bottom: 1px solid var(--bg2); text-align: left; vertical-align: middle; }
+.ln-table thead th { font-size: var(--fs-micro); font-weight: 700; letter-spacing: var(--label-spacing); text-transform: uppercase; color: var(--text3); border-bottom-color: var(--border); }
+.ln-table tbody th { font-weight: 600; color: var(--text); white-space: nowrap; }
+.ln-table .sel { width: 100%; min-width: 160px; }
+.ln-sub-tr th { font-weight: 400; color: var(--text2); padding-left: 24px; }
+.ln-indent { color: var(--text3); margin-right: 6px; }
+.ln-tag { margin-left: 8px; font-size: var(--fs-micro); font-weight: 700; letter-spacing: var(--label-spacing); text-transform: uppercase; color: var(--text3); }
+.ln-left-head { margin-top: var(--sp-2); }
+.ln-left { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.ln-left li { display: flex; align-items: center; gap: var(--sp-2); }
+.ln-left-name { flex: 1; min-width: 0; overflow-wrap: break-word; }
 
 .rg-skel { display: flex; flex-direction: column; gap: 0; }
 .rg-skel .skel-line { margin: 0 0 var(--sp-3); }
@@ -1446,6 +1495,8 @@ button.rc:hover i { border-color: var(--text2); }
   /* Progress on a phone: the header names the page; the counts and Jump to share a line, the filters scroll sideways under them. */
   .rg-head-bar .h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .rg-head-bar .filters { order: 5; width: 100%; flex-wrap: nowrap; overflow-x: auto; margin-right: -16px; padding-right: 16px; }
+  .rg-head-bar > .meta { flex-basis: 100%; }
+  .rg-head-bar > .sp { display: none; }
   .mj-toggle { min-height: 44px; }
   .mj-row { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "pill who age" "main main main" "stage stage stage"; gap: 6px 10px; padding: 12px; }
   .mj-row .mj-who { display: inline-flex; grid-area: who; justify-self: end; }

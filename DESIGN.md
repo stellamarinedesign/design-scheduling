@@ -855,45 +855,92 @@ A read-only list of the jobs the lead has shared: no ticks, no drag, no status m
 
 ### Progress: the design register
 
-The Excel Progress sheet made live (Phase 4, built 2026-11-09). The lead's tab, and a designer's
-to read. One section per category holding products, one row per product, one cell per top-level
-task of the product's current job.
+The Excel Progress sheet made live (Phase 4, built 2026-11-09; product lines with jobs as rows,
+2026-11-19). The lead's tab, and a designer's to read.
 
-- **Head:** "Progress", "N products · M complete", filter pills (All · Incomplete · Has an open
-  job) with counts, and Jump to where there is no pinned sidebar. On a phone the heading is hidden
-  and the pills scroll sideways, as on the Log.
-- **Labels row:** stays at the top of the view while its section scrolls by (pulled up by the
-  view's own padding, so it sits flush). The corner, over the product names, holds the category's
-  dot and path in Friz at title size, its count, and the lead's ⋯ (Add a product, the columns,
-  Show in Tasks). The column labels stand upright (read bottom to top) in the cells' width, as
-  micro uppercase labels in Muted Ash, cut at 104px with the whole name in the tooltip.
-- **Row:** 44px. The product name (body strong, two lines at most) opens the current job; then
-  the cells; the done count ("5/7", tabular); the revision in mono; and the job: its status pill
-  (the lead's opens the status menu), who has it, and its title only when it says more than the
-  name and revision do. With no open job the lead sees a ghost "Start revision" (or "Start a
-  job"). A cancelled product's name is struck through in Muted Ash. Short of room, the job's title
-  gives way first, then the pill ends in "…".
+- **Structure:**
+  - a heading for each category (the sheet's red header line), with its dot, in Friz at view
+    size over a hairline;
+  - under it, a table for each **product line** (the sheet's bold table title);
+  - a row for each job in the line;
+  - a cell for each stage or sub-step of the line's tasks template.
+- **Head:**
+  - "Progress" and "N rows in M product lines · K complete";
+  - filter pills (All · Open · Waiting) with counts;
+  - Jump to, where there is no pinned sidebar;
+  - the lead's "+ Product line".
+
+  On a phone the heading is hidden: the count takes its own line, Jump to and + Product line
+  share the next, and the pills scroll sideways, as on the Log. With no lines yet, the welcome
+  block offers New product line and the import.
+- **Labels row:** stays at the top of the view while its line scrolls by (pulled up by the
+  view's own padding, so it sits flush).
+  - **The corner**, over the job names, holds:
+    - the line's name in Friz at title size;
+    - "N rows · M complete";
+    - a "Progress only" label when the line is off the Tasks list;
+    - the lead's ⋯.
+  - **Column labels** stand upright (read bottom to top) in the cells' width, as micro uppercase
+    labels in Muted Ash, cut at 104px, with the whole name in the tooltip.
+  - **A stage with sub-steps** (Engineering) is a horizontal label in Ash across their columns,
+    over a hairline in Strong Rule, with their upright labels below.
+  - **A stage that waits on the customer** has a small clock over its label.
+- **Row:** 44px.
+  - The job's name (body strong, two lines at most) opens it. Under it, a micro label says
+    "In Tasks" or "Progress only", but only where the row differs from its line.
+  - Then the cells; the done count ("4/7", tabular) with "+N" for tasks outside the columns; the
+    revision in mono.
+  - The status column:
+    - the job's pill (the lead's opens the status menu);
+    - while it waits, its age in amber ("9d");
+    - who has it;
+    - finished, the lead's ghost "Start revision";
+    - the lead's ⋯.
+  - A cancelled row's name is struck through in Muted Ash.
+  - Right-click and long-press open the row's ⋯, and rows drag up and down their line or into
+    another (desktop). On touch, Move up, Move down and Move to another line are in the ⋯.
 - **Cell:** the check control's box (22px, 5px corners) in a 36px cell, with a mark for every
-  state, since a cell has no word beside it. **Done recedes:** a register is mostly done, so done
-  is a check on a Chip Grey fill, and open work is what the eye finds: to do is an empty box
-  outlined in Muted Ash; in progress a half-filled circle on Signal Blue; Ready for check a check
-  on Signal Violet; sent back an exclamation mark on Signal Red; waiting three dots on Signal
-  Amber; cancelled a dash in a dashed box. (The
-  panel's tick, where done is the finish line, keeps its solid done.) A column the job has no task
-  for is a 4px point. A task with tasks inside shows how they stand and opens rather than ticks.
-  The status word is in each cell's name and tooltip.
-- **Fit, per section:** measured against its own width and number of columns, so it holds with
-  the panel open beside it as well as at half-screen. Full: 36px cells, names up to 360px, the
-  job column takes what is left. Compact: 28–32px cells and narrower name, revision and job
-  columns. Stacked (a phone): name, revision and job on the first line; the cells on the second,
-  under the labels, with the count just past the last cell; every target 44px tall.
-- **Add product:** a row at the foot of a section, on Shadow Grey: the name, "Start R1 with the N
-  tasks" (ticked), who has it, Add (the view's one primary) and Done. It stays open for the next,
-  and a name already in the category is refused in Link Coral under the field.
-- **Start revision:** a small guarded dialog: the title (it follows the revision until typed in),
-  the revision in mono, who has it, and "Move R4 to the archive", ticked.
-- **Performance:** sections out of sight are not laid out (`content-visibility: auto`), so a
-  thousand cells redraw in about 25ms.
+  state, since a cell has no word beside it.
+  - **Done recedes.** A register is mostly done, so done is a check on a Chip Grey fill, and open
+    work is what the eye finds:
+    - to do: an empty box outlined in Muted Ash;
+    - in progress: a half-filled circle on Signal Blue;
+    - Ready for check: a check on Signal Violet;
+    - sent back: an exclamation mark on Signal Red;
+    - waiting: three dots on Signal Amber;
+    - cancelled: a dash in a dashed box.
+
+    The panel's tick, where done is the finish line, keeps its solid done.
+  - A column the row has no task for is a 4px point. The lead's click on it offers to add the
+    task, in its place, with its stage when that is missing too.
+  - A task with tasks inside shows how they stand, and opens rather than ticks.
+  - The status word is in each cell's name and tooltip.
+- **Fit, per line:** measured against its own width and number of columns, so it holds with the
+  panel open beside it as well as at half-screen.
+  - **Full:** 36px cells, names up to 360px, the status column takes what is left (at least
+    220px).
+  - **Compact:** 28–32px cells and narrower name, revision and status columns. With Start
+    revision showing, the pill gives way.
+  - **Stacked** (a phone): name, revision and status on the first line; the cells on the second,
+    under the labels, with the count just past the last cell; every target 44px tall.
+- **Add a row:** a row at the foot of a line, on Shadow Grey:
+  - the name, "With the N stages" (ticked), and who has it;
+  - Add (the view's one primary) and Done.
+
+  It stays open for the next row. A name already in the line is refused in Link Coral under the
+  field.
+- **The boxes** (`lines.js`), all guarded dialogs:
+  - **New product line:** name, category, columns copied from another line or set next, and
+    "Show it in Tasks too".
+  - **Columns:** stages as bordered blocks on Band, numbered, each with its name, "Waits on the
+    customer", Move up, Move down and Remove; its sub-steps indented below it, with + Sub-step
+    and + Add a stage.
+  - **Next revision:** the revision in mono and who has it. The button names it ("Start R5").
+  - **Bringing a job in:** a Match / Keep switch, then a table: each stage and sub-step, a select
+    of the job's tasks ("New: to do" first), and the task's status pill now. Below it, "Left
+    over", each task to keep as an extra or archive.
+- **Performance:** lines out of sight are not laid out (`content-visibility: auto`), so a thousand
+  cells redraw in about 25ms.
 
 ### Loading, empty and error states
 

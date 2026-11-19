@@ -121,73 +121,85 @@ export const excelRows = [
 ];
 
 /**
- * A register (the Progress page), INVENTED: a category of lift frames with a
- * tasks template, its products and their revisions, and a category with no
- * template. Every name is made up.
+ * A register (the Progress page) of PRODUCT LINES, INVENTED (owner,
+ * 2026-11-19: no real product, model or customer names). Lifters holds the
+ * line Custom Lifters, whose template is the owner's example: Concept,
+ * Approval (waits on the customer), Engineering with four sub-steps, and
+ * Production. Its rows stray from the template in the usual ways. Davits
+ * holds a listed line; a sub-category holds a line with no template; Minor
+ * fixes has a template but is no line.
  */
-export function registerNodes() {
+export function lineNodes() {
   const n = (o) => ({ archivedAt: null, createdAt: AT, updatedAt: AT, lastActivityAt: AT, ...o });
   const job = (o) => n({ kind: 'task', assignee: LEAD, createdBy: LEAD, revision: null, ...o });
   const part = (o) => n({ kind: 'task', assignee: null, createdBy: LEAD, ...o });
-  const later = (days) => new Date(Date.parse(AT) + days * 864e5).toISOString();
+  const since = '2026-09-25T00:00:00.000Z';
   return [
     n({ id: 'm', kind: 'group', parentId: null, order: 1024, name: 'Products' }),
-    n({ id: 'lf', kind: 'group', parentId: 'm', order: 1024, name: 'Lift Frames', colour: 3,
-      stepsTemplate: [{ label: 'Concept' }, { label: '3D', children: [{ label: 'Body' }, { label: 'Arm' }] }, { label: 'Drawings' }, { label: 'Build Form' }] }),
-    n({ id: 'lf-small', kind: 'group', parentId: 'lf', order: 9216, name: 'Small' }),
-    n({ id: 'misc', kind: 'group', parentId: 'm', order: 2048, name: 'Odd Parts' }),
+    n({ id: 'lift', kind: 'group', parentId: 'm', order: 1024, name: 'Lifters', colour: 3 }),
+    n({ id: 'cl', kind: 'group', parentId: 'lift', order: 1024, name: 'Custom Lifters', line: true, listed: false,
+      stepsTemplate: [{ label: 'Concept' }, { label: 'Approval', waits: true },
+        { label: 'Engineering', children: [{ label: '3D Model' }, { label: 'Drawing' }, { label: 'Laser' }, { label: 'PDF' }] }, { label: 'Production' }] }),
 
-    // P1: R1 finished (older), R2 open and under way.
-    n({ id: 'p1', kind: 'product', parentId: 'lf', order: 1024, name: 'Frame 200' }),
-    job({ id: 'p1r1', parentId: 'p1', order: 1024, title: 'Frame 200 R1', status: 'done', revision: 'R1', createdAt: later(0) }),
-    part({ id: 'p1r1a', parentId: 'p1r1', order: 1024, title: 'Concept', status: 'done' }),
-    job({ id: 'p1r2', parentId: 'p1', order: 2048, title: 'Frame 200 R2', status: 'in_progress', revision: 'R2', createdAt: later(5) }),
-    part({ id: 'a1', parentId: 'p1r2', order: 1024, title: 'Concept', status: 'done' }),
-    part({ id: 'a2', parentId: 'p1r2', order: 2048, title: '3D', status: 'todo' }),
-    part({ id: 'a2a', parentId: 'a2', order: 1024, title: 'Body', status: 'done' }),
-    part({ id: 'a2b', parentId: 'a2', order: 2048, title: 'Arm', status: 'todo' }),
-    part({ id: 'a3', parentId: 'p1r2', order: 3072, title: 'drawings', status: 'fix' }),
-    part({ id: 'a4', parentId: 'p1r2', order: 4096, title: 'Build form', status: 'cancelled' }),
+    // Custom 45: under way. No PDF yet, a sub-step outside the template, "drawing" in lower case.
+    job({ id: 'r1', parentId: 'cl', order: 1024, title: 'Custom 45', status: 'in_progress', revision: 'R2' }),
+    part({ id: 'r1c', parentId: 'r1', order: 1024, title: 'Concept', status: 'done' }),
+    part({ id: 'r1a', parentId: 'r1', order: 2048, title: 'Approval', status: 'done', waits: true }),
+    part({ id: 'r1e', parentId: 'r1', order: 3072, title: 'Engineering', status: 'todo' }),
+    part({ id: 'r1e1', parentId: 'r1e', order: 1024, title: '3D Model', status: 'done' }),
+    part({ id: 'r1e2', parentId: 'r1e', order: 2048, title: 'drawing', status: 'in_progress' }),
+    part({ id: 'r1e3', parentId: 'r1e', order: 3072, title: 'Laser', status: 'todo' }),
+    part({ id: 'r1e9', parentId: 'r1e', order: 4096, title: 'FEA', status: 'todo' }),
+    part({ id: 'r1p', parentId: 'r1', order: 4096, title: 'Production', status: 'todo' }),
 
-    // P2: one job, finished; every cell done.
-    n({ id: 'p2', kind: 'product', parentId: 'lf', order: 2048, name: 'Frame 300' }),
-    job({ id: 'p2r4', parentId: 'p2', order: 1024, title: 'Frame 300 R4', status: 'done', revision: 'R4' }),
-    part({ id: 'b1', parentId: 'p2r4', order: 1024, title: 'Concept', status: 'done' }),
-    part({ id: 'b2', parentId: 'p2r4', order: 2048, title: '3D', status: 'done' }),
-    part({ id: 'b3', parentId: 'p2r4', order: 3072, title: 'Drawings', status: 'done' }),
-    part({ id: 'b4', parentId: 'p2r4', order: 4096, title: 'Build Form', status: 'done' }),
+    // Model 500: waiting on the customer at Approval; on the lists by its own switch; an extra task.
+    job({ id: 'r2', parentId: 'cl', order: 2048, title: 'Model 500', status: 'waiting', listed: true,
+      waiting: { note: 'Approval with the customer', since, prevStatus: 'in_progress', blockedBy: [], stageId: 'r2a' } }),
+    part({ id: 'r2c', parentId: 'r2', order: 1024, title: 'Concept', status: 'done' }),
+    part({ id: 'r2a', parentId: 'r2', order: 2048, title: 'Approval', status: 'waiting', waits: true,
+      waiting: { note: 'On the customer', since, prevStatus: 'todo', blockedBy: [] } }),
+    part({ id: 'r2e', parentId: 'r2', order: 3072, title: 'Engineering', status: 'todo' }),
+    part({ id: 'r2e1', parentId: 'r2e', order: 1024, title: '3D Model', status: 'todo' }),
+    part({ id: 'r2e2', parentId: 'r2e', order: 2048, title: 'Drawing', status: 'todo' }),
+    part({ id: 'r2e3', parentId: 'r2e', order: 3072, title: 'Laser', status: 'todo' }),
+    part({ id: 'r2e4', parentId: 'r2e', order: 4096, title: 'PDF', status: 'todo' }),
+    part({ id: 'r2p', parentId: 'r2', order: 4096, title: 'Production', status: 'todo' }),
+    part({ id: 'r2x', parentId: 'r2', order: 5120, title: 'Paint spec', status: 'done' }),
 
-    // P3: no job yet.
-    n({ id: 'p3', kind: 'product', parentId: 'lf', order: 3072, name: 'Frame 400' }),
+    // Model 600: cancelled. Model 700: done, with no tasks at all.
+    job({ id: 'r3', parentId: 'cl', order: 3072, title: 'Model 600', status: 'cancelled' }),
+    part({ id: 'r3c', parentId: 'r3', order: 1024, title: 'Concept', status: 'done' }),
+    job({ id: 'r4', parentId: 'cl', order: 4096, title: 'Model 700', status: 'done' }),
 
-    // P4: strays from the template - no Concept, an extra task, one in a section, a waiting one.
-    n({ id: 'p4', kind: 'product', parentId: 'lf', order: 4096, name: 'Frame 500' }),
-    job({ id: 'p4r1', parentId: 'p4', order: 1024, title: 'Frame 500 R1', status: 'waiting', revision: 'Rev 2' }),
-    part({ id: 'c2', parentId: 'p4r1', order: 1024, title: '3D', status: 'waiting' }),
-    part({ id: 'cx', parentId: 'p4r1', order: 2048, title: 'Weld map', status: 'done' }),
-    n({ id: 'csec', kind: 'group', parentId: 'p4r1', order: 3072, name: 'Paperwork' }),
-    part({ id: 'c3', parentId: 'csec', order: 1024, title: 'Drawings', status: 'check', assignee: LEAD }),
-    part({ id: 'c4', parentId: 'p4r1', order: 4096, title: 'Build Form', status: 'in_progress' }),
+    // A sub-category with a line that has no template: its columns are the names its rows use.
+    n({ id: 'small', kind: 'group', parentId: 'lift', order: 2048, name: 'Small lifters' }),
+    n({ id: 'cp', kind: 'group', parentId: 'small', order: 1024, name: 'Compact', line: true, listed: false }),
+    job({ id: 'c1', parentId: 'cp', order: 1024, title: 'C1', status: 'in_progress' }),
+    part({ id: 'c1a', parentId: 'c1', order: 1024, title: 'Frame', status: 'done' }),
+    part({ id: 'c1b', parentId: 'c1', order: 2048, title: 'Print', status: 'todo' }),
+    job({ id: 'c2', parentId: 'cp', order: 2048, title: 'C2', status: 'todo' }),
+    part({ id: 'c2a', parentId: 'c2', order: 1024, title: 'Print', status: 'todo' }),
+    part({ id: 'c2b', parentId: 'c2', order: 2048, title: 'Fit', status: 'todo' }),
+    part({ id: 'c2c', parentId: 'c2', order: 3072, title: 'frame', status: 'todo' }),
 
-    // P5: cancelled.
-    n({ id: 'p5', kind: 'product', parentId: 'lf', order: 5120, name: 'Frame 600' }),
-    job({ id: 'p5r1', parentId: 'p5', order: 1024, title: 'Frame 600 R1', status: 'cancelled', revision: 'R1' }),
-    part({ id: 'e1', parentId: 'p5r1', order: 1024, title: 'Concept', status: 'done' }),
+    // A line on the lists (made from a category in Tasks).
+    n({ id: 'dav', kind: 'group', parentId: 'm', order: 2048, name: 'Davits', colour: 5 }),
+    n({ id: 'fx', kind: 'group', parentId: 'dav', order: 1024, name: 'Fixed arm', line: true, stepsTemplate: [{ label: 'Model' }, { label: 'Drawings' }] }),
+    job({ id: 'f1', parentId: 'fx', order: 1024, title: 'F120', status: 'done', revision: 'R4' }),
+    part({ id: 'f1a', parentId: 'f1', order: 1024, title: 'Model', status: 'done' }),
+    part({ id: 'f1b', parentId: 'f1', order: 2048, title: 'Drawings', status: 'done' }),
 
-    // A sub-category with a product, under the template above it.
-    n({ id: 'p6', kind: 'product', parentId: 'lf-small', order: 1024, name: 'Frame 50' }),
-    job({ id: 'p6r1', parentId: 'p6', order: 1024, title: 'Frame 50 R1', status: 'todo' }),
-
-    // No template: the columns are the names the jobs use.
-    n({ id: 'p7', kind: 'product', parentId: 'misc', order: 1024, name: 'Clip A' }),
-    job({ id: 'p7r1', parentId: 'p7', order: 1024, title: 'Clip A R1', status: 'in_progress' }),
-    part({ id: 'f1', parentId: 'p7r1', order: 1024, title: 'Model', status: 'done' }),
-    part({ id: 'f2', parentId: 'p7r1', order: 2048, title: 'Print', status: 'todo' }),
-    n({ id: 'p8', kind: 'product', parentId: 'misc', order: 2048, name: 'Clip B' }),
-    job({ id: 'p8r1', parentId: 'p8', order: 1024, title: 'Clip B R1', status: 'todo' }),
-    part({ id: 'g1', parentId: 'p8r1', order: 1024, title: 'Print', status: 'todo' }),
-    part({ id: 'g2', parentId: 'p8r1', order: 2048, title: 'Test fit', status: 'todo' }),
-    part({ id: 'g3', parentId: 'p8r1', order: 3072, title: 'model', status: 'todo' }),
+    // A template, but no line: not on the Progress page. Its job is brought in by a test.
+    n({ id: 'minor', kind: 'group', parentId: 'm', order: 3072, name: 'Minor fixes', stepsTemplate: [{ label: 'Fix' }] }),
+    job({ id: 'oj', parentId: 'minor', order: 1024, title: 'Old job', status: 'waiting',
+      waiting: { note: 'Parts from the supplier', since, prevStatus: 'in_progress', blockedBy: ['f1'] } }),
+    part({ id: 'oj1', parentId: 'oj', order: 1024, title: 'concept', status: 'done' }),
+    part({ id: 'oj2', parentId: 'oj', order: 2048, title: '3D model', status: 'in_progress' }),
+    part({ id: 'oj3', parentId: 'oj', order: 3072, title: 'Approval', status: 'todo' }),
+    part({ id: 'oj4', parentId: 'oj', order: 4096, title: 'Notes', status: 'todo' }),
+    part({ id: 'oj4a', parentId: 'oj4', order: 1024, title: 'Inside the notes', status: 'todo' }),
+    n({ id: 'ojs', kind: 'group', parentId: 'oj', order: 5120, name: 'Paper' }),
+    part({ id: 'oj5', parentId: 'ojs', order: 1024, title: 'Drawing', status: 'done' }),
   ];
 }
 

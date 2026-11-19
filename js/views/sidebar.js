@@ -17,8 +17,9 @@
 // shows its notes and those of the categories inside it, the count is its
 // open issues and ideas, and "All notes" clears it.
 //
-// ON PROGRESS a category jumps to its section of the register, or the first
-// section inside it (#/progress?c=<id>).
+// ON PROGRESS a category or product line jumps to its place in the register
+// (#/progress?c=<id>), and every line is listed. Elsewhere the tree is the
+// listed one (state.listIdx): a line kept on the Progress page is not here.
 
 import { el, icon, iconBtn, dot, withMenu } from '../ui.js';
 import { state } from '../state.js';
@@ -48,9 +49,9 @@ function currentCategory() {
 
 export function renderSidebar(root, { notes = [] } = {}) {
   root.textContent = '';
-  const { idx } = state;
   const onLog = route.parts[0] === 'log';
   const onProgress = route.parts[0] === 'progress';
+  const idx = onLog || onProgress ? state.idx : state.listIdx;
   const reveal = onProgress ? revealSection : revealCategory;
   root.append(el('div', { class: 'side-head' },
     el('span', { class: 'lbl' }, 'Categories'), el('span', { class: 'sp' }),

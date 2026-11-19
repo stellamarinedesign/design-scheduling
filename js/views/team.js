@@ -50,12 +50,12 @@ export function renderTeam(root) {
 
 function column(email) {
   const you = email === state.me;
-  const groups = TM.teamColumn(state.idx, email, { includeUnassigned: you });
+  const groups = TM.teamColumn(state.listIdx, email, { includeUnassigned: you });
   const open = groups.reduce((n, g) => n + g.rows.length, 0);
   const done = TM.doneCounts(state.idx, email);
   const checks = groups.find((g) => g.key === 'check').rows;
   const oldest = checks.length ? ageLabel(TM.statusSince(checks[0])) : null;
-  const lane = TM.crewLane(state.idx, email);
+  const lane = TM.crewLane(state.listIdx, email);
   const role = roleOf(state.access, email);
   const col = el('section', { class: 'team-col', dataset: { who: email }, 'aria-label': personName(email) },
     el('div', { class: 'team-head' },

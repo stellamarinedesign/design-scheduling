@@ -25,6 +25,12 @@
 // Everything with a ⋯ also opens that menu on right-click, long-press and
 // Shift+F10 (ui.js withMenu). Categories drag like tiles: reorder among
 // siblings, or drop onto a category to move inside it.
+//
+// PRODUCT LINES (owner, 2026-11-19) are categories marked as one: the
+// Progress page's tables. The list is drawn from the listed tree
+// (state.listIdx), so the rows a line keeps on the Progress page, and a line
+// with none listed, are not here. A line's ⋯ switches it on and off the
+// Tasks list; "Product line" in a category's ⋯ makes it one.
 
 import { el, icon, iconBtn, btn, pill, dot, menu, prefs, isPhone, withMenu } from '../ui.js';
 import { state, node, personName } from '../state.js';
@@ -32,7 +38,6 @@ import * as T from '../tree.js';
 import * as S from '../status.js';
 import * as A from '../actions.js';
 import * as SH from '../sharing.js';
-import * as RG from '../register.js';
 import { shareMenu, shareText } from './managers.js';
 import { ageDays } from '../dates.js';
 import { tile, row, band, enableDrag, backlogDays } from './tile.js';
@@ -166,7 +171,7 @@ export function renderTasks(root, id) {
 // ---------------------------------------------------------------------------
 
 function fullList(inner) {
-  const { idx } = state;
+  const idx = state.listIdx;
   if (!idx.nodes.length) { inner.append(welcome()); return; }
   const target = takeReveal();
   if (target && target !== 'top' && node(target)) {
@@ -205,7 +210,7 @@ function looseSection(loose) {
 
 /** A category (or master) as a full-width section: expanded, or (a master) folded to its header. */
 function categorySection(g) {
-  const { idx } = state;
+  const idx = state.listIdx;
   const master = !g.parentId;
   const open = isExpanded(g);
   const cats = T.childrenOf(idx, g.id).filter(T.isGroupLike).length;
@@ -220,14 +225,14 @@ function categorySection(g) {
     icon(open ? 'chevDown' : 'chevRight', 16)),
   master ? null : dot(T.colourOf(idx, g.id)),
   el('h2', { class: 'h2' }, T.nameOf(g)),
-  g.kind === T.KIND.product ? el('span', { class: 'grp-kind' }, 'Product') : null,
+  T.isLine(g) ? el('span', { class: 'grp-kind', title: 'A table on the Progress page' }, 'Product line') : null,
   // Shared with managers here (not just inherited): said once, on the group that chose it.
   ['status', 'stage'].includes(SH.choiceOf(g)) ? el('span', { class: 'grp-kind', title: `Shared with managers: ${SH.SHARE_LABEL[SH.choiceOf(g)]}` }, 'Shared') : null,
   el('span', { class: 'meta' }, master ? `${cats} ${cats === 1 ? 'category' : 'categories'} · ${count} open` : `${count} open`),
   el('span', { class: 'sp' }),
   // A phone keeps the header to one row: + Job, + Group and the switches live in ⋯ there.
   open && !isPhone() ? btn('Job', () => addJob(g.id), { cls: 'sm ghost', ic: 'plus', title: `New job in ${T.nameOf(g)}` }) : null,
-  open && !isPhone() && g.kind === T.KIND.group ? btn('Group', () => addGroup(g.id), { cls: 'sm ghost', ic: 'folderPlus', title: `New category inside ${T.nameOf(g)}` }) : null,
+  open && !isPhone() && g.kind === T.KIND.group && !T.isLine(g) ? btn('Group', () => addGroup(g.id), { cls: 'sm ghost', ic: 'folderPlus', title: `New category inside ${T.nameOf(g)}` }) : null,
   ...(open && !isPhone() ? switches(g, { compact: true }) : []),
   iconBtn('more', `${T.nameOf(g)} actions`, (e) => { e.stopPropagation(); groupMenu(e.currentTarget, g); }, 'sm'));
   withMenu(head, (at) => groupMenu(head.querySelector('.ib[aria-label$="actions"]') ?? head, g, { at }));
@@ -241,7 +246,7 @@ function categorySection(g) {
 
 /** A collapsed category, as a tile in its parent's grid. Click to expand in place. */
 function categoryTile(g) {
-  const { idx } = state;
+  const idx = state.listIdx;
   const jobs = T.jobsUnder(idx, g.id).filter((j) => S.isOpen(j.status));
   const expand = () => { setExpanded([g.id], true); rerender(); };
   const a = el('article', {
@@ -252,7 +257,7 @@ function categoryTile(g) {
   el('div', { class: 'cat-top' },
     dot(T.colourOf(idx, g.id)), el('span', { class: 'nm' }, T.nameOf(g)),
     iconBtn('more', `${T.nameOf(g)} actions`, (e) => { e.stopPropagation(); groupMenu(e.currentTarget, g); }, 'sm')),
-  ...countLines(jobs, g.kind === T.KIND.product ? 'Product' : null));
+  ...countLines(jobs, T.isLine(g) ? 'Product line' : null));
   withMenu(a, (at) => groupMenu(a.querySelector('.ib') ?? a, g, { at }));
   return a;
 }
@@ -291,7 +296,7 @@ function countLines(jobs, kindWord = null) {
  * Cancelled folded away.
  */
 function containerBody(g) {
-  const { idx } = state;
+  const idx = state.listIdx;
   const kids = T.childrenOf(idx, g?.id ?? null).filter((k) => k.kind !== T.KIND.step);
   const jobs = kids.filter((k) => k.kind === T.KIND.task);
   const cats = g ? kids.filter(T.isGroupLike) : [];
@@ -346,7 +351,7 @@ function containerBody(g) {
   if (!out.length) {
     out.push(el('div', { class: 'empty' }, el('span', {}, g ? 'Nothing in here yet.' : 'No jobs here.'),
       g ? btn('Job', () => addJob(g.id), { cls: 'sm', ic: 'plus' }) : null,
-      g && g.kind === T.KIND.group ? btn('Group', () => addGroup(g.id), { cls: 'sm', ic: 'folderPlus' }) : null));
+      g && g.kind === T.KIND.group && !T.isLine(g) ? btn('Group', () => addGroup(g.id), { cls: 'sm', ic: 'folderPlus' }) : null));
   }
   return out;
 }
@@ -364,7 +369,7 @@ function crumbs(n) {
 }
 
 function focusPage(inner, g) {
-  const { idx } = state;
+  const idx = state.listIdx;
   const colour = g ? T.colourOf(idx, g.id) : null;
   const open = g ? T.openJobCount(idx, g.id) : T.childrenOf(idx, null).filter((c) => c.kind === T.KIND.task && S.isOpen(c.status)).length;
   inner.append(el('div', { class: 'sec', style: { gap: '10px' } },
@@ -372,12 +377,12 @@ function focusPage(inner, g) {
     el('div', { class: 'view-head' },
       // The dot rides inside the heading, so a long name wraps with it rather than leaving it alone on a line.
       el('h1', { class: 'h1 with-dot' }, g ? dot(colour, true) : null, g ? T.nameOf(g) : 'Not in a category'),
-      g?.kind === T.KIND.product ? el('span', { class: 'grp-kind' }, 'Product') : null,
+      T.isLine(g) ? el('span', { class: 'grp-kind' }, 'Product line') : null,
       el('span', { class: 'meta' }, `${open} open`),
       el('span', { class: 'sp' }),
       btn('Back to the full list', () => (g ? revealCategory(g.id) : go('/tasks')), { cls: 'sm ghost', ic: 'back' }),
       btn('Job', () => addJob(g?.id ?? null), { cls: 'sm', ic: 'plus', title: 'New job here (N)' }),
-      g && g.kind === T.KIND.group ? btn('Group', () => addGroup(g.id), { cls: 'sm', ic: 'folderPlus', title: 'New group inside this one' }) : null,
+      g && g.kind === T.KIND.group && !T.isLine(g) ? btn('Group', () => addGroup(g.id), { cls: 'sm', ic: 'folderPlus', title: 'New group inside this one' }) : null,
       ...switches(g),
       g ? iconBtn('more', `${T.nameOf(g)} actions`, (e) => groupMenu(e.currentTarget, g, { focus: true })) : null)));
   const body = el('div', { class: 'sec tree' });
@@ -431,17 +436,16 @@ async function addJob(parentId) {
   openQuickAdd({ parentId });
 }
 
-async function addGroup(parentId, { kind = T.KIND.group } = {}) {
+async function addGroup(parentId) {
   const parent = parentId ? node(parentId) : null;
   const inJob = parent && (parent.kind === T.KIND.task || T.isSection(state.idx, parent));
-  const what = kind === T.KIND.product ? 'product' : inJob ? 'section' : parent ? 'category' : 'master category';
+  const what = inJob ? 'section' : parent ? 'category' : 'master category';
   const name = await promptDialog({
     title: `New ${what}`, label: 'Name', ok: 'Add',
-    placeholder: kind === T.KIND.product ? 'e.g. Model 450' : inJob ? 'e.g. Laser' : 'e.g. Davits',
-    body: kind === T.KIND.product ? 'A product holds its jobs, one per revision. It is a row on the Progress page, with a cell for each task of its current job.' : '',
+    placeholder: inJob ? 'e.g. Laser' : 'e.g. Davits',
   });
   if (name) {
-    const id = A.createGroup({ name, parentId, kind });
+    const id = A.createGroup({ name, parentId });
     if (id && parentId) setExpanded([parentId], true);
   }
 }
@@ -459,7 +463,7 @@ export function groupMenu(anchor, g, { at = null, focus = false } = {}) {
       : { label: 'Expand', icon: 'chevDown', onSelect: () => { setExpanded([g.id], true); rerender(); } }) : null,
     !focus ? { label: 'Focus: show it alone', icon: 'page', onSelect: () => go(`/tasks/${g.id}`) } : { label: 'Show it in the full list', icon: 'back', onSelect: () => revealCategory(g.id) },
     { label: 'New job here', icon: 'plus', onSelect: () => addJob(g.id) },
-    g.kind === T.KIND.group ? { label: 'New category inside', icon: 'folderPlus', onSelect: () => addGroup(g.id) } : null,
+    g.kind === T.KIND.group && !T.isLine(g) ? { label: 'New category inside', icon: 'folderPlus', onSelect: () => addGroup(g.id) } : null,
     hasJobs ? (jobsFolded(g.id)
       ? { label: 'Show the jobs as tiles', icon: 'grid', onSelect: () => { setJobsFolded(g.id, false); rerender(); } }
       : { label: 'Fold the jobs into one tile', icon: 'tasks', onSelect: () => { setJobsFolded(g.id, true); rerender(); } }) : null,
@@ -479,7 +483,11 @@ export function groupMenu(anchor, g, { at = null, focus = false } = {}) {
     isCat && g.kind === T.KIND.group ? { label: 'Colour…', icon: 'grid', onSelect: () => colourMenu(anchor, g) } : null,
     isCat ? { label: 'Tasks template…', icon: 'tasks', onSelect: () => editTemplate(g) } : null,
     lead && isCat ? { label: 'Share with managers…', icon: 'team', hint: shareText(g) === 'Not shared' ? null : shareText(g).split(' · ')[0], onSelect: () => shareMenu(anchor, g, { at }) } : null,
-    lead && isCat && g.kind === T.KIND.group && !isTop ? { label: 'Add a product', icon: 'plus', onSelect: () => addGroup(g.id, { kind: T.KIND.product }) } : null,
+    // A product line is a table on the Progress page; a line chooses whether it shows here too.
+    lead && isCat && g.kind === T.KIND.group && !isTop && !T.childrenOf(state.idx, g.id).some(T.isGroupLike)
+      ? { label: 'Product line', icon: 'register', checked: T.isLine(g), hint: T.isLine(g) ? 'on Progress' : null, onSelect: () => A.setLine(g.id, !T.isLine(g)) } : null,
+    lead && T.isLine(g) ? { label: 'Show in Tasks', icon: 'tasks', checked: g.listed !== false, onSelect: () => A.setListed(g.id, g.listed === false) } : null,
+    lead && T.isLine(g) ? { label: 'Open on Progress', icon: 'register', onSelect: async () => (await import('./progress.js')).revealSection(g.id) } : null,
     lead && isCat && g.kind === T.KIND.group ? { label: 'Turn into a job', icon: 'restore', onSelect: () => A.turnIntoJob(g.id) } : null,
     { label: 'Move to…', icon: 'move', onSelect: async () => (await import('./pickers.js')).moveDialog(g.id) },
     'sep',
@@ -529,16 +537,14 @@ function doneFold(parentId, done, page, kind = 'done') {
   const when = (t) => String((kind === 'cancelled' ? t.cancelled?.at : t.doneAt) ?? t.updatedAt);
   const sorted = [...done].sort((a, b) => when(b).localeCompare(when(a)));
   const word = kind === 'cancelled' ? 'Cancelled' : 'Done';
-  // Inside a product, the current revision is its row on the Progress page:
-  // archiving everything finished would empty the row, so it stays.
-  const current = page?.kind === T.KIND.product ? RG.currentJob(state.idx, page.id).job?.id : null;
-  const archivable = done.filter((d) => d.id !== current);
+  // In a product line, a finished job is still its row on the Progress page:
+  // archiving them all at once would empty the register, so it is not offered.
+  const inLine = T.isLine(page);
   const wrap = el('div', { class: 'done-fold' },
     el('div', { class: 'row' },
       btn(`${word} ${done.length}`, () => { prefs.set(key, !openFold); rerender(); }, { cls: 'sm ghost', ic: openFold ? 'chevDown' : 'chevRight', attrs: { 'aria-expanded': String(openFold) } }),
       el('span', { class: 'sp' }),
-      archivable.length ? btn(archivable.length < done.length ? 'Archive older revisions' : `Archive all ${word.toLowerCase()}`, () => A.archive(archivable.map((d) => d.id)),
-        { cls: 'sm ghost', ic: 'archive', title: archivable.length < done.length ? 'The current revision stays: it is the product row on the Progress page' : null }) : null));
+      inLine ? el('span', { class: 'meta' }, 'Rows of the Progress page') : btn(`Archive all ${word.toLowerCase()}`, () => A.archive(done.map((d) => d.id)), { cls: 'sm ghost', ic: 'archive' })));
   if (openFold) {
     const shown = all ? sorted : sorted.slice(0, 4);
     const mode = viewMode(page);

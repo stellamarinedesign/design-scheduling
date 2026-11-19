@@ -37,7 +37,7 @@ function ordered(list) {
 }
 
 /** The Backlog pool for whoever is looking (the logic is backlog.js). */
-export const backlogPool = () => BL.backlogPool(state.idx, { me: state.me, days: backlogDays() });
+export const backlogPool = () => BL.backlogPool(state.listIdx, { me: state.me, days: backlogDays() });
 
 /** How many columns a grid is showing right now. */
 const columns = (grid) => getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length || 1;
@@ -54,7 +54,8 @@ export function renderHome(root) {
   if (ask) inner.append(ask);
 
   // ── My work ──
-  const mine = state.idx.nodes.filter((n) => n.kind === T.KIND.task && isMine(n));
+  // Rows kept on the Progress page are not on Home (state.js, listIdx).
+  const mine = state.listIdx.nodes.filter((n) => n.kind === T.KIND.task && isMine(n));
   let filter = prefs.get('homeFilter', 'in_progress');
   if (!FILTERS.some((f) => f.key === filter)) filter = 'in_progress';
   const f = FILTERS.find((x) => x.key === filter);
@@ -146,7 +147,7 @@ export function renderHome(root) {
 
 function backlogTile(t, pool) {
   // Hiding is for an item whose job (or a job above it) is in the Backlog too: it stops the doubling up.
-  const hide = BL.canHideFromBacklog(state.idx, t.id, pool);
+  const hide = BL.canHideFromBacklog(state.listIdx, t.id, pool);
   return tile(t, {
     path: true, variant: 'backlog',
     menuExtra: hide ? [{ label: 'Hide from the Backlog', icon: 'hide', onSelect: () => A.setBacklogIgnored(t.id, true) }] : [],

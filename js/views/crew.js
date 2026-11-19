@@ -136,7 +136,7 @@ export function crewSection() {
   sec.append(el('div', { class: 'lrow with-track axis', 'aria-hidden': 'true' }, el('span', {}), el('span', {}),
     el('span', { class: 'axis-marks' }, el('span', {}, '2 wk'), el('span', {}, '1 wk'), el('span', {}, 'now')), el('span', {}), el('span', {})));
   for (const email of crew) {
-    const lane = TM.crewLane(state.idx, email);
+    const lane = TM.crewLane(state.listIdx, email);
     const box = el('div', { class: 'lane' },
       el('div', { class: 'lane-head' },
         face(email),

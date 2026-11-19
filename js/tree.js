@@ -2,11 +2,15 @@
 //
 // GROUPS ANYWHERE. Every node is a `tasks` document with a `kind`:
 //   group    a category: master categories at the top, categories and
-//            sub-categories inside them, or sections inside a job;
-//   product  a product row for the Progress page (Phase 4); its jobs are its
-//            revisions;
-//   task     a job (its parent is a group, a product, or nothing) or a task
-//            (anything under a job, at any depth).
+//            sub-categories inside them, or sections inside a job. A
+//            category marked `line: true` is a PRODUCT LINE: a table on the
+//            Progress page, its jobs the rows, its tasks template the columns
+//            (owner, 2026-11-19);
+//   task     a job (its parent is a group, or nothing) or a task (anything
+//            under a job, at any depth).
+// `product` was a Progress row holding revision jobs (2026-11-09). It was
+// never used on the live data and is no longer made; a stray one in local
+// data is read as a group, so nothing in it goes missing.
 // Siblings of every kind share one manual `order`. Nothing here knows any
 // category by name or assumes a depth: a node's category path, colour and
 // tasks template are read off its group ancestors.
@@ -108,6 +112,52 @@ export function ancestorChain(idx, id) {
 }
 
 export const isGroupLike = (n) => n?.kind === KIND.group || n?.kind === KIND.product;
+
+// ---------------------------------------------------------------------------
+// product lines and what the lists show (owner, 2026-11-19)
+// ---------------------------------------------------------------------------
+
+/** A product line: a category marked as one (never a section inside a job). */
+export const isLine = (n) => n?.kind === KIND.group && n.line === true;
+
+/** The product line a job is a row of, or null. */
+export function lineOfRow(idx, job) {
+  const p = job?.kind === KIND.task ? parentOf(idx, job) : null;
+  return isLine(p) ? p : null;
+}
+
+/**
+ * Is a row on the lists (Tasks, Home, the Backlog, Crew, the designers'
+ * lists)? By its own switch when it has one, else by its line's. A line made
+ * on the Progress page starts off them; a job that is not a row always is.
+ */
+export function rowListed(idx, job) {
+  const line = lineOfRow(idx, job);
+  if (!line) return true;
+  if (typeof job.listed === 'boolean') return job.listed;
+  return line.listed !== false;
+}
+
+/**
+ * The nodes the lists are drawn from: everything but the rows kept on the
+ * Progress page (and what is inside them), and the lines left with nothing
+ * listed. Search, the panel and the Progress page read the whole tree.
+ */
+export function listedNodes(idx) {
+  const hidden = new Set();
+  for (const n of idx.nodes) {
+    if (!isLine(n)) continue;
+    let shown = 0;
+    for (const c of childrenOf(idx, n.id)) {
+      if (c.kind !== KIND.task) continue;
+      if (rowListed(idx, c)) { shown += 1; continue; }
+      hidden.add(c.id);
+      for (const d of descendantIds(idx, c.id)) hidden.add(d);
+    }
+    if (n.listed === false && !shown) hidden.add(n.id);
+  }
+  return hidden.size ? idx.nodes.filter((n) => !hidden.has(n.id)) : idx.nodes;
+}
 
 /** What a node is called on screen, whatever its kind (a step not yet converted has a label). */
 export const nameOf = (n) => (n ? (n.kind === KIND.step ? n.label : n.kind === KIND.task ? n.title : n.name) ?? '' : '');
@@ -250,9 +300,14 @@ export function stepsTemplateOf(idx, id) {
   return null;
 }
 
+/** "(waits)" after a task in a template's text: starting it puts its job into Waiting. */
+const WAITS = /\s*\((?:waits|waits on the customer)\)\s*$/i;
+
 /**
  * A tasks template as text, one task a line, the tasks inside one indented by
- * two spaces or a tab; and back. The template is stored as [{label, children?}].
+ * two spaces or a tab; and back. The template is stored as
+ * [{label, children?, waits?}]; a task that waits on the customer is written
+ * "Approval (waits)".
  */
 export function templateFromText(text) {
   const root = [];
@@ -261,14 +316,16 @@ export function templateFromText(text) {
     if (!raw.trim()) continue;
     const lead = /^[\t ]*/.exec(raw)[0].replace(/\t/g, '  ').length;
     const depth = Math.floor(lead / 2);
-    const label = raw.trim().replace(/^[-*•]\s*/, '');
+    let label = raw.trim().replace(/^[-*•]\s*/, '');
+    const waits = WAITS.test(label);
+    if (waits) label = label.replace(WAITS, '');
     while (stack.length > 1 && stack[stack.length - 1].depth >= depth) stack.pop();
-    const item = { label };
+    const item = waits ? { label, waits: true } : { label };
     const parent = stack[stack.length - 1];
     (parent.children).push(item);
     stack.push({ depth, children: (item.children = []) });
   }
-  const prune = (list) => list.map((i) => (i.children?.length ? { label: i.label, children: prune(i.children) } : { label: i.label }));
+  const prune = (list) => list.map((i) => ({ label: i.label, ...(i.waits ? { waits: true } : {}), ...(i.children?.length ? { children: prune(i.children) } : {}) }));
   return prune(root);
 }
 
@@ -299,7 +356,10 @@ export function tasksFromTemplate(template, parentId, { at, by, newId }) {
   const walk = (list, pid) => list.forEach((t, i) => {
     const item = typeof t === 'string' ? { label: t } : t;
     const id = newId();
-    out.push(blankTask({ id, parentId: pid, order: (i + 1) * ORDER_GAP, title: item.label, at, by }));
+    const task = blankTask({ id, parentId: pid, order: (i + 1) * ORDER_GAP, title: item.label, at, by });
+    // A stage that waits on the customer: starting it puts the job into Waiting (status.js).
+    if (item.waits) task.waits = true;
+    out.push(task);
     if (item.children?.length) walk(item.children, id);
   });
   walk(template ?? [], parentId);
@@ -309,7 +369,7 @@ export function tasksFromTemplate(template, parentId, { at, by, newId }) {
 export function templateToText(template, depth = 0) {
   return (template ?? []).map((t) => {
     const item = typeof t === 'string' ? { label: t } : t;
-    const line = `${'  '.repeat(depth)}${item.label}`;
+    const line = `${'  '.repeat(depth)}${item.label}${item.waits ? ' (waits)' : ''}`;
     return item.children?.length ? `${line}\n${templateToText(item.children, depth + 1)}` : line;
   }).join('\n');
 }
@@ -372,6 +432,8 @@ export function nestProblem(idx, movingId, parentId) {
     case KIND.group:
       if (parent?.kind === KIND.step) return 'A group cannot go inside a step.';
       if (parent?.kind === KIND.product) return 'Products hold jobs, not groups.';
+      if (isLine(parent)) return 'A product line holds its rows, not groups.';
+      if (isLine(moving) && insideJob) return 'A product line goes in a category, not inside a job.';
       return null;
     case KIND.task:
     default:

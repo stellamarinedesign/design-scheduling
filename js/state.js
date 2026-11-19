@@ -2,8 +2,14 @@
 //
 // One live query fills `nodes`; the index is rebuilt from it on every change
 // (a few hundred nodes is nothing) and every view is derived from it.
+//
+// TWO INDEXES. `idx` is the whole tree: the panel, search, the Progress page
+// and every write read it. `listIdx` leaves out the rows kept on the Progress
+// page (tree.listedNodes; owner, 2026-11-19): Home, Tasks, the Backlog, Team,
+// Crew and a designer's list are drawn from it, so a register row with no
+// work in hand clutters none of them.
 
-import { buildIndex, isJob } from './tree.js';
+import { buildIndex, isJob, listedNodes } from './tree.js';
 import { nameFor } from './team.js';
 import { mergeNotes } from './notes.js';
 import { readNode, isStep } from './migrate.js';
@@ -17,6 +23,7 @@ export const state = {
   raw: [],
   rawSteps: [],
   idx: buildIndex([]),
+  listIdx: buildIndex([]),
   ready: false,       // the first snapshot has arrived
   error: null,        // the live query failed (offline first load, permissions)
   me: 'local',        // the address that goes in createdBy / assignee / by
@@ -43,6 +50,8 @@ export function setNodes(nodes, meta = {}) {
   state.rawSteps = nodes.filter(isStep);
   state.nodes = state.rawSteps.length ? nodes.map(readNode) : nodes;
   state.idx = buildIndex(state.nodes);
+  const listed = listedNodes(state.idx);
+  state.listIdx = listed === state.idx.nodes ? state.idx : buildIndex(listed);
   state.ready = true;
   state.error = null;
   for (const fn of subs) fn(meta);

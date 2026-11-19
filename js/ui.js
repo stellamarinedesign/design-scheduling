@@ -49,6 +49,7 @@ const P = {
   dash: '<path d="M7 12h10"/>',
   register: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M9 9.5v10M14.5 9.5v10"/>',
   chevDown: '<path d="m6 9 6 6 6-6"/>',
+  chevUp: '<path d="m6 15 6-6 6 6"/>',
   chevRight: '<path d="m9 6 6 6-6 6"/>',
   back: '<path d="M15 18 9 12l6-6"/>',
   folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',

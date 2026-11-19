@@ -1,63 +1,62 @@
-// views/progress.js — the Progress tab: the design register (PLAN, "Progress
-// page: the design register" and "Progress page build"). The Excel Progress
-// sheet made live: one section per category that holds products, one row per
-// product, one cell per top-level task of its current job, under the
-// category's tasks template as columns. The logic is register.js; this file
-// only draws it.
+// views/progress.js — the Progress tab: the design register, as PRODUCT LINES
+// with JOBS AS ROWS (owner, 2026-11-19; PLAN, "Progress page redesign"). The
+// Excel Progress sheet made live: a heading per category (the sheet's red
+// header line), a table per product line in it (its bold title), a row per
+// job in the line, a cell per stage or sub-step of its tasks template. The
+// logic is register.js; the boxes are lines.js; this file only draws.
 //
 // WHO (owner, 2026-11-09): the Design lead, and designers read-only. For a
-// designer a cell or a row opens the task panel, which follows the usual
-// rules there. The lead ticks cells, adds products and starts revisions.
+// designer a cell or a name opens the task panel, which follows the usual
+// rules there. The lead manages it all from here: lines (new, rename, order,
+// columns, on or off the Tasks list, archive), rows (add, rename, order, move
+// to another line, on or off the Tasks list, the next revision, archive),
+// and bringing a job in from Tasks.
 //
 // THE CELL is the job's own task, never a copy: a tick in the job shows here
-// at once, through the one live tree, and a tick here is a tick in the job.
-// It is the check control (tile.js checkBox): a click goes forward, a
-// right-click, long-press or Shift+F10 back, and ticking one done starts the
-// next as it does in the job. Its mark gives every state a symbol, since a
-// cell has no word beside it: ✓ done, half-filled in progress, ✓ on violet
-// for check, ! sent back, … waiting, – cancelled, an empty box to do; the
-// word is in its name and tooltip. Done recedes - most of a register is done
-// - so open work is what the eye finds.
+// at once, and a tick here is a tick in the job. It is the check control: a
+// click goes forward, a right-click, long-press or Shift+F10 back, and
+// ticking one done starts the next. A stage that WAITS ON THE CUSTOMER
+// (Approval) starts as Waiting and takes its job into Waiting with it; the
+// row then shows how long it has waited. Every state has a mark, since a
+// cell has no word beside it; the word is in its name and tooltip. Done
+// recedes - most of a register is done - so open work is what the eye finds.
 //
-// THE MATRIX is one grid per section, its widths shared by every row. How
-// it lays out depends on the section's own width AND its number of columns,
-// so each section is measured (fitter, below): full, compact (the panel open
-// beside the list, a half-screen window), or stacked (a phone: name and job
-// on top, the cells below under the same upright labels).
+// THE MATRIX is one grid per line, its widths shared by every row, measured
+// against the line's own width and number of columns (fitter, below): full,
+// compact (the panel open beside it, a half-screen window) or stacked (a
+// phone). A stage with sub-steps is a heading over their narrow columns.
 //
-// KEYBOARD: each section is one tab stop. The arrow keys move between cells
+// KEYBOARD: each line is one tab stop. The arrow keys move between cells
 // (Home and End along the row), Enter or Space acts, Shift+F10 and the
 // context-menu key go back a state.
 
-import { el, btn, icon, iconBtn, dot, pill, prefs, isWide, menu, loadProblem, withMenu } from '../ui.js';
+import { el, btn, icon, iconBtn, dot, pill, prefs, isWide, menu, loadProblem, withMenu, canDrag } from '../ui.js';
 import { state, personName } from '../state.js';
 import * as T from '../tree.js';
 import * as S from '../status.js';
 import * as RG from '../register.js';
 import * as A from '../actions.js';
 import { assignable } from '../team.js';
-import { openDialog } from '../dialog.js';
 import { route, openTask, go } from '../router.js';
-import { whoBadge, statusMenu } from './tile.js';
+import { ageDays, dayLabel, dayOf } from '../dates.js';
+import { whoBadge, statusMenu, enableDrag } from './tile.js';
 
 const FILTER_KEY = 'progress.filter';
 const filterOf = () => { const f = prefs.get(FILTER_KEY, 'all'); return RG.FILTERS.some((x) => x.key === f) ? f : 'all'; };
 const rerender = () => go(location.hash.replace(/^#/, '').split('?')[0], { keepTask: true });
 const lead = () => state.role === 'lead';
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+const lines = () => import('./lines.js');
 
 /** The status behind a cell's state, and the mark it draws. */
 const STATE_STATUS = { todo: 'todo', doing: 'in_progress', check: 'check', fix: 'fix', wait: 'waiting', done: 'done', na: 'cancelled' };
 const MARK = { done: 'check', check: 'check', doing: 'half', fix: 'bang', wait: 'more', na: 'dash' };
 
-/** Leads and designers, you first: who a job can be for. */
+/** Leads and designers, you first. */
 const people = () => {
   const list = assignable(state.access);
   return [state.me, ...list.filter((p) => p !== state.me).sort((a, b) => personName(a).localeCompare(personName(b)))];
 };
-const whoSelect = (id, value) => el('select', { class: 'sel', id },
-  people().map((p) => el('option', { value: p, selected: p === value }, personName(p))),
-  el('option', { value: '', selected: !value }, 'Nobody yet'));
 
 // ---------------------------------------------------------------------------
 // reveal: the sidebar, Jump to, and #/progress?c=<id>
@@ -66,7 +65,7 @@ const whoSelect = (id, value) => el('select', { class: 'sel', id },
 let pendingReveal = null;
 let lastDeepLink = null;
 
-/** Scroll to a category's section (or the first section inside it) and light it briefly. */
+/** Scroll to a product line, or a category's first line, and light it briefly. */
 export function revealSection(id) {
   pendingReveal = id;
   const next = `#/progress?c=${encodeURIComponent(id)}`;
@@ -83,18 +82,19 @@ function takeReveal() {
   return target;
 }
 
-/** The section that shows a category: its own, else the first one inside it. */
-function sectionFor(sections, id) {
-  const own = sections.find((s) => s.id === id);
-  if (own) return own;
-  return sections.find((s) => s.group && T.ancestorChain(state.idx, s.group.id).some((a) => a.id === id)) ?? null;
+/** The line that shows a node: itself, the line it is in, or a category's first line. */
+function lineFor(lineIds, id) {
+  if (lineIds.includes(id)) return id;
+  const n = state.idx.byId.get(id);
+  const inLine = n && T.ancestorChain(state.idx, id).find(T.isLine);
+  if (inLine && lineIds.includes(inLine.id)) return inLine.id;
+  return lineIds.find((l) => T.ancestorChain(state.idx, l).some((a) => a.id === id)) ?? null;
 }
 
-function flash(inner, sectionId) {
-  // A timeout, not a frame: a page in a background tab skips frames, and the
-  // scroll would never happen.
+function flash(inner, lineId) {
+  // A timeout, not a frame: a page in a background tab skips frames.
   setTimeout(() => {
-    const n = inner.querySelector(`[data-section="${CSS.escape(sectionId)}"]`);
+    const n = inner.querySelector(`[data-section="${CSS.escape(lineId)}"]`);
     if (!n) return;
     const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     n.scrollIntoView({ block: 'start', behavior: smooth ? 'smooth' : 'auto' });
@@ -108,11 +108,14 @@ function flash(inner, sectionId) {
 // the page
 // ---------------------------------------------------------------------------
 
+/** The job the panel shows (or the job of the task it shows): its row is lit. Once per draw. */
+let openJobId = null;
+
 export function renderProgress(root) {
   const inner = el('div', { class: 'view-inner prog' });
   root.append(inner);
   const filter = filterOf();
-  // The sections of the last draw are gone: stop measuring them.
+  // The lines of the last draw are gone: stop measuring them.
   fitter.disconnect();
 
   if (state.error && !state.ready) {
@@ -132,156 +135,195 @@ export function renderProgress(root) {
   const reg = RG.register(state.idx);
   openJobId = state.openId ? (T.jobOf(state.idx, state.openId)?.id ?? null) : null;
   inner.append(head(reg, filter));
-  if (!reg.sections.length) { inner.append(noProducts()); return; }
+  if (!reg.lines) { inner.append(noLines()); return; }
 
-  const keep = (RG.FILTERS.find((f) => f.key === filter) ?? RG.FILTERS[0]).test;
-  const shown = reg.sections.map((s) => ({ ...s, rows: s.rows.filter(keep) }));
-  // A section the filter empties drops out, unless a product is being added to it.
-  const visible = shown.filter((s) => s.rows.length || filter === 'all' || adding?.sectionId === s.id);
-  if (!visible.length) {
+  const keep = RG.filterTest(filter);
+  // A line the filter empties drops out, unless a row is being added to it.
+  const groups = reg.groups.map((g) => ({ ...g, lines: g.lines.map((l) => ({ ...l, rows: l.rows.filter(keep) }))
+    .filter((l) => l.rows.length || filter === 'all' || adding?.lineId === l.id) })).filter((g) => g.lines.length);
+  if (!groups.length) {
     const f = RG.FILTERS.find((x) => x.key === filter);
     inner.append(el('div', { class: 'empty' },
-      el('span', {}, el('strong', {}, filter === 'open' ? 'No product has an open job. ' : 'Every product is complete. '),
-        'All shows every product.'),
-      btn('Show all', () => { prefs.set(FILTER_KEY, 'all'); rerender(); }, { cls: 'sm', attrs: { 'aria-label': `Show all products, not only ${f.label.toLowerCase()}` } })));
+      el('span', {}, el('strong', {}, filter === 'waiting' ? 'Nothing is waiting. ' : 'Every row is finished. '), 'All shows every row.'),
+      btn('Show all', () => { prefs.set(FILTER_KEY, 'all'); rerender(); }, { cls: 'sm', attrs: { 'aria-label': `Show all rows, not only ${f.label.toLowerCase()}` } })));
     return;
   }
-  // Fitted before the sections go in, from the width they will have (the
-  // view's, less its padding, up to the page's limit), so the first draw is
-  // right without laying out a thousand cells twice; the observer then
-  // follows every resize.
+  // Fitted before the lines go in, from the width they will have (the view's,
+  // less its padding, up to the page's limit), so the first draw is right
+  // without laying out a thousand cells twice; the observer follows resizes.
   const cs = getComputedStyle(root);
   const width = Math.min(1400, root.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight));
-  const list = el('div', { class: 'rg-list' }, visible.map(section));
-  for (const sec of list.children) fitSection(sec, width);
+  const list = el('div', { class: 'rg-list' }, groups.map(categoryEl));
+  for (const sec of list.querySelectorAll('.rg-sec')) fitSection(sec, width);
   inner.append(list);
+  if (lead() && canDrag()) wireDrag(list);
 
   const target = takeReveal();
   if (target) {
-    const s = sectionFor(visible, target);
-    if (s) flash(inner, s.id);
+    const l = lineFor(groups.flatMap((g) => g.lines.map((x) => x.id)), target);
+    if (l) flash(inner, l);
   }
-  // A product row just opened for typing takes the focus.
+  // A row just opened for typing takes the focus.
   if (adding?.focus) {
     adding.focus = false;
-    inner.querySelector(`[data-fk="rg-add-${CSS.escape(adding.sectionId)}"]`)?.focus({ preventScroll: false });
+    inner.querySelector(`[data-fk="rg-add-${CSS.escape(adding.lineId)}"]`)?.focus({ preventScroll: false });
   }
 }
 
-/** The heading: the counts, the filters, and a way to jump between sections where there is no sidebar. */
+/** The heading: the counts, the filters, Jump to where there is no sidebar, and New product line. */
 function head(reg, filter) {
   const counts = reg ? countRows(reg) : null;
-  const sections = reg?.sections ?? [];
-  const jump = reg && sections.length > 1 && (!lead() || !isWide())
-    ? btn('Jump to', (e) => menu(e.currentTarget, sections.map((s) => ({
-      label: s.title, node: el('span', { class: 'row' }, dot(s.group ? T.colourOf(state.idx, s.group.id) : null), s.title),
-      onSelect: () => revealSection(s.id),
-    })), { label: 'Jump to a section' }), { cls: 'sm', ic: 'chevDown', attrs: { 'aria-haspopup': 'menu' } })
+  const all = reg ? reg.groups.flatMap((g) => g.lines.map((l) => ({ l, g }))) : [];
+  const jump = reg && all.length > 1 && (!lead() || !isWide())
+    ? btn('Jump to', (e) => menu(e.currentTarget, all.map(({ l, g }) => ({
+      label: `${l.title} · ${g.title}`, node: el('span', { class: 'row' }, dot(g.category ? T.colourOf(state.idx, g.category.id) : null), el('span', {}, l.title), el('span', { class: 'menu-hint' }, g.title)),
+      onSelect: () => revealSection(l.id),
+    })), { label: 'Jump to a product line' }), { cls: 'sm', ic: 'chevDown', attrs: { 'aria-haspopup': 'menu' } })
     : null;
   return el('div', { class: 'view-head rg-head-bar' },
     el('h1', { class: 'h1' }, 'Progress'),
-    reg ? el('span', { class: 'meta' }, `${plural(reg.products, 'product')} · ${reg.complete} complete`) : null,
-    reg && reg.products ? el('div', { class: 'filters', role: 'group', 'aria-label': 'Show the products' },
+    reg?.lines ? el('span', { class: 'meta' }, `${plural(reg.rows, 'row')} in ${plural(reg.lines, 'product line')} · ${reg.complete} complete`) : null,
+    reg && reg.rows ? el('div', { class: 'filters', role: 'group', 'aria-label': 'Show the rows' },
       RG.FILTERS.map((f) => el('button', {
         class: 'fp', type: 'button', 'aria-pressed': String(f.key === filter),
         onclick: () => { prefs.set(FILTER_KEY, f.key); rerender(); },
       }, f.label, el('b', {}, String(counts[f.key] ?? 0))))) : null,
     el('span', { class: 'sp' }),
-    jump);
+    jump,
+    // With no lines yet, the welcome below has the button.
+    reg?.lines && lead() ? btn('Product line', async () => (await lines()).newLine(), { cls: 'sm', ic: 'plus', attrs: { 'aria-label': 'New product line' } }) : null);
 }
 
 function countRows(reg) {
-  const rows = reg.sections.flatMap((s) => s.rows);
+  const rows = reg.groups.flatMap((g) => g.lines.flatMap((l) => l.rows));
   return Object.fromEntries(RG.FILTERS.map((f) => [f.key, rows.filter(f.test).length]));
 }
 
-/** No products anywhere yet: what they are and where they come from. */
-function noProducts() {
+/** No product lines yet: what they are and where they come from. */
+function noLines() {
   return el('section', { class: 'welcome' },
-    el('h2', { class: 'h2' }, 'No products yet'),
+    el('h2', { class: 'h2' }, 'No product lines yet'),
     lead()
-      ? el('p', {}, 'Each product is a row here, with a cell for every task in its current job and a column for every task in its category\'s template. Add one from a category\'s ⋯ menu in Tasks (Add a product), or bring in the Excel Progress sheet.')
-      : el('p', {}, 'Each product is a row here, with a cell for every task in its current job. The Design lead adds them.'),
+      ? el('p', {}, 'A product line is a table here, such as Custom Lifters in Lifters. Its columns are its stages, and each row is one job, with a cell for each of its tasks. Make one here, switch a category to one from its ⋯ menu in Tasks, or bring in the Excel Progress sheet.')
+      : el('p', {}, 'A product line is a table here, with a row for each of its jobs and a cell for each of their tasks. The Design lead sets them up.'),
     lead() ? el('div', { class: 'acts' },
-      btn('Open Tasks', () => go('/tasks'), { ic: 'tasks' }),
+      btn('New product line', async () => (await lines()).newLine(), { cls: 'primary', ic: 'plus' }),
       btn('Import the Progress sheet', () => go('/import'), { cls: 'ghost', ic: 'upload' })) : null);
 }
 
 // ---------------------------------------------------------------------------
-// a section: its labels row (with its name in the corner), its rows, its foot
+// a category: its heading and its lines
 // ---------------------------------------------------------------------------
 
-function section(s) {
-  const n = s.columns.length;
+function categoryEl(g) {
+  const colour = g.category ? T.colourOf(state.idx, g.category.id) : null;
+  return el('section', { class: 'rg-cat', 'aria-label': g.title, dataset: { cat: g.id } },
+    el('div', { class: 'rg-cat-head' },
+      el('h2', { class: 'h2 rg-cat-title' }, dot(colour, true), el('span', {}, g.title)),
+      el('span', { class: 'meta' }, plural(g.lines.length, 'product line')),
+      el('span', { class: 'sp' }),
+      lead() && g.category ? iconBtn('more', `${g.title} actions`, (e) => menu(e.currentTarget, [
+        { label: 'New product line here', icon: 'plus', onSelect: async () => (await lines()).newLine({ parentId: g.category.id }) },
+        { label: 'Show in Tasks', icon: 'tasks', onSelect: async () => (await import('./tasks.js')).revealCategory(g.category.id) },
+      ], { label: `${g.title} actions` }), 'sm') : null),
+    g.lines.map(lineEl));
+}
+
+// ---------------------------------------------------------------------------
+// a line: its labels row (its name in the corner), its rows, its foot
+// ---------------------------------------------------------------------------
+
+function lineEl(l) {
+  const n = l.columns.cols.length;
   const grid = el('div', {
-    class: 'rg-grid', role: 'grid', 'aria-labelledby': `rg-h-${s.id}`, 'aria-rowcount': String(s.rows.length + 1),
+    class: 'rg-grid', role: 'grid', 'aria-labelledby': `rg-h-${l.id}`, 'aria-rowcount': String(l.rows.length + 1),
     style: { '--n': String(n) },
   },
-  columnLabels(s),
-  s.rows.map((r, i) => rowEl(s, r, i)));
-  wireKeys(grid, s.id);
-  const sec = el('section', { class: 'rg-sec', dataset: { section: s.id, n: String(n) } },
+  columnLabels(l),
+  l.rows.map((r, i) => rowEl(l, r, i)));
+  wireKeys(grid, l.id);
+  const sec = el('section', { class: 'rg-sec', dataset: { section: l.id, n: String(n) } },
     grid,
-    !n ? el('p', { class: 'meta wrap rg-note' }, s.group
-      ? `No columns yet: ${T.nameOf(s.group)} has no tasks template, and its jobs have no tasks.${lead() ? ' Set the columns from ⋯ above.' : ''}`
-      : 'No columns yet: these products are in no category.') : null,
-    !s.rows.length && s.all ? el('p', { class: 'meta wrap rg-note' }, 'No product here matches the filter.') : null,
-    addFoot(s));
+    !n ? el('p', { class: 'meta wrap rg-note' }, `No columns yet.${lead() ? ' Set them from the ⋯ beside the line\'s name.' : ''}`) : null,
+    !l.all ? el('p', { class: 'meta wrap rg-note' }, lead() ? 'No rows yet: add one below, or bring in a job from Tasks.' : 'No rows yet.')
+      : !l.rows.length ? el('p', { class: 'meta wrap rg-note' }, 'No row here matches the filter.') : null,
+    addFoot(l));
   fitter.observe(sec);
   return sec;
 }
 
 /**
- * The labels row, which stays at the top while its section scrolls by: the
- * section's name in the corner over the product names, then the column
- * labels upright in the cells' own width (the whole name in the tooltip).
+ * The labels row, which stays at the top while its line scrolls by: the
+ * line's name in the corner over the job names; then the columns, upright
+ * in the cells' width, a stage with sub-steps as a heading over theirs.
  */
-function columnLabels(s) {
-  const colour = s.group ? T.colourOf(state.idx, s.group.id) : null;
-  const fullPath = s.group ? [...T.categoryPath(state.idx, s.group.id), s.group].map(T.nameOf).join(' › ') : s.title;
+function columnLabels(l) {
+  const colLabel = (c, name = c.label) => el('span', {
+    class: `rg-col${c.waits ? ' waits' : ''}`, role: 'columnheader', title: c.waits ? `${name}: starting it puts the job into Waiting` : name,
+    'aria-label': c.sub ? `${c.stage.label}, ${c.label}` : c.label,
+  }, c.waits ? icon('clock', 11) : null, el('span', { class: 'rg-col-text' }, c.label));
+  const heads = l.columns.stages.map((s) => {
+    const cols = l.columns.cols.filter((c) => c.stage === s);
+    if (!s.subs.length) return colLabel(cols[0]);
+    return el('div', { class: 'rg-stagecol', style: { '--k': String(cols.length) } },
+      el('span', { class: 'rg-stage-label', 'aria-hidden': 'true', title: s.label }, s.label),
+      el('div', { class: 'rg-subs' }, cols.map((c) => colLabel(c, `${s.label} › ${c.label}`))));
+  });
   return el('div', { class: 'rg-row rg-cols', role: 'row' },
     el('div', { class: 'rg-name rg-corner', role: 'columnheader' },
-      el('h2', { class: 'h2 rg-title', id: `rg-h-${s.id}`, title: fullPath }, dot(colour), el('span', {}, s.title)),
+      el('h3', { class: 'h2 rg-title', id: `rg-h-${l.id}`, title: T.pathText(state.idx, l.id, { skipMaster: false }) }, el('span', {}, l.title)),
       el('div', { class: 'rg-corner-foot' },
-        el('span', { class: 'meta' }, `${plural(s.all, 'product')} · ${s.complete} complete`),
-        lead() && s.group ? iconBtn('more', `${s.title} actions`, (e) => sectionMenu(e.currentTarget, s), 'sm') : null)),
-    el('div', { class: 'rg-cells' }, s.columns.map((c) => el('span', { class: 'rg-col', role: 'columnheader', title: c.label },
-      el('span', { class: 'rg-col-text' }, c.label)))),
+        el('span', { class: 'meta' }, `${plural(l.all, 'row')} · ${l.complete} complete`),
+        l.listed ? null : el('span', { class: 'grp-kind', title: 'Its rows are not on Tasks, Home or the lists unless one is switched on' }, 'Progress only'),
+        lead() ? iconBtn('more', `${l.title} actions`, (e) => lineMenu(e.currentTarget, l), 'sm') : null)),
+    el('div', { class: 'rg-cells' }, heads),
     el('span', { class: 'rg-count lbl', role: 'columnheader' }, 'Done'),
     el('span', { class: 'rg-rev lbl', role: 'columnheader' }, 'Rev'),
-    el('span', { class: 'rg-job lbl', role: 'columnheader' }, 'Job'));
+    el('span', { class: 'rg-job lbl', role: 'columnheader' }, 'Status'));
 }
 
-/** The lead's ⋯ on a section: add a product, set the columns, find it in Tasks. */
-function sectionMenu(anchor, s) {
-  const owner = s.templateFrom ?? s.group;
+/** The lead's ⋯ on a line. */
+function lineMenu(anchor, l) {
+  const line = l.line;
+  const same = T.childrenOf(state.idx, line.parentId).filter(T.isLine);
+  const i = same.findIndex((x) => x.id === line.id);
+  const owner = l.columns.templateFrom;
   menu(anchor, [
-    { label: 'Add a product', icon: 'plus', onSelect: () => openAdd(s) },
-    {
-      label: s.fromTemplate ? 'Edit the columns…' : 'Set the columns…', icon: 'tasks',
-      hint: owner !== s.group ? `${T.nameOf(owner)} template` : 'tasks template',
-      onSelect: async () => (await import('./tasks.js')).editTemplate(owner),
-    },
-    { label: 'Show in Tasks', icon: 'open', onSelect: async () => (await import('./tasks.js')).revealCategory(s.group.id) },
-  ], { label: `${s.title} actions` });
+    { label: 'Add a row', icon: 'plus', onSelect: () => openAdd(l) },
+    { label: 'Bring in a job…', icon: 'register', onSelect: async () => (await lines()).bringIn({ lineId: line.id }) },
+    { label: l.columns.fromTemplate ? 'Edit the columns…' : 'Set the columns…', icon: 'tasks', hint: owner && owner.id !== line.id ? `from ${T.nameOf(owner)}` : null, onSelect: async () => (await lines()).editColumns(line) },
+    'sep',
+    { label: 'Show in Tasks', icon: 'tasks', checked: line.listed !== false, hint: line.listed === false ? 'Progress only' : null, onSelect: () => A.setListed(line.id, line.listed === false) },
+    line.listed !== false ? { label: 'Open in Tasks', icon: 'open', onSelect: async () => (await import('./tasks.js')).revealCategory(line.id) } : null,
+    { label: 'Rename', icon: 'edit', onSelect: () => A.rename(line.id) },
+    i > 0 ? { label: 'Move up', icon: 'chevUp', onSelect: () => A.moveStep(line.id, -1) } : null,
+    i < same.length - 1 ? { label: 'Move down', icon: 'chevDown', onSelect: () => A.moveStep(line.id, 1) } : null,
+    { label: 'Move to…', icon: 'move', onSelect: async () => (await import('./pickers.js')).moveDialog(line.id) },
+    'sep',
+    { label: 'Not a product line', icon: 'close', hint: 'stays a category', onSelect: () => A.setLine(line.id, false) },
+    { label: 'Archive the line', icon: 'archive', hint: l.all ? plural(l.all, 'row') : null, onSelect: () => A.archive(line.id) },
+    { label: 'Delete the line…', icon: 'trash', danger: true, onSelect: () => A.remove(line.id) },
+  ], { label: `${l.title} actions` });
 }
 
 // ---------------------------------------------------------------------------
-// fitting a section to its width
+// fitting a line to its width
 // ---------------------------------------------------------------------------
 
 /**
- * Full: every column side by side at 36px cells. Compact: 28 to 32px cells
- * and narrower name, revision and job columns. Stacked: the name and job on one line, the cells on
- * the next, as wide as the section allows (26 to 40px each).
+ * How a line lays out depends on its width AND its number of columns, so
+ * each is measured. Full: every column side by side at 36px cells, names up
+ * to 360px, the status column taking what is left. Compact: 28–32px cells
+ * and narrower name, revision and status columns. Stacked: the name and
+ * status on one line, the cells on the next (26 to 40px each).
  */
 function fitSection(sec, w) {
   if (!w) return;
   const n = Math.max(1, Number(sec.dataset.n) || 0);
   let fit = 'stack';
   let cell = Math.max(26, Math.min(40, Math.floor((w - 72) / n)));
-  // The fixed parts: full 504px (name 140, count, rev, job 200, gaps); compact 348px.
-  if (w >= n * 36 + 504) { fit = 'full'; cell = 36; } else if (w >= n * 28 + 348) { fit = 'compact'; cell = Math.min(32, Math.floor((w - 348) / n)); }
+  // The fixed parts: full 524px (name 140, count, rev, status 220, gaps); compact 364px.
+  if (w >= n * 36 + 524) { fit = 'full'; cell = 36; } else if (w >= n * 28 + 364) { fit = 'compact'; cell = Math.min(32, Math.floor((w - 364) / n)); }
   if (sec.dataset.fit !== fit) sec.dataset.fit = fit;
   const px = `${cell}px`;
   if (sec.style.getPropertyValue('--cell') !== px) sec.style.setProperty('--cell', px);
@@ -292,71 +334,96 @@ const fitter = new ResizeObserver((entries) => { for (const e of entries) fitSec
 // a row
 // ---------------------------------------------------------------------------
 
-/** The job the panel is showing (or the job of the task it shows): its row is lit. Once per draw. */
-let openJobId = null;
-const rowIsOpen = (r) => Boolean(r.job) && r.job.id === openJobId;
-
-function rowEl(s, r, i) {
-  const { product, job } = r;
-  const name = T.nameOf(product);
-  const nameCell = el('span', { class: 'rg-name', role: 'rowheader' }, job
-    ? el('button', {
-      class: 'rg-name-btn', type: 'button', dataset: { fk: `rg-name-${product.id}` },
-      title: `Open ${T.nameOf(job)}`,
-      'aria-label': `${name}, ${S.LABEL[job.status] ?? job.status}: open ${T.nameOf(job)}`, onclick: () => openTask(job.id),
-    }, el('span', { class: 'rg-name-text' }, name))
-    : el('span', { class: 'rg-name-text' }, name));
+function rowEl(l, r, i) {
+  const { job } = r;
+  const name = T.nameOf(job);
+  // Said only where a row differs from its line: on the lists, or not.
+  const tag = r.listed === l.listed ? null : el('span', { class: 'grp-kind rg-row-tag', title: r.listed ? 'This row shows in Tasks' : 'This row is on the Progress page only' }, r.listed ? 'In Tasks' : 'Progress only');
+  const nameCell = el('span', { class: 'rg-name', role: 'rowheader' },
+    el('button', {
+      class: 'rg-name-btn', type: 'button', dataset: { fk: `rg-name-${job.id}` }, title: `Open ${name}`,
+      'aria-label': `${name}, ${S.LABEL[job.status] ?? job.status}: open it`, onclick: () => openTask(job.id),
+    }, el('span', { class: 'rg-name-text' }, name)), tag);
   const rowCls = `rg-row${r.cancelled ? ' cancelled' : ''}${r.complete ? ' complete' : ''}`;
-  return el('div', { class: rowCls, role: 'row', 'aria-rowindex': String(i + 2), 'aria-current': rowIsOpen(r) ? 'true' : null, dataset: { product: product.id } },
-    nameCell,
-    job
-      ? el('div', { class: 'rg-cells' }, r.cells.map((c, ci) => cellEl(r, c, ci)))
-      : el('div', { class: 'rg-cells rg-nojob', role: 'gridcell', 'aria-colspan': String(Math.max(1, s.columns.length)) }, el('span', { class: 'meta' }, 'No job yet')),
-    el('span', { class: 'rg-count', role: 'gridcell' },
-      job && r.total ? el('span', { class: 'rg-frac', 'aria-label': `${r.done} of ${r.total} done` }, `${r.done}/${r.total}`) : el('span', { class: 'rg-none', 'aria-label': 'Nothing to count' }, '–'),
-      r.extras.length ? el('button', {
-        class: 'rg-more', type: 'button', title: `Outside the columns: ${r.extras.map(T.nameOf).join(', ')}`,
-        'aria-label': `${plural(r.extras.length, 'more task')} outside the columns: ${r.extras.map(T.nameOf).join(', ')}. Open the job`,
-        onclick: () => openTask(job.id),
-      }, `+${r.extras.length}`) : null),
-    el('span', { class: 'rg-rev mono', role: 'gridcell', title: job?.revision ?? '' },
-      job?.revision ? job.revision : el('span', { class: 'rg-none', 'aria-label': 'No revision' }, '–')),
-    jobCell(r));
+  const rowNode = el('div', {
+    class: rowCls, role: 'row', 'aria-rowindex': String(i + 2), 'aria-current': job.id === openJobId ? 'true' : null,
+    dataset: { id: job.id }, draggable: lead() && canDrag() ? 'true' : null,
+  },
+  nameCell,
+  el('div', { class: 'rg-cells' }, r.cells.map((c, ci) => cellEl(r, c, ci))),
+  el('span', { class: 'rg-count', role: 'gridcell' },
+    r.total ? el('span', { class: 'rg-frac', 'aria-label': `${r.done} of ${r.total} done` }, `${r.done}/${r.total}`) : el('span', { class: 'rg-none', 'aria-label': 'Nothing to count' }, '–'),
+    r.extras.length ? el('button', {
+      class: 'rg-more', type: 'button', title: `Outside the columns: ${r.extras.map(T.nameOf).join(', ')}`,
+      'aria-label': `${plural(r.extras.length, 'more task')} outside the columns: ${r.extras.map(T.nameOf).join(', ')}. Open the job`,
+      onclick: () => openTask(job.id),
+    }, `+${r.extras.length}`) : null),
+  el('span', { class: 'rg-rev mono', role: 'gridcell', title: job.revision ?? '' },
+    job.revision ? job.revision : el('span', { class: 'rg-none', 'aria-label': 'No revision' }, '–')),
+  jobCell(l, r));
+  return lead() ? withMenu(rowNode, (at) => rowMenu(rowNode.querySelector('.rg-job .ib') ?? rowNode, l, r, { at })) : rowNode;
 }
 
 /**
- * The job column: its status (the lead's pill opens the status menu), who
- * has it, and a title of its own when it says more than the row does. With
- * no open job, the lead's Start revision.
+ * The status column: the job's pill (the lead's opens the status menu), who
+ * has it, how long it has waited, and - finished - the lead's Start
+ * revision; then the row's ⋯.
  */
-function jobCell(r) {
-  const { job, product } = r;
+function jobCell(l, r) {
+  const { job } = r;
   const start = lead() && !r.open
-    ? btn(job ? 'Start revision' : 'Start a job', () => startRevisionBox(product), {
-      // Quiet: a register of finished products shows one on every row.
-      cls: 'sm ghost rg-start', ic: 'plus', attrs: { 'aria-label': `${job ? 'Start the next revision of' : 'Start a job for'} ${T.nameOf(product)}` },
+    ? btn('Start revision', async () => (await lines()).nextRevisionBox(job), {
+      cls: 'sm ghost rg-start', ic: 'plus', attrs: { 'aria-label': `Start the next revision of ${T.nameOf(job)}` },
     })
     : null;
-  if (!job) return el('span', { class: 'rg-job', role: 'gridcell' }, start ?? el('span', { class: 'rg-none' }, '–'));
-  const plain = [T.nameOf(product), RG.revisionTitle(product, job.revision ?? '')].map(RG.labelKey);
-  const own = !plain.includes(RG.labelKey(T.nameOf(job)));
-  const canSet = lead() && A.canWrite(job);
+  const days = r.waiting && job.waiting?.since ? ageDays(job.waiting.since) : null;
   return el('span', { class: `rg-job${start ? ' has-start' : ''}`, role: 'gridcell' },
-    pill(job.status, canSet ? { onClick: (e) => { e.stopPropagation(); statusMenu(e.currentTarget, job); } } : {}),
+    pill(job.status, lead() ? { onClick: (e) => { e.stopPropagation(); statusMenu(e.currentTarget, job); } } : {}),
+    days !== null ? el('span', { class: 'meta warn rg-age', title: `Waiting since ${dayLabel(dayOf(new Date(job.waiting.since)))}${job.waiting.note ? `: ${job.waiting.note}` : ''}` }, `${days}d`) : null,
     job.assignee ? el('span', { class: 'rg-who', title: personName(job.assignee) }, whoBadge(job.assignee) ?? el('span', { class: 'meta' }, personName(job.assignee))) : null,
-    own && !start ? el('span', { class: 'rg-job-title', title: T.nameOf(job) }, T.nameOf(job)) : null,
-    r.moreOpen ? el('span', { class: 'meta', title: `${plural(r.moreOpen, 'more open job')} in ${T.nameOf(product)}` }, `+${r.moreOpen} open`) : null,
-    start);
+    start,
+    lead() ? iconBtn('more', `${T.nameOf(job)} actions`, (e) => { e.stopPropagation(); rowMenu(e.currentTarget, l, r); }, 'sm') : null);
+}
+
+/** The lead's ⋯ on a row (and its right-click). */
+function rowMenu(anchor, l, r, { at = null } = {}) {
+  const { job } = r;
+  const rows = RG.rowsOf(state.idx, l.id);
+  const i = rows.findIndex((x) => x.id === job.id);
+  menu(anchor, [
+    { label: 'Open', icon: 'open', onSelect: () => openTask(job.id) },
+    { label: 'Rename', icon: 'edit', onSelect: () => A.rename(job.id) },
+    { label: 'Start revision…', icon: 'restore', hint: job.revision ? `after ${job.revision}` : null, onSelect: async () => (await lines()).nextRevisionBox(job) },
+    l.columns.stages.length ? { label: 'Match to the columns…', icon: 'tasks', onSelect: async () => (await lines()).bringIn({ jobId: job.id, lineId: l.id }) } : null,
+    'sep',
+    { label: 'Show in Tasks', icon: 'tasks', checked: r.listed, hint: r.listed === l.listed ? 'as its line' : null, onSelect: () => A.setListed(job.id, !r.listed) },
+    i > 0 ? { label: 'Move up', icon: 'chevUp', onSelect: () => A.moveStep(job.id, -1) } : null,
+    i < rows.length - 1 ? { label: 'Move down', icon: 'chevDown', onSelect: () => A.moveStep(job.id, 1) } : null,
+    { label: 'Move to another line…', icon: 'move', onSelect: () => moveRow(job) },
+    'sep',
+    { label: 'Archive', icon: 'archive', onSelect: () => A.archive(job.id) },
+    { label: 'Delete…', icon: 'trash', danger: true, onSelect: () => A.remove(job.id) },
+  ], { label: `${T.nameOf(job)} actions`, at });
+}
+
+/** Another line for a row: every line but its own. */
+async function moveRow(job) {
+  const own = T.lineOfRow(state.idx, job)?.id;
+  const others = state.idx.nodes.filter((n) => T.isLine(n) && n.id !== own);
+  if (!others.length) return;
+  const anchor = document.querySelector(`[data-id="${CSS.escape(job.id)}"] .rg-job .ib`) ?? document.body;
+  menu(anchor, [{ heading: 'Move to' }, ...others.map((o) => ({
+    label: T.nameOf(o), hint: T.pathText(state.idx, o.id), onSelect: () => A.moveInto(job.id, o.id, 'end'),
+  }))], { label: `Move ${T.nameOf(job)} to` });
 }
 
 /**
- * One cell. For the lead it is the check control on the job's own task; a
- * column the job has no task for offers to add it. For a designer it opens
- * the task.
+ * One cell. For the lead it is the check control on the job's own task; an
+ * empty one offers to add its task. For a designer it opens the task.
  */
 function cellEl(r, c, ci) {
-  const col = c.col.label;
-  const fk = `rg-${r.product.id}-${c.col.key}`;
+  const col = c.col.sub ? `${c.col.stage.label} › ${c.col.label}` : c.col.label;
+  const fk = `rg-${r.job.id}-${c.col.key}`;
   const job = T.nameOf(r.job);
   if (!c.task) {
     if (!lead()) return el('span', { class: 'rc none', role: 'gridcell', title: `${col}: not in this job`, 'aria-label': `${col}: not in this job`, dataset: { col: String(ci) } }, el('i', {}));
@@ -364,8 +431,8 @@ function cellEl(r, c, ci) {
       class: 'rc none', type: 'button', tabindex: '-1', dataset: { fk, cell: '1', col: String(ci) },
       'aria-label': `${col}: not in this job. Add it`, title: `${col}: not in this job`, 'aria-haspopup': 'menu',
       onclick: (e) => menu(e.currentTarget, [{
-        label: `Add ${col} to ${job}`, icon: 'plus',
-        onSelect: () => A.createTask({ title: col, parentId: r.job.id, order: RG.insertOrder(state.idx, r.job.id, r.cells, ci) }),
+        label: `Add ${c.col.label} to ${job}`, icon: 'plus', hint: c.col.sub && !c.stageTask ? `and ${c.col.stage.label}` : null,
+        onSelect: () => A.addCellTask(r, ci),
       }], { label: col }),
     }, el('i', {})));
   }
@@ -383,33 +450,34 @@ function cellEl(r, c, ci) {
   }
   const t = c.task;
   const light = T.isLight(state.idx, t);
-  const fwd = S.taskForward(t, state.role, light);
+  const fwd = S.stageTarget(state.idx, t, S.taskForward(t, state.role, light) ?? '').to || null;
   const back = S.taskBack(t, state.role, state.me, light);
+  const fwdWord = fwd === 'waiting' ? 'Waiting on the customer' : S.LABEL[fwd];
   const b = el('button', {
     ...base,
-    'aria-label': `${col}: ${word}${fwd ? `. Click for ${S.LABEL[fwd]}` : ''}`,
-    title: [`${col} · ${word}`, fwd && `click: ${S.LABEL[fwd]}`, back && `right-click: back to ${S.LABEL[back]}`].filter(Boolean).join(' · '),
+    'aria-label': `${col}: ${word}${fwd ? `. Click for ${fwdWord}` : ''}`,
+    title: [`${col} · ${word}`, fwd && `click: ${fwdWord}`, back && `right-click: back to ${S.LABEL[back]}`].filter(Boolean).join(' · '),
     onclick: () => A.tick(t.id, 1),
   }, mark);
   return el('span', { class: 'rg-cell', role: 'gridcell' }, withMenu(b, () => A.tick(t.id, -1)));
 }
 
 // ---------------------------------------------------------------------------
-// keyboard: one tab stop per section, the arrows move between cells
+// keyboard: one tab stop per line, the arrows move between cells
 // ---------------------------------------------------------------------------
 
-const lastCell = new Map();   // section id → the data-fk of the cell that last had focus
+const lastCell = new Map();   // line id → the data-fk of the cell that last had focus
 
-function wireKeys(grid, sectionId) {
+function wireKeys(grid, lineId) {
   // After a redraw the cell that had focus keeps the tab stop; else the first.
   const cells = [...grid.querySelectorAll('[data-cell]')];
-  if (cells.length) (cells.find((b) => b.dataset.fk === lastCell.get(sectionId)) ?? cells[0]).tabIndex = 0;
+  if (cells.length) (cells.find((b) => b.dataset.fk === lastCell.get(lineId)) ?? cells[0]).tabIndex = 0;
   grid.addEventListener('focusin', (e) => {
     const b = e.target.closest?.('[data-cell]');
     if (!b) return;
     for (const x of grid.querySelectorAll('[data-cell][tabindex="0"]')) if (x !== b) x.tabIndex = -1;
     b.tabIndex = 0;
-    lastCell.set(sectionId, b.dataset.fk);
+    lastCell.set(lineId, b.dataset.fk);
   });
   grid.addEventListener('keydown', (e) => {
     const b = e.target.closest?.('[data-cell]');
@@ -434,30 +502,39 @@ function wireKeys(grid, sectionId) {
   });
 }
 
+/**
+ * Rows drag with a mouse: up and down their line, or into another line (the
+ * tree says where they may go). Touch has Move up, Move down and Move to
+ * another line in the row's ⋯.
+ */
+function wireDrag(list) {
+  enableDrag(list, { onDrop: (dragId, targetId, where) => A.moveNextTo(dragId, targetId, where) });
+}
+
 // ---------------------------------------------------------------------------
-// Add product: a row at the foot of a section, typed straight in
+// Add a row: one row at the foot of a line, typed straight in
 // ---------------------------------------------------------------------------
 
 // What is being typed survives the redraws every write causes.
-let adding = null;   // { sectionId, name, withJob, who, err, focus }
+let adding = null;   // { lineId, name, withTemplate, who, err, focus }
 
-function openAdd(s) {
-  adding = { sectionId: s.id, name: '', withJob: true, who: state.me, err: '', focus: true };
+function openAdd(l) {
+  adding = { lineId: l.id, name: '', withTemplate: true, who: state.me, err: '', focus: true };
   rerender();
 }
 function closeAdd() { adding = null; rerender(); }
 
-function addFoot(s) {
-  if (!lead() || !s.group) return null;
-  if (adding?.sectionId !== s.id) {
-    return el('div', { class: 'rg-foot' }, btn('Add product', () => openAdd(s), { cls: 'sm ghost', ic: 'plus', attrs: { 'aria-label': `Add a product to ${s.title}` } }));
+function addFoot(l) {
+  if (!lead()) return null;
+  if (adding?.lineId !== l.id) {
+    return el('div', { class: 'rg-foot' }, btn('Add a row', () => openAdd(l), { cls: 'sm ghost', ic: 'plus', attrs: { 'aria-label': `Add a row to ${l.title}` } }));
   }
   const a = adding;
-  const tpl = T.stepsTemplateOf(state.idx, s.group.id);
-  const errId = `rg-add-err-${s.id}`;
+  const tpl = T.stepsTemplateOf(state.idx, l.id);
+  const errId = `rg-add-err-${l.id}`;
   const name = el('input', {
-    class: 'input', type: 'text', placeholder: 'Product name', maxlength: '120', autocomplete: 'off', value: a.name,
-    dataset: { fk: `rg-add-${s.id}` }, 'aria-label': `New product in ${s.title}`,
+    class: 'input', type: 'text', placeholder: 'Job name, e.g. Model 500', maxlength: '300', autocomplete: 'off', value: a.name,
+    dataset: { fk: `rg-add-${l.id}` }, 'aria-label': `New row in ${l.title}`,
     'aria-invalid': a.err ? 'true' : null, 'aria-describedby': a.err ? errId : null,
   });
   const err = el('div', { class: 'form-err', id: errId, role: 'alert' }, a.err);
@@ -465,81 +542,32 @@ function addFoot(s) {
     a.name = name.value;
     if (a.err) { a.err = ''; err.textContent = ''; name.removeAttribute('aria-invalid'); }
   });
-  const withJob = el('input', { type: 'checkbox', checked: a.withJob, dataset: { fk: `rg-add-job-${s.id}` } });
-  const who = whoSelect(`rg-add-who-${s.id}`, a.who);
-  who.disabled = !a.withJob;
-  who.setAttribute('aria-label', 'Who has its first job');
-  withJob.addEventListener('change', () => { a.withJob = withJob.checked; who.disabled = !a.withJob; });
+  const withTemplate = el('input', { type: 'checkbox', checked: a.withTemplate });
+  withTemplate.addEventListener('change', () => { a.withTemplate = withTemplate.checked; });
+  const who = el('select', { class: 'sel', 'aria-label': 'Who has it' },
+    people().map((p) => el('option', { value: p, selected: p === a.who }, personName(p))),
+    el('option', { value: '', selected: !a.who }, 'Nobody yet'));
   who.addEventListener('change', () => { a.who = who.value || null; });
   const submit = () => {
     const v = name.value.trim();
     const say = (m) => { a.err = m; err.textContent = m; name.setAttribute('aria-invalid', 'true'); name.setAttribute('aria-describedby', errId); name.focus(); };
     if (!v) return say('Give it a name.');
-    const clash = T.childrenOf(state.idx, s.group.id).find((c) => c.kind === T.KIND.product && RG.labelKey(T.nameOf(c)) === RG.labelKey(v));
-    if (clash) return say(`${T.nameOf(clash)} is already here.`);
+    const clash = RG.rowsOf(state.idx, l.id).find((c) => RG.labelKey(T.nameOf(c)) === RG.labelKey(v));
+    if (clash) return say(`${T.nameOf(clash)} is already a row here.`);
     a.name = '';
     a.focus = true;
-    // The row stays open for the next one: products often come in a run.
-    A.addProduct({ name: v, parentId: s.group.id, withJob: a.withJob, assignee: a.withJob ? a.who : null, onFail: () => { if (adding === a) { a.name = v; rerender(); } } });
+    // The form stays open for the next one: rows often come in a run.
+    A.addRow({ name: v, lineId: l.id, useTemplate: Boolean(tpl) && a.withTemplate, assignee: a.who, onFail: () => { if (adding === a) { a.name = v; rerender(); } } });
   };
   name.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); submit(); }
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeAdd(); }
   });
-  const jobWords = tpl ? `Start R1 with the ${plural(tpl.template.length, `${T.nameOf(tpl.from)} task`)}` : 'Start R1 (no tasks template above it)';
-  return el('div', { class: 'rg-add', role: 'group', 'aria-label': `Add a product to ${s.title}` },
+  return el('div', { class: 'rg-add', role: 'group', 'aria-label': `Add a row to ${l.title}` },
     el('div', { class: 'rg-add-name' }, name, err),
-    el('label', { class: 'check-line' }, withJob, jobWords),
+    tpl ? el('label', { class: 'check-line' }, withTemplate, `With the ${plural(tpl.template.length, 'stage')}`) : el('span', { class: 'meta' }, 'No columns yet'),
     who,
     el('div', { class: 'rg-add-acts' },
       btn('Add', submit, { cls: 'primary sm' }),
-      btn('Done', closeAdd, { cls: 'ghost sm', attrs: { 'aria-label': 'Stop adding products' } })));
-}
-
-// ---------------------------------------------------------------------------
-// Start revision: the box (owner, 2026-11-09: "ask each time")
-// ---------------------------------------------------------------------------
-
-function startRevisionBox(product) {
-  const jobs = RG.jobsOf(state.idx, product.id);
-  const rev = RG.nextRevision(jobs);
-  const finished = jobs.filter((j) => !S.isOpen(j.status));
-  const tpl = T.stepsTemplateOf(state.idx, product.id);
-  const heading = jobs.length ? `Next revision of ${T.nameOf(product)}` : `First job for ${T.nameOf(product)}`;
-  return openDialog((box, close, { dismiss }) => {
-    box.append(el('h3', {}, heading),
-      el('p', { class: 'lede' }, tpl
-        ? `It starts with the ${plural(tpl.template.length, `${T.nameOf(tpl.from)} task`)}, all to do.`
-        : 'No tasks template is set above it, so it starts with no tasks.'));
-    const title = el('input', { class: 'input', id: 'srTitle', type: 'text', maxlength: '300', autocomplete: 'off', value: RG.revisionTitle(product, rev), 'data-autofocus': '' });
-    const revision = el('input', { class: 'input mono', id: 'srRev', type: 'text', maxlength: '40', autocomplete: 'off', value: rev });
-    let titleTouched = false;
-    title.addEventListener('input', () => { titleTouched = true; });
-    // The title follows the revision until it is typed in.
-    revision.addEventListener('input', () => { if (!titleTouched) title.value = RG.revisionTitle(product, revision.value.trim()); });
-    const who = whoSelect('srWho', state.me);
-    const archive = finished.length ? el('input', { type: 'checkbox', checked: true }) : null;
-    const names = finished.map(T.nameOf);
-    const err = el('div', { class: 'form-err', role: 'alert' });
-    box.append(
-      el('div', { class: 'field' }, el('label', { for: 'srTitle' }, 'Title'), title),
-      el('div', { class: 'sr-row' },
-        el('div', { class: 'field' }, el('label', { for: 'srRev' }, 'Revision'), revision),
-        el('div', { class: 'field' }, el('label', { for: 'srWho' }, 'For'), who)),
-      archive ? el('label', { class: 'check-line' }, archive,
-        `Move ${names.length > 2 ? `${names.slice(0, 2).join(', ')} and ${names.length - 2} more` : names.join(' and ')} to the archive`) : null,
-      archive ? el('p', { class: 'hint' }, 'Its tasks and updates stay there, and it can be restored.') : null,
-      err);
-    const go1 = () => {
-      const t = title.value.trim();
-      if (!t) { err.textContent = 'Give it a title.'; title.setAttribute('aria-invalid', 'true'); title.focus(); return; }
-      const id = A.startRevision({ productId: product.id, title: t, revision: revision.value, assignee: who.value || null, archiveOld: Boolean(archive?.checked) });
-      close(id);
-    };
-    for (const f of [title, revision]) f.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); go1(); } });
-    title.addEventListener('input', () => { err.textContent = ''; title.removeAttribute('aria-invalid'); });
-    box.append(el('div', { class: 'actions' },
-      btn(jobs.length ? 'Start revision' : 'Start the job', go1, { cls: 'primary' }),
-      btn('Cancel', dismiss, { cls: 'ghost' })));
-  }, { label: heading, guard: true });
+      btn('Done', closeAdd, { cls: 'ghost sm', attrs: { 'aria-label': 'Stop adding rows' } })));
 }
