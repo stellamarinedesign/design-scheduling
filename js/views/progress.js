@@ -322,8 +322,8 @@ function fitSection(sec, w) {
   const n = Math.max(1, Number(sec.dataset.n) || 0);
   let fit = 'stack';
   let cell = Math.max(26, Math.min(40, Math.floor((w - 72) / n)));
-  // The fixed parts: full 524px (name 140, count, rev, status 220, gaps); compact 364px.
-  if (w >= n * 36 + 524) { fit = 'full'; cell = 36; } else if (w >= n * 28 + 364) { fit = 'compact'; cell = Math.min(32, Math.floor((w - 364) / n)); }
+  // The fixed parts: full 576px (name 140, count, rev, status 272, gaps); compact 416px (name 96, count 64, rev, status 168, gaps).
+  if (w >= n * 36 + 576) { fit = 'full'; cell = 36; } else if (w >= n * 28 + 416) { fit = 'compact'; cell = Math.min(32, Math.floor((w - 416) / n)); }
   if (sec.dataset.fit !== fit) sec.dataset.fit = fit;
   const px = `${cell}px`;
   if (sec.style.getPropertyValue('--cell') !== px) sec.style.setProperty('--cell', px);

@@ -1098,11 +1098,14 @@ input::-ms-reveal { display: none; }
    of sight are not laid out until they come near (their last size is kept). */
 .rg-sec:not(.flash) { content-visibility: auto; contain-intrinsic-size: auto 480px; }
 .rg-grid {
-  /* Full: the names keep to a readable width and the job column takes what is left over. */
-  --name: minmax(140px, 360px); --count-w: 56px; --rev-w: 52px; --job: minmax(220px, 1fr); --gap: 12px;
+  /* Full: the names keep to a readable width and the job column takes what is left over.
+     Its least is what a finished row holds whole: "Cancelled", the face, Start revision and ⋯
+     (271px). Grid fills the names to 360px before the job column gets past its least. */
+  --name: minmax(140px, 360px); --count-w: 56px; --rev-w: 52px; --job: minmax(272px, 1fr); --gap: 12px;
   display: flex; flex-direction: column;
 }
-.rg-sec[data-fit="compact"] .rg-grid { --name: minmax(96px, 1fr); --count-w: 44px; --rev-w: 40px; --job: 136px; --gap: 8px; }
+/* Compact: the count holds "2/8" and a "+1"; the status holds "In progress" or "Waiting 55d", the face and ⋯. */
+.rg-sec[data-fit="compact"] .rg-grid { --name: minmax(96px, 1fr); --count-w: 64px; --rev-w: 40px; --job: 168px; --gap: 8px; }
 .rg-sec[data-fit="compact"] .rg-start svg { display: none; }
 .rg-row {
   display: grid; align-items: center; column-gap: var(--gap); min-height: var(--row-h); padding: 4px var(--sp-2);
