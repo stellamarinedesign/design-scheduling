@@ -318,11 +318,57 @@ async function boot() {
   if (Auth.mode === 'local') await start();
 }
 
+// After the server's access list changed this person's role, the next load
+// reads the list from the server, not the device's copy (confirmAccess).
+const ACCESS_FROM_SERVER = 'stella.design.accessFromServer';
+const session = {
+  take(k) { try { const v = sessionStorage.getItem(k); sessionStorage.removeItem(k); return v; } catch { return null; } },
+  put(k, v) { try { sessionStorage.setItem(k, v); } catch { /* a private window: the next load uses the cache and confirms again */ } },
+};
+
+/**
+ * The access list came from this device's copy, so the app could draw
+ * without waiting on the network. The server's copy decides: the same role
+ * carries on with it (new names, new people to assign), and a changed role -
+ * or an account taken off the lists, which may no longer read it - starts the
+ * app again from the server's copy. Not reachable: the device's copy stands,
+ * the strip says the data is unconfirmed, and this runs again once the server
+ * answers (start).
+ */
+let confirming = false;
+async function confirmAccess() {
+  if (confirming || !Store.accessFromCache) return;
+  confirming = true;
+  const r = await Store.confirmAccess();
+  confirming = false;
+  if (r.failed) return;
+  Store.accessFromCache = false;
+  console.info('[access] confirmed by the server');
+  const restart = () => { session.put(ACCESS_FROM_SERVER, '1'); location.reload(); };
+  if (r.refused) { restart(); return; }
+  const was = state.role;
+  setAccess(r.access);
+  Auth.refreshRole();
+  if (Auth.role !== was) { restart(); return; }
+  state.access = currentAccess();
+  drawAll();
+}
+
 async function start() {
   state.started = true;
   state.mode = await Store.init();
-  setAccess(await Store.loadAccess());
+  // The device's copy of the access list first (store.js loadAccess), unless
+  // the last load found the role had changed. A copy that lists this person
+  // nowhere is never trusted: they may have been added since, so the server
+  // decides that one before anything is drawn.
+  const fromServer = session.take(ACCESS_FROM_SERVER) === '1';
+  setAccess(await Store.loadAccess({ cacheFirst: !fromServer }));
   if (Auth.mode === 'firebase') Auth.refreshRole();
+  if (Store.accessFromCache && Auth.role === ROLE.NONE) {
+    setAccess(await Store.loadAccess());
+    Auth.refreshRole();
+  }
+  if (Store.accessFromCache) console.info('[access] started from this device\'s copy; checking it with the server');
   state.access = currentAccess();
   state.me = Auth.me;
   state.role = Auth.role;
@@ -340,16 +386,34 @@ async function start() {
   const note = $('modeNote');
   // The strip under the header says where changes go: this browser only
   // (local mode), or - with Firebase - that the connection is down and
-  // changes are held until it is back (Firestore queues them).
+  // changes are held until it is back (Firestore queues them), or that the
+  // screen shows this device's saved copy because the server has not
+  // answered (store.js `fresh`). A repeat open shows the saved copy for a
+  // moment on every load, so that is said only after a few seconds of it.
+  let unconfirmed = false;
+  let unconfirmedTimer = null;
   const sayMode = () => {
-    const offline = state.mode !== 'local' && !navigator.onLine;
-    note.hidden = state.mode !== 'local' && !offline;
-    if (state.mode === 'local') localStrip(note);
-    else note.textContent = offline ? 'Offline. Changes are kept on this device and sent when the connection is back.' : '';
+    const live = state.mode !== 'local';
+    const offline = live && !navigator.onLine;
+    const stale = live && !offline && unconfirmed;
+    note.hidden = live && !offline && !stale;
+    if (!live) localStrip(note);
+    else note.textContent = offline ? 'Offline: showing saved data. Changes are kept on this device and sent when the connection is back.'
+      : stale ? 'Showing saved data: the server has not answered yet, so some of it may be out of date. Changes are kept on this device.' : '';
   };
   sayMode();
   window.addEventListener('online', sayMode);
   window.addEventListener('offline', sayMode);
+  Store.watchFreshness((fresh) => {
+    clearTimeout(unconfirmedTimer);
+    if (fresh) {
+      if (unconfirmed) { unconfirmed = false; sayMode(); }
+      // The server answers: an access list taken from the device's copy is checked now.
+      confirmAccess();
+    } else {
+      unconfirmedTimer = setTimeout(() => { unconfirmed = true; sayMode(); }, 4000);
+    }
+  });
 
   initRouter(() => { closeMenu(); drawAll(); });
   // Some controls differ by width band (a phone folds switches into menus):

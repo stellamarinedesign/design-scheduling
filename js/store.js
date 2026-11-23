@@ -136,12 +136,61 @@ export const Store = {
       queueMicrotask(() => cb(this._live(), { fromSelf: false }));
       return () => this._watchers.delete(w);
     }
-    const { collection, query, where, onSnapshot } = this._fs;
-    return onSnapshot(
+    const { collection, query, where } = this._fs;
+    return this._listen(
       query(collection(this._db, COL.tasks), where('archivedAt', '==', null)),
       (snap) => cb(snap.docs.map((d) => ({ ...d.data(), id: d.id })), { fromSelf: snap.metadata.hasPendingWrites }),
-      (e) => onError?.(e),
+      onError,
     );
+  },
+
+  // ---- is what is on screen confirmed? -----------------------------------
+  //
+  // With the persistent cache, a repeat open shows this device's last copy at
+  // once and the server's answer replaces it a moment later. When the server
+  // does not answer (workshop Wi-Fi that is "connected" but goes nowhere),
+  // the screen would go on showing the saved copy with nothing to say so. The
+  // tree's live queries therefore hear metadata changes as well, and report
+  // whether their latest copy came from the cache (`fromCache`). `fresh` is
+  // true while every one of them has been confirmed by the server; app.js
+  // says "Showing saved data" when it stays false. A change of metadata alone
+  // (the cache confirmed, a write acknowledged) redraws nothing.
+
+  fresh: true,
+  _freshBy: new Map(),
+  _freshWatchers: new Set(),
+
+  /** `cb(fresh)` now and on every change. Local mode is always fresh. */
+  watchFreshness(cb) {
+    this._freshWatchers.add(cb);
+    cb(this.fresh);
+    return () => this._freshWatchers.delete(cb);
+  },
+
+  _setFresh(key, ok) {
+    if (ok === null) this._freshBy.delete(key); else this._freshBy.set(key, ok);
+    const now = [...this._freshBy.values()].every(Boolean);
+    if (now === this.fresh) return;
+    this.fresh = now;
+    for (const f of this._freshWatchers) f(now);
+  },
+
+  /**
+   * A live query of the tree: `onDocs(snap)` on the first answer and whenever
+   * its documents change; whether the copy is the server's goes to `fresh`.
+   * A failed query is not "unconfirmed": it says so on screen its own way.
+   */
+  _listen(q, onDocs, onError) {
+    const { onSnapshot } = this._fs;
+    const key = Symbol('tree query');
+    let first = true;
+    const stop = onSnapshot(q, { includeMetadataChanges: true }, (snap) => {
+      this._setFresh(key, !snap.metadata.fromCache);
+      if (!first && !snap.docChanges().length) return;
+      first = false;
+      onDocs(snap);
+    }, (e) => { this._setFresh(key, null); onError?.(e); });
+    return () => { stop(); this._setFresh(key, null); };
   },
 
   _live() { return (this._local ?? []).filter((n) => !n.archivedAt); },
@@ -389,11 +438,11 @@ export const Store = {
       queueMicrotask(() => w.cb(this._live(), { fromSelf: false }));
       return () => this._watchers.delete(w);
     }
-    const { collection, query, where, onSnapshot } = this._fs;
-    return onSnapshot(
+    const { collection, query, where } = this._fs;
+    return this._listen(
       query(collection(this._db, COL.tasks), where('kind', 'in', ['group', 'product']), where('archivedAt', '==', null)),
       (snap) => cb(snap.docs.map((d) => ({ ...d.data(), id: d.id })), { fromSelf: snap.metadata.hasPendingWrites }),
-      (e) => onError?.(e),
+      onError,
     );
   },
 
@@ -414,11 +463,11 @@ export const Store = {
     const parts = { groups: null, shared: null };
     const send = (meta) => { if (parts.groups && parts.shared) cb([...parts.groups, ...parts.shared], meta); };
     const stopGroups = this.watchGroups((nodes, meta) => { parts.groups = nodes; send(meta); }, onError);
-    const { collection, query, where, onSnapshot } = this._fs;
-    const stopShared = onSnapshot(
+    const { collection, query, where } = this._fs;
+    const stopShared = this._listen(
       query(collection(this._db, COL.tasks), where('sharedEffective', '==', true), where('archivedAt', '==', null)),
       (snap) => { parts.shared = snap.docs.map((d) => ({ ...d.data(), id: d.id })); send({ fromSelf: snap.metadata.hasPendingWrites }); },
-      (e) => onError?.(e),
+      onError,
     );
     return () => { stopGroups(); stopShared(); };
   },
@@ -614,10 +663,29 @@ export const Store = {
 
   // ---- access --------------------------------------------------------------
 
-  /** settings/access. Unreadable fails closed: empty lists promote nobody. */
-  async loadAccess() {
+  /**
+   * settings/access. Unreadable fails closed: empty lists promote nobody.
+   *
+   * `cacheFirst` is for start-up only: this device's copy, when it has one,
+   * so the app draws at once instead of waiting on the network
+   * (`accessFromCache` says so), and app.js asks the server straight after
+   * (`confirmAccess`). Only a list the device has seen counts: "there is no
+   * list" is the server's to say, since it offers a new project's claim.
+   * Settings' account list never uses the cache: it is saved whole, and a
+   * stale copy would undo a change made on another device.
+   */
+  accessFromCache: false,
+  async loadAccess({ cacheFirst = false } = {}) {
     // Local mode's invented team (team.js), so "View as" has people to be.
     if (this.mode === 'local') return structuredClone(LOCAL_ACCESS);
+    this.accessFromCache = false;
+    if (cacheFirst) {
+      try {
+        const { doc, getDocFromCache } = this._fs;
+        const snap = await getDocFromCache(doc(this._db, COL.settings, 'access'));
+        if (snap.exists()) { this.accessMissing = false; this.accessFromCache = true; return snap.data(); }
+      } catch { /* not on this device yet: the server's copy, below */ }
+    }
     try {
       const { doc, getDoc } = this._fs;
       const snap = await getDoc(doc(this._db, COL.settings, 'access'));
@@ -630,6 +698,24 @@ export const Store = {
       this.accessMissing = false;
       console.error('[access]', e.message);
       return {};
+    }
+  },
+
+  /**
+   * The server's settings/access, after a start from the device's copy.
+   * Straight from the server (never the cache, which is what started the app):
+   * `{access}`, or `{refused: true}` when the rules no longer let this account
+   * read it (taken off the lists), or `{failed: true}` when the server did not
+   * answer (app.js tries again once it does).
+   */
+  async confirmAccess() {
+    if (this.mode === 'local') return { access: structuredClone(LOCAL_ACCESS) };
+    try {
+      const { doc, getDocFromServer } = this._fs;
+      const snap = await getDocFromServer(doc(this._db, COL.settings, 'access'));
+      return { access: snap.exists() ? snap.data() : {} };
+    } catch (e) {
+      return e?.code === 'permission-denied' ? { refused: true } : { failed: true };
     }
   },
 
