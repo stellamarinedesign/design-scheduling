@@ -393,13 +393,17 @@ spacing scale from sp-1 (4px) to sp-6 (32px).
 
 - **Rows:** job and task rows are 44px tall. Nested tasks indent 20px per level, with a hairline
   guide.
-- **Width bands** (provisional; to be confirmed in the first build):
+- **Width bands** (as built):
 
   | Band | Width | Behaviour |
   |---|---|---|
-  | Phone | under 700px | One column. The task panel becomes a full-height sheet. Primary actions sit within thumb reach, and there is a floating add button. |
-  | Half-screen | 700–1100px | The category sidebar (240px) beside one content column. The task panel (560px) slides over the content rather than squeezing it. |
-  | Wide | over 1100px | Home splits into two columns. On very wide screens the task panel can sit beside the list instead of over it. |
+  | Phone | under 700px | One column. The task panel becomes a full-height sheet. Primary actions sit within thumb reach, and there is a floating add button. The category sidebar is a sheet from ☰ with 44px rows. |
+  | Half-screen | 700–1099px | One content column, given the whole width. The category sidebar is a drawer behind ☰ (290px), not pinned. The task panel (560px) slides over the content rather than squeezing it. |
+  | Wide | 1100px and over | The category sidebar (240px) is pinned beside the content. From 1280px the task panel sits beside the list instead of over it. |
+
+  The sidebar is a drawer at half-screen rather than an icon rail (owner, 2026-11-23):
+  categories carry only a colour dot, so a rail would be a column of dots. The categories are
+  also one tap away in Tasks.
 
 - **Tile grids:** tiles fill columns of at least 208px with a 12px gap. On phones, two tiles sit
   in a row (10px gap). Ready-for-checking tiles and Log cards need 264px, and a Team column
@@ -440,9 +444,11 @@ Shadows belong only to layers that float above the page and can be dismissed.
 
 ### Shadow Vocabulary
 
-- **Floating panel** (`box-shadow: 0 12px 40px rgba(0, 0, 0, .5)`): the task side panel, the
-  phone bottom sheet, menus, popovers and toasts. In the Workshop theme it softens to
-  `rgba(0, 0, 0, .18)`.
+- **Floating panel** (`--shadow-panel`): the task side panel, the phone bottom sheet, menus,
+  popovers, dialogs, toasts and the + button. It is three layers: a tight contact shadow, a mid
+  one and a long soft one (`0 1px 2px / .3, 0 4px 12px / .25, 0 16px 40px / .4` in black), so
+  the edge reads without a hard dark band (owner, 2026-11-23). In the Workshop theme each layer
+  softens (`.06`, `.07`, `.12`).
 - **Scrim** (`rgba(0, 0, 0, .55)`): behind the phone sheet and any blocking dialog.
 
 ### Named Rules
@@ -455,7 +461,11 @@ flat. A shadow means "this is above the page and will go away".
 - **Corners** are modest and consistent:
   - 8px (`rounded.md`) on buttons, inputs, cards and rows that show a hover fill;
   - 11px (`rounded.lg`) on the larger containers: stat tiles, the side panel's leading
-    corners, sheets;
+    corners, sheets, menus;
+  - **concentric** where one corner sits close inside another: the inner radius is the outer
+    one less the gap. A menu's items are 7px inside its 11px corner and 4px padding; the
+    folder row's buttons and the password field's Show are 4px; a segmented switch's end
+    segments round 1px inside its outline;
   - full pills (`rounded.pill`) only for status pills and count bubbles.
 - **Lines:** 1px hairlines everywhere. The one exception is the 3px Burning Star Red rule under
   the header, and the 3px underline on the active tab.
@@ -467,8 +477,26 @@ are recorded from the shipped Phase 2 code (`css/app.css`, `js/views/`).
 
 ### Buttons
 
-- **Shape:** gently rounded (8px). 36px tall on desktop, 44px at phone widths.
-- **Primary:** Upsdell Red fill, white body-strong label. One per view.
+- **Shape:** gently rounded (8px). 36px tall on desktop, 44px at phone widths. Small buttons
+  are drawn 30px (36px on a phone).
+- **Targets** (2026-11-23): every control can be hit at 36px at desk widths and 44px at phone
+  width, whatever size it is drawn. Small buttons, status pills, filter pills, small ⋯ buttons,
+  ticks, segments, property values, chips, crumbs, the Progress row names, "+N" and the toast's
+  button grow an invisible target round them (an `::after`, the Targets block in `app.css`);
+  the drawing does not change. Where they wrap onto a second line the gap between the lines is
+  at least what they grow by, and side-by-side ones (segments, a tile's tick) grow up and down
+  only, so **no two targets overlap**. This was checked with every target measured at 375px,
+  900px and desktop, as each role. Selects and the sidebar sheet's rows are drawn 44px on a
+  phone. The exceptions: inline fields in the panel (Due, Rev) stay 32px on desktop, and a
+  task tile's pill keeps its drawn 30px on a phone because its tick is right above it.
+- **Labels say what happens:** verb and object ("Add row", "Save path", "Import these", "Mark
+  waiting"), never a bare Add, Save, Done, Apply or OK. A delete, discard or replace confirm
+  names both outcomes ("Delete for good" / "Keep it", "Discard changes" / "Keep editing").
+- **Working:** a button that waits says so in its label ("Importing…", "Signing in…") and is
+  disabled until it is done.
+- **Primary:** Upsdell Red fill, white body-strong label. One per view. On a phone the + button
+  steps aside while the view shows its own primary (a welcome block's first step, Progress's
+  "Add row"), so only one red button is ever in view.
 - **Secondary:** transparent, with a 1px Strong Rule outline and Ash label. This is the default
   for most actions.
 - **Ghost:** no outline, Muted Ash label. For low-stakes row actions (Start, Snooze, ⋯).
@@ -482,6 +510,23 @@ are recorded from the shipped Phase 2 code (`css/app.css`, `js/views/`).
 The signature chip, used wherever status is shown. A deep tinted background with a light text
 tint of the same hue, a full pill shape, and meta type with the status word always written
 out. Tapping a pill opens the status menu, so changing status is one tap.
+
+The word is in its own span (`ui.js` `pill`), and that span ends in "…" when a row runs short;
+the pill itself is never clipped, so its target can reach past its drawn edge.
+
+### Filter pills
+
+The pills over a list (All · Open · Waiting, with counts) are outlined, 30px (36px on a phone).
+The pressed one takes Chip Grey with a Strong Rule edge and a White label, as a pressed segment
+does; Shadow Grey was the Workshop theme's white on its white ground. On a phone a row that
+scrolls sideways (the Log, Design jobs, Progress, and Home's Backlog) fades over its last 24px,
+so it is plain there is more, and hides its scrollbar.
+
+### Pickers
+
+A button that opens a choice looks like one at rest: a muted 14px chevron after its value. The
+panel's Who, Priority and Managers values have it, as do the field-styled pickers (quick add's
+and a new line's "In", the composer's Category and Job) and the Log's Category and Anyone.
 
 ### Category dot
 
@@ -524,19 +569,32 @@ actions sit in the row or in the sheet.
 - **Header:** a Shadow Grey bar with the Stella mark and the uppercase Friz app title, sitting
   on the 3px Burning Star Red rule.
 - **Desktop tabs:** text tabs in body-strong Muted Ash. The active tab is White, with a 3px
-  Burning Star Red underline. Count bubbles sit beside a tab when something needs attention.
+  Burning Star Red underline.
 - **Phone:** the same destinations, as a bottom bar with 44px targets.
+- **Counts** (outstanding work: checks waiting, open Log notes, send-backs) are pinned to the
+  top corner of what they count, over the end of the tab's word on desktop and the icon's
+  corner on a phone, so a tab never moves when its count comes or goes (owner, 2026-11-23).
+  Red, because each one needs someone to act; it clears only when the work is done. Over 99
+  it reads "99+".
 
 ### Motion
 
-Motion exists only for change of state, following emil-design-eng:
+Motion exists only for change of state, following emil-design-eng and stella-internal-ux:
 
-- the side panel and sheet slide in (260ms, ease-out `cubic-bezier(.23, 1, .32, 1)`);
-- toasts enter (200ms);
-- a status pill cross-fades its colour (120ms).
+- the side panel and sheet slide in (260ms, ease-out `cubic-bezier(.23, 1, .32, 1)`) and out
+  (200ms);
+- toasts enter (200ms) and leave (150ms);
+- menus grow out of the button that opened them (160ms, from `scale(.97)` and transparent,
+  `transform-origin` at that button wherever the menu had to move to fit) and go back into it a
+  fifth quicker (128ms), taking no clicks on the way out;
+- a status pill cross-fades its colour (120ms);
+- a refused value (an empty name, a wrong password) shakes its field once, 360ms, as well as
+  turning red and saying why;
+- a theme switch changes every colour at once: transitions are off for that one frame.
 
-Nothing animates on load or on hover beyond a colour change. Reduced motion collapses every
-duration to 0.
+Every duration comes from `--dur-fast`, `--dur` or `--dur-panel` (or a fraction of one), so
+reduced motion, which zeroes them, stops all of it. Nothing animates on load or on hover beyond
+a colour change. Collapsible groups snap open (each fold redraws its view).
 
 ### Tiles
 
@@ -558,7 +616,8 @@ phones).
 - **On phones (two tiles to a row):** the top row has about 145px at 375px wide.
   - The age moves to the foot, right-aligned. The top row keeps the tick, the whole status
     pill (8px side padding) and ⋯.
-  - ⋯ keeps a 44px target by reaching over the gap on its left.
+  - ⋯ keeps a 44px target by reaching over the gap on its left, and the tick over the gap on
+    its right, each only as far as the pill's edge.
   - Short of room, the tick's touch target narrows first (its 20px box never shrinks). Only
     then does the pill end in "…". Its menu and the tile's accessible name still say the status
     in full.
@@ -573,7 +632,8 @@ In the Workshop theme the ground is the panel's own white, so the inset takes Ba
   then the Tiles/List switch on the right. Since steps merged into tasks (2026-11-06) there is
   one kind of child: a task, with or without someone on it.
 - **Segmented switch:** a 1px Strong Rule outline with 8px corners and 28px segments (34px on
-  phones). Labels are Muted Ash meta at 600. The pressed segment is Chip Grey with a White label.
+  phones, where icon-only segments are 44px wide). It is not clipped, so its segments' targets
+  reach past it; the end segments round their own corners. Labels are Muted Ash meta at 600. The pressed segment is Chip Grey with a White label.
   Each segment has a 14px icon and a word. Inside the inset on phones only the icons show; the
   words stay for screen readers. The choice is remembered per node.
 - **Child tiles (Tiles):** the direct children only, one compact tile each, in columns of at
@@ -821,11 +881,13 @@ The same panel as a task (a full-screen sheet on phones).
   to the bottom dock.
 - **Dismissed:** a neutral callout with who, when and why, and Reopen.
 
-### Manager Jobs
+### Manager Jobs ("Design jobs")
 
-A read-only list of the jobs the lead has shared: no ticks, no drag, no status menu.
+A read-only list of the jobs the lead has shared: no ticks, no drag, no status menu. Its tab and
+heading say **Design jobs** (owner, 2026-11-23): managers also read the production board, where
+"jobs" are production orders.
 
-- **Head:** "Jobs" with filter pills (All · In progress · Waiting · Being checked · Done this
+- **Head:** "Design jobs" with filter pills (All · In progress · Waiting · Being checked · Done this
   month), a search (220px), and a By category / Full list switch.
 - **Category sections:** a toggle with a chevron, the category name in Friz at title size, and a
   count. Each folds, and the fold is remembered.
@@ -953,6 +1015,9 @@ The Excel Progress sheet made live (Phase 4, built 2026-11-09; product lines wit
 
 ### Loading, empty and error states
 
+- **Start-up:** `index.html` paints skeleton tiles in the view before any script runs, so a
+  cold open on workshop Wi-Fi shows the shape of the page at once, never a blank one; the
+  first draw replaces them.
 - **Skeletons:** flat Shadow Grey blocks with a hairline and 8px corners. Each is the size of
   what it stands for: a 128px tile, a 280px note card, a 64px row (inside a list, with only its
   bottom hairline), or a 60px block and a tile in the panel. They do not shimmer. Their container
@@ -964,9 +1029,12 @@ The Excel Progress sheet made live (Phase 4, built 2026-11-09; product lines wit
   alert.
   - The heading says what failed, in words: "Your tasks did not load", "The Log did not load",
     "The jobs did not load".
-  - Two plain lines follow. A refusal by the rules reads "This account is not allowed to see
-    it." with what to do (reload, or ask the Design lead). Anything else gives its message and
-    "If you are offline, it loads when the connection is back."
+  - Two plain lines follow: why, and what to do. A refusal by the rules reads "This account is
+    not allowed to see it." with what to do (reload, or ask the Design lead). Anything else is
+    said in plain words from its code (`ui.js` `plainWhy` and `plainNext`): "The server could
+    not be reached: offline, or the connection dropped." / "It loads when the connection is
+    back. Otherwise reload the page." Firebase's and the browser's own wording is never shown;
+    the app's own error sentences are.
   - Then a Reload button.
 - **Gone:** something deleted or unshared, opened in the panel, says "Not here any more" or "Not
   shared any more", with a way on (Open the archive).
@@ -978,10 +1046,50 @@ The Excel Progress sheet made live (Phase 4, built 2026-11-09; product lines wit
   inside one is cut to 48 characters, so the toast reads in a glance and its button stays in
   reach.
 - **Form errors** mark the field as well as saying why: the field gets a red edge and
-  aria-invalid, is described by the error line, and takes focus. Typing clears both.
+  aria-invalid, is described by the error line, takes focus and shakes once (`ui.js`
+  `refuse`). Typing clears both.
 - **Offline:** whatever would wait for the connection says so at once instead of hanging. A
   workday saved offline is "kept on this device". Convert steps refuses offline, because it
   must read every archived step from the server.
+
+## Stella internal UX (`stella-internal-ux`)
+
+Design Scheduling follows the `stella-internal-ux:stella-internal-ux` skill, the UX laws and
+motion rules shared by Stella's internal apps (audited and brought into line 2026-11-23). This
+file, PRODUCT.md and CLAUDE.md win where they are more specific; where the skill and this file
+disagreed, the owner decided, and the decision is written in place above. How each rule lands
+here:
+
+| Skill rule | Here |
+|---|---|
+| Fitts: 44px at phone width, 36px for desk controls | Targets grow invisibly round the drawn controls; no two overlap (Buttons, "Targets"). |
+| Hick: one filled primary per view | One red button; on a phone the + steps aside for a view's own primary. Rare settings live behind the cog. |
+| Miller: a row shows status, owner and age | The Glance Rule. Counts on every group and filter. Folder paths have Copy path. |
+| Doherty: react within 400ms | Firestore's local writes show at once; a refused write rolls back and says why in the warning toast. |
+| Postel: messy in, clean out | Pasted Windows paths and OneDrive links are normalised (`folders.js`); the Excel and TileDo imports read odd captions and blank rows and warn instead of refusing. |
+| Tesler: the code absorbs the complexity | The Stella Systems prefix is learnt from the first pasted path; views, folds and Tiles/List are remembered per device. |
+| Jakob: keep the replaced tool's words; one meaning per word | The Excel sheet's Progress layout and words; the family header, red primary, status words and local-mode strip. Managers' jobs are "Design jobs". |
+| Polish: tabular numbers, balanced text, masked scroll edges, concentric radius, layered shadows | All in place (`app.css`: the Polish block, the phone filter rows, `--shadow-panel`). Hairlines stay the opaque `--border` token: both themes tune it. |
+| Badges: 99+, pinned, red only for action | Tab counts. |
+| Buttons: verb + object, both outcomes named, working labels | All labels and confirms (Buttons). |
+| Loading: paint the shell at once, cache first | The start-up skeleton; Firestore's `persistentLocalCache`. |
+| Errors: what, why, what next; never raw | `plainWhy` / `plainNext` in every error line and toast. |
+| Navigation: links go somewhere, buttons fold; a second signal for the current item | Sidebar links are `<a href>`, folds are `<button aria-expanded>`; the current item is bold, the active tab underlined. Half-screen keeps the drawer (Layout). |
+| Dropdowns: look clickable, flip at the edge, keys, search in long lists | Chevrons on pickers; menus flip above, take arrows, Home/End and type-to-jump; pickers search. |
+| Motion | As in Motion above: 120–260ms, from the tokens, ease-out entrances, zero under reduced motion. |
+
+**Still open** (not done in the 2026-11-23 pass, each its own change):
+
+- Start-up still waits for the server's copy of the access list before it draws the tabs. Read
+  `settings/access` from the device's cache first and confirm it after (needs a live test).
+- "Offline" is said only when the browser reports no network. Connected Wi-Fi that cannot reach
+  Firebase shows saved data with no note; snapshot metadata could say "Showing saved data"
+  (needs a live test).
+- Collapsible groups snap open; the skill would animate their height (≤200ms). Each fold
+  redraws its whole view, so they would first have to fold in place.
+- Long sidebar names wrap to two lines rather than one line and an ellipsis (kept: two lines
+  read better at 240px).
+- Saves confirm with a toast rather than the button's own label ("Saved") and one pulse.
 
 ## Do's and Don'ts
 
@@ -1003,6 +1111,10 @@ The Excel Progress sheet made live (Phase 4, built 2026-11-09; product lines wit
   sit on the ground.
 - **Do** say load errors and refusals in plain words, with what to do next, and keep what
   someone typed when a post is refused.
+- **Do** give a new small control its target in the Targets block of `app.css`, and check that
+  no two targets overlap at 375px, 900px and desktop.
+- **Do** name a button for what it does, and both outcomes in a delete or discard confirm.
+- **Do** check new UI against `stella-internal-ux:stella-internal-ux` as well as this file.
 
 ### Don't:
 
@@ -1016,5 +1128,11 @@ The Excel Progress sheet made live (Phase 4, built 2026-11-09; product lines wit
   touchable control.
 - **Don't** animate anything that isn't a change of state, and never on page load.
 - **Don't** set job or task titles in Friz Quadrata. Don't ship the licensed font files.
-- **Don't** show raw backend errors ("Missing or insufficient permissions") to anyone.
+- **Don't** show raw backend errors ("Missing or insufficient permissions") to anyone: pass
+  them through `plainWhy`.
+- **Don't** clip a control that has a grown target (`overflow: hidden` on it or its row cuts
+  the target off): clip an inner span instead, as the status pill does.
+- **Don't** write a movement's duration as a literal: use a motion token, so reduced motion
+  stops it. (The lightbox's fade has its own reduced-motion rule; the sidebar's flash is a
+  colour fading out, which reduced motion keeps.)
 - **Don't** fill Approve red where several checks share a page. On check tiles it is outlined.
