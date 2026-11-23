@@ -1,8 +1,10 @@
 // auth.js — sign-in and roles. Copied from the board, with this app's roles.
 //
-// Firebase email/password, no self-signup: a master makes accounts in the app
-// (settings.js) with a temporary password, and the owner changes it under the
-// cog (password.js).
+// Firebase email/password, no self-signup. SINCE THE HUB (2026-11-23) people
+// and roles are given in Hubinator, which signs this app in to its own
+// project as the hub's person (hub-bridge.js); this app's own form, password
+// dialog and user-making stay only as the fallback while the hub is new, and
+// go in the clean-up release.
 //
 // THE ROLE LISTS ARE NOT SECURITY. They decide what gets drawn. The Firestore
 // rules are the real enforcement, and they read the same settings/access
@@ -50,6 +52,8 @@ export const Auth = {
   mode: 'local',        // 'firebase' | 'local'
   user: null,
   role: ROLE.NONE,
+  hub: null,            // the hub (hub-bridge.js), when it loaded
+  hubState: null,       // what it answered: in | legacy | none | broken | unreachable
 
   /**
    * @param {(state: {role, email, mode}) => void} onChange
@@ -72,6 +76,13 @@ export const Auth = {
 
     this.mode = 'firebase';
     this._fb = fb;
+    // THE HUB, before the app's own listener: it may sign this app in (or
+    // out) as the hub's person first. Fails open: with no hub this is as
+    // before. app.js and settings.js read `hub` and `hubState`.
+    const [{ joinHub }, { firebaseConfig }] = await Promise.all([import('./hub-bridge.js'), import('./firebase.js')]);
+    const joined = await joinHub({ fb, projectId: firebaseConfig.projectId, slot: document.getElementById('hubSlot') });
+    this.hub = joined?.Hub ?? null;
+    this.hubState = joined?.state ?? null;
     fb.fa.onAuthStateChanged(fb.auth, (user) => {
       this.user = user;
       this.role = user ? (roleOf(access, user.email) ?? ROLE.NONE) : ROLE.NONE;
@@ -104,6 +115,21 @@ export const Auth = {
     if (this.mode === 'local') return;
     const { fa, auth } = this._fb;
     await fa.signOut(auth);
+  },
+
+  /** True when this app is signed in as the hub's person: Password and Sign out are the hub's. */
+  get viaHub() { return this.mode === 'firebase' && this.hubState === 'in' && Boolean(this.hub); },
+
+  /**
+   * Sign out of the hub as well when signed in through it (it leaves a mark
+   * so the other apps on this device sign out when next opened), then out of
+   * this app. A hub that will not answer does not keep anyone signed in here.
+   */
+  async signOutEverywhere() {
+    if (this.viaHub) {
+      try { await this.hub.signOut(); } catch (e) { console.warn('[hub] sign-out failed:', e?.message ?? e); }
+    }
+    await this.signOut();
   },
 
   /**

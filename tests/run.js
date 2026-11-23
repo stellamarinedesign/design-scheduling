@@ -18,6 +18,7 @@ import * as TC from '../js/timing.js';
 import * as RG from '../js/register.js';
 import * as PX from '../js/import/progress.js';
 import * as QT from '../js/quote.js';
+import * as HB from '../js/hub-bridge.js';
 import { sampleNodes, sampleStepNodes, tiledoData, tiledoArchive, excelRows, lineNodes, progressRows } from './samples.js';
 
 const results = [];
@@ -36,6 +37,15 @@ function expect(actual, expected, what = '') {
   if (!eq(actual, expected)) throw new Error(`${what ? what + ': ' : ''}expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
 }
 function ok(cond, what) { if (!cond) throw new Error(what || 'expected true'); }
+/** A test that awaits (the hub bridge): `await testAsync(...)` inside run(). */
+async function testAsync(name, fn) {
+  try {
+    await fn();
+    results.push({ group, name, pass: true });
+  } catch (e) {
+    results.push({ group, name, pass: false, detail: e?.message ?? String(e) });
+  }
+}
 
 /** Apply patches to a node list, as the store would. */
 function apply(nodes, patches) {
@@ -1860,6 +1870,88 @@ export async function run() {
   test('a sheet with no Date rows: a lone name just above a header is the family', () => {
     const p = PX.parseProgressRows([['Gates'], ['Gate', 'Model', 'Drawings', 'Comments'], ['G1', 'Done', ''], ['G2']]);
     expect([p.families.map((f) => f.title), p.families[0].sections[0].rows.map((r) => r.name)], [['Gates'], ['G1', 'G2']]);
+  });
+
+  // -------------------------------------------------------------------------
+  group = 'hub (Hubinator)';
+  test("no user: reload once started, nothing behind the hub's card, else the own form", () => {
+    expect(HB.noUserAction({ started: true, hubState: 'in' }), 'reload');
+    expect(HB.noUserAction({ started: true, hubState: null }), 'reload', 'started, with no hub too');
+    expect(HB.noUserAction({ started: false, hubState: 'none' }), 'nothing');
+    expect(HB.noUserAction({ started: false, hubState: 'broken' }), 'nothing');
+    expect(HB.noUserAction({ started: false, hubState: 'unreachable' }), 'signin');
+    expect(HB.noUserAction({ started: false, hubState: null }), 'signin', 'no hub file');
+  });
+  test("connect options call the app's own Firebase auth", () => {
+    const calls = [];
+    const auth = { currentUser: { email: 'Lead@Example.test' } };
+    const fa = {
+      signInWithEmailAndPassword: (a, e, pw) => calls.push(['password', a === auth, e, pw]),
+      signInWithCustomToken: (a, t) => calls.push(['token', a === auth, t]),
+      signOut: (a) => calls.push(['out', a === auth]),
+    };
+    const o = HB.connectOptions({ fb: { fa, auth }, projectId: 'proj-x' });
+    expect([o.project, o.title], ['proj-x', 'Design Scheduling']);
+    expect(o.session(), 'Lead@Example.test');
+    o.signIn({ email: 'a@example.test', password: 'pw' });
+    o.signIn({ token: 'tok' });
+    o.signOut();
+    expect(calls, [['password', true, 'a@example.test', 'pw'], ['token', true, 'tok'], ['out', true]]);
+    expect(o.legacy(), undefined, 'legacy draws nothing itself');
+    expect(HB.connectOptions({ fb: { fa, auth: { currentUser: null } }, projectId: 'p' }).session(), null, 'no session');
+  });
+  test('the hub changing in another tab: reload unless it is the same person, never on a device it left alone', () => {
+    expect(HB.shouldReload({ state: 'in', hubEmail: 'lead@example.test', appEmail: 'Lead@Example.test' }), false, 'same person, any case');
+    expect(HB.shouldReload({ state: 'in', hubEmail: null, appEmail: 'lead@example.test' }), true, 'signed out of the hub');
+    expect(HB.shouldReload({ state: 'in', hubEmail: 'other@example.test', appEmail: 'lead@example.test' }), true, 'somebody else');
+    expect(HB.shouldReload({ state: 'legacy', hubEmail: null, appEmail: 'lead@example.test' }), false, 'legacy');
+    expect(HB.shouldReload({ state: 'unreachable', hubEmail: 'lead@example.test', appEmail: null }), true, 'signed in to the hub elsewhere: ask again');
+  });
+  await testAsync('loadHub: null for an address that does not load or is too slow; the Hub when it loads', async () => {
+    expect(await HB.loadHub({ url: '/tests/no-such-hub.js' }), null, 'not found');
+    expect(await HB.loadHub({ wait: 20, load: () => new Promise(() => {}) }), null, 'timed out');
+    const Hub = { connect() {} };
+    ok((await HB.loadHub({ load: async () => ({ Hub }) })) === Hub, 'the Hub from a file that loads');
+  });
+  await testAsync('firstUser: the first auth state, once, then it stops listening', async () => {
+    let stopped = 0;
+    let cb;
+    const fa = { onAuthStateChanged: (a, f) => { cb = f; return () => { stopped += 1; }; } };
+    const p = HB.firstUser(fa, {});
+    cb({ email: 'x@example.test' });
+    cb(null);
+    expect((await p)?.email, 'x@example.test');
+    await Promise.resolve();
+    expect(stopped, 1);
+  });
+  await testAsync("joinHub: connects, draws the switcher, reloads when the hub's person changes; fails open", async () => {
+    const auth = { currentUser: { email: 'lead@example.test' } };
+    const fa = { onAuthStateChanged: (a, f) => { queueMicrotask(() => f(auth.currentUser)); return () => {}; } };
+    let asked;
+    let drawn;
+    let changeCb;
+    let reloads = 0;
+    const hubWith = (state) => ({
+      connect: async (o) => { asked = o; return { state }; },
+      switcher: (slot, opts) => { drawn = [slot, opts]; },
+      onChange: (f) => { changeCb = f; },
+    });
+    const slot = {};
+    const Hub = hubWith('in');
+    const r = await HB.joinHub({ fb: { fa, auth }, projectId: 'proj-x', slot, reload: () => { reloads += 1; }, load: async () => ({ Hub }) });
+    expect(r.state, 'in');
+    ok(r.Hub === Hub, 'the Hub kept, for the cog');
+    expect(asked.project, 'proj-x');
+    ok(drawn[0] === slot && drawn[1].current === 'proj-x', 'the switcher in the slot, this app marked');
+    changeCb({ email: 'lead@example.test' });
+    expect(reloads, 0, 'same person');
+    changeCb(null);
+    expect(reloads, 1, 'signed out of the hub');
+    await HB.joinHub({ fb: { fa, auth }, projectId: 'p', reload: () => { reloads += 1; }, load: async () => ({ Hub: hubWith('legacy') }) });
+    changeCb(null);
+    expect(reloads, 1, 'a device the hub left alone is never reloaded');
+    expect(await HB.joinHub({ fb: { fa, auth }, projectId: 'p', load: async () => { throw new Error('404'); } }), null, 'no hub: as before');
+    expect(await HB.joinHub({ fb: { fa, auth }, projectId: 'p', load: async () => ({ Hub: { connect: async () => { throw new Error('bug'); } } }) }), null, 'a hub that throws fails open');
   });
 
   group = 'writes';

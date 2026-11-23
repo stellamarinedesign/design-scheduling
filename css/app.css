@@ -40,6 +40,11 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
 .tab:hover { color: var(--header-text); }
 .tab[aria-current="page"] { color: var(--header-text); border-bottom-color: var(--tab-active); }
 .sp { flex: 1; min-width: 0; }
+/* The hub's app switcher (hub-bridge.js): a grid button it draws beside the
+   cog, 4px from it as on the hub, the two belonging together. Empty (a login
+   with one app, local mode, no hub) it takes no room. */
+.hd-apps { display: flex; flex: none; margin-right: calc(4px - var(--sp-3)); }
+.hd-apps:empty { display: none; }
 .hd .ib { color: var(--header-text); }
 .hd .btn { border-color: var(--border2); color: var(--header-text); }
 [data-theme="workshop"] .hd .btn { border-color: rgba(255, 255, 255, .3); }
@@ -811,7 +816,8 @@ input::-ms-reveal { display: none; }
 .settings-row { display: flex; gap: var(--sp-3); align-items: center; justify-content: space-between; flex-wrap: wrap; }
 .settings-row-sub { color: var(--text3); font-size: var(--fs-sm); }
 .acct-table { display: flex; flex-direction: column; gap: 4px; }
-.acct-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: var(--sp-2); align-items: center; }
+.acct-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-2); align-items: center; }
+.acct-role { font-size: var(--fs-sm); color: var(--text2); }
 .acct-fresh { border: 1px solid var(--border2); border-radius: var(--radius); padding: 10px; display: flex; flex-direction: column; gap: 6px; }
 
 /* ── Roles: what each sees (app.js). Only the lead has the category tree. ── */
@@ -1407,6 +1413,7 @@ button.rc:hover i { border-color: var(--text2); }
 @media (max-width: 699px) {
   :root { --row-h: 52px; }
   .hd { height: 52px; gap: 4px; padding: 0 4px 0 4px; }
+  .hd-apps { margin-right: 0; }   /* the header's gap is already 4px here */
   .hd-logo, .tabs, .hd .new-job { display: none; }
   .hd-view { display: block; margin-left: 4px; }
   .hd .ib { width: 44px; height: 44px; }
@@ -1533,7 +1540,8 @@ button.rc:hover i { border-color: var(--text2); }
   .qx .actions .btn { flex: 1 1 auto; }
   .timer-total { min-height: 44px; }
   .imp-row { grid-template-columns: minmax(0, 1fr); }
-  .acct-row { grid-template-columns: 1fr; }
+  .acct-row { grid-template-columns: 1fr; gap: 2px; }
+  .acct-table { gap: var(--sp-4); }   /* stacked, each person's name, address and role read as one */
   .acct-name { max-width: none; height: 44px; }
 
   /* The team on a phone: one column of everything, lanes stacked. */

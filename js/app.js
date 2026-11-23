@@ -303,6 +303,13 @@ async function boot() {
   console.info(`Design Scheduling ${VERSION}`);
   await Auth.init(async ({ mode, email }) => {
     if (mode === 'firebase' && !email) {
+      // No user (hub-bridge.js noUserAction): reload if the page had started
+      // (the session went while it was open, and the reload asks the hub
+      // again); nothing if the hub's full-screen card is up; else the form.
+      const { noUserAction } = await import('./hub-bridge.js');
+      const act = noUserAction({ started: state.started, hubState: Auth.hubState });
+      if (act === 'reload') { location.reload(); return; }
+      if (act === 'nothing') return;
       (await import('./views/signin.js')).renderSignIn(document.getElementById('app'));
       return;
     }

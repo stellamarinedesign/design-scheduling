@@ -22,10 +22,23 @@ parent. Starting here is what loads this file, the project skills and the Impecc
 - **No build step.** Plain ES modules, served as-is by GitHub Pages at
   `stellamarinedesign.github.io/design-scheduling`. Firebase JS SDK 10.12.2 (modular), loaded
   from `gstatic`. SheetJS from the CDN for imports.
-- **Its own Firebase project.** It is deliberately not the board's project. It moves into a
-  hub project later (plan, Phase 4).
+- **Its own Firebase project, for good.** It is deliberately not the board's project, and
+  it keeps its own data, rules and roles.
   - Collection names come from the one `COL` map in `js/store.js`. Never write a collection
     name anywhere else.
+- **Sign-in goes through Hubinator** (the hub, `stellamarinedesign.github.io`, repo
+  `../../Stella-Hubinator/hub`), since 2026-11-23. One Stella login signs this app in to its
+  OWN project, with a key the hub holds.
+  - `js/hub-bridge.js` loads `/core/v1/hub.js` from the site root and calls `Hub.connect`
+    before the app's own auth listener. It fails open: with no hub (localhost, local mode,
+    the tests page, or the hub down) the app signs in as it always did.
+  - People and roles are given in Hubinator, under Accounts; it writes `settings/access`.
+    The cog's Accounts panel only names people (`people/{email}`) and shows roles. Never
+    put a role editor back: `Store.saveAccess` rewrites the whole document.
+  - When signed in through the hub (`Auth.viaHub`), Password and Sign out are the hub's.
+    The app's own sign-in form shows only when the hub can't be reached.
+  - The contract is the comment at the top of the hub's `core/v1/hub.js`; never copy it
+    into this repo. The handover is `../../Stella-Hubinator/handoff/DESIGN_SCHEDULING_HUB_PATCH.md`.
 - **Local mode.** The Firebase project (`stella-design-scheduling`) is configured, so the app
   is live by default.
   - `?local=1` switches this device into local mode: no sign-in, data in localStorage, the

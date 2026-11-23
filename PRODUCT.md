@@ -84,7 +84,8 @@ It's built around Stella's own drafting workflow, not a generic project tool:
   the full path for that PC.
 - **Neighbouring apps:**
   - The Stella production board and material-ordering apps share the
-    `stellamarinedesign.github.io` origin and a future single-login hub.
+    `stellamarinedesign.github.io` origin and one login, Hubinator, which signs each app in
+    to its own Firebase project. People and roles are given there.
   - On the board, "jobs" means production orders. That's a different thing, though the same
     people see both apps.
 - **History:** the Excel tracker and TileDo data are imported once, in the browser. After that
