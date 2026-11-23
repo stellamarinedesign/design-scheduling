@@ -66,8 +66,11 @@ export function openQuickAdd({ parentId, capture = false, own = state.role !== '
       nobody.textContent = inJob ? 'Nobody: part of the job' : 'Nobody yet';
       if (!forTouched) forSel.value = inJob ? '' : state.me;
     };
+    // Categories only (owner, 2026-11-23): this is for adding a job, and the
+    // tasks inside a job are added and managed from the job itself. Done and
+    // open jobs alike stay out of the list.
     placeBtn.addEventListener('click', async () => {
-      const dest = await placeDialog({ title: 'Put it in…', includeJobs: true, current: place, allow: () => null, topLabel: 'Not in a category' });
+      const dest = await placeDialog({ title: 'Put it in…', current: place, allow: () => null, topLabel: 'Not in a category' });
       if (dest !== undefined) { place = dest; drawPlace(); }
       title.focus();
     });

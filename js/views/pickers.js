@@ -100,7 +100,7 @@ export function waitingDialog(id) {
 export function placeDialog({ title, allow, includeJobs = false, current = undefined, topLabel = 'The top level (no category)' }) {
   return openDialog((box, close) => {
     box.append(el('h3', {}, title));
-    const q = el('input', { class: 'input', type: 'search', placeholder: 'Find a category or job', autocomplete: 'off', 'data-autofocus': '' });
+    const q = el('input', { class: 'input', type: 'search', placeholder: includeJobs ? 'Find a category or job' : 'Find a category', 'aria-label': includeJobs ? 'Find a category or job' : 'Find a category', autocomplete: 'off', 'data-autofocus': '' });
     const list = el('div', { class: 'picker-list', role: 'listbox', 'aria-label': 'Places' });
     const draw = () => {
       list.textContent = '';
