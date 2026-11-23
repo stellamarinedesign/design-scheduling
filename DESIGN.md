@@ -1018,6 +1018,17 @@ The Excel Progress sheet made live (Phase 4, built 2026-11-09; product lines wit
 - **Start-up:** `index.html` paints skeleton tiles in the view before any script runs, so a
   cold open on workshop Wi-Fi shows the shape of the page at once, never a blank one; the
   first draw replaces them.
+- **Cache first** (2026-11-23): a repeat open takes the access list from the device's copy and
+  draws at once; the server's copy is checked straight after (`app.js` `confirmAccess`). The
+  same role carries on; a changed role, or an account taken off the lists, starts the app again
+  from the server's copy. A copy that lists the person nowhere is never trusted (they may have
+  been added since), and Settings' account list always reads the server. The data itself comes
+  from Firestore's persistent cache.
+- **Saved data:** while the screen shows the device's copy and the server has not answered for
+  4 seconds (connected Wi-Fi that goes nowhere), the strip under the header says "Showing saved
+  data: the server has not answered yet, so some of it may be out of date." It goes as soon as
+  the server answers, with no redraw. Offline, it says "Offline: showing saved data" and that
+  changes are kept on this device.
 - **Skeletons:** flat Shadow Grey blocks with a hairline and 8px corners. Each is the size of
   what it stands for: a 128px tile, a 280px note card, a 64px row (inside a list, with only its
   bottom hairline), or a 60px block and a tile in the panel. They do not shimmer. Their container
@@ -1072,7 +1083,7 @@ here:
 | Polish: tabular numbers, balanced text, masked scroll edges, concentric radius, layered shadows | All in place (`app.css`: the Polish block, the phone filter rows, `--shadow-panel`). Hairlines stay the opaque `--border` token: both themes tune it. |
 | Badges: 99+, pinned, red only for action | Tab counts. |
 | Buttons: verb + object, both outcomes named, working labels | All labels and confirms (Buttons). |
-| Loading: paint the shell at once, cache first | The start-up skeleton; Firestore's `persistentLocalCache`. |
+| Loading: paint the shell at once, cache first, say when data might be old | The start-up skeleton; the access list and the data from the device's copy first, checked with the server after; "Showing saved data" when the server does not answer (Loading, empty and error states). |
 | Errors: what, why, what next; never raw | `plainWhy` / `plainNext` in every error line and toast. |
 | Navigation: links go somewhere, buttons fold; a second signal for the current item | Sidebar links are `<a href>`, folds are `<button aria-expanded>`; the current item is bold, the active tab underlined. Half-screen keeps the drawer (Layout). |
 | Dropdowns: look clickable, flip at the edge, keys, search in long lists | Chevrons on pickers; menus flip above, take arrows, Home/End and type-to-jump; pickers search. |
@@ -1080,11 +1091,6 @@ here:
 
 **Still open** (not done in the 2026-11-23 pass, each its own change):
 
-- Start-up still waits for the server's copy of the access list before it draws the tabs. Read
-  `settings/access` from the device's cache first and confirm it after (needs a live test).
-- "Offline" is said only when the browser reports no network. Connected Wi-Fi that cannot reach
-  Firebase shows saved data with no note; snapshot metadata could say "Showing saved data"
-  (needs a live test).
 - Collapsible groups snap open; the skill would animate their height (≤200ms). Each fold
   redraws its whole view, so they would first have to fold in place.
 - Long sidebar names wrap to two lines rather than one line and an ellipsis (kept: two lines
