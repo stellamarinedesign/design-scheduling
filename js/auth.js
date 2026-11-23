@@ -165,5 +165,6 @@ export function friendlyAuthError(e) {
   if (code.includes('too-many-requests')) return 'Too many attempts — wait a minute and try again.';
   if (code.includes('network-request-failed')) return 'No connection to Firebase. Check the network.';
   if (code.includes('user-disabled')) return 'That account has been disabled.';
-  return e?.message ?? 'Sign-in failed.';
+  // Anything else is Firebase's own wording: never shown (stella-internal-ux).
+  return 'Sign-in did not work just now. Check the address and password and try again; if it keeps happening, reload the page.';
 }

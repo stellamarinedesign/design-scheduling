@@ -349,8 +349,9 @@ function applyBar() {
   const words = [plural(s.groups, 'group'), s.lines ? plural(s.lines, 'product line') : null, plural(s.jobs, 'job'), s.tasks ? plural(s.tasks, 'task') : null, s.archived ? `${s.archived} straight to the archive` : null, s.skipped ? `${s.skipped} skipped` : null, s.folderErrors ? `${plural(s.folderErrors, 'folder path')} left out` : null].filter(Boolean).join(' · ');
   const box = el('input', { type: 'checkbox', checked: st.archiveDone });
   box.addEventListener('change', () => { st.archiveDone = box.checked; draw(); });
-  const apply = btn('Apply', async () => {
+  const apply = btn('Import these', async () => {
     apply.disabled = true;
+    apply.lastChild.textContent = 'Importing…';   // says what it is doing, and cannot be sent twice
     const result = build();
     try {
       // One commit, written in batches the store keeps under Firestore's limit.
@@ -365,6 +366,7 @@ function applyBar() {
       go(onlyProgress ? '/progress' : '/tasks');
     } catch (e) {
       apply.disabled = false;
+      apply.lastChild.textContent = 'Import these';
       toastError(e, 'The import did not save');
     }
   }, { cls: 'primary', ic: 'upload' });

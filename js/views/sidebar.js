@@ -33,7 +33,7 @@ import { revealCategory, groupMenu } from './tasks.js';
 import { revealSection } from './progress.js';
 
 export async function newMasterCategory() {
-  const name = await promptDialog({ title: 'New master category', label: 'Name', placeholder: 'e.g. Production', ok: 'Add', body: 'Master categories sit at the top of Tasks, with categories inside them.' });
+  const name = await promptDialog({ title: 'New master category', label: 'Name', placeholder: 'e.g. Production', ok: 'Add master category', body: 'Master categories sit at the top of Tasks, with categories inside them.' });
   if (!name) return;
   const id = A.createGroup({ name, parentId: null });
   if (id) revealCategory(id);

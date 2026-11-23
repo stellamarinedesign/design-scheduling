@@ -12,7 +12,7 @@
 // when it arrives. ← → and a swipe move between photos; Esc closes. It fades
 // in over 150ms: the only motion, and it says "a layer opened".
 
-import { el, icon, iconBtn, btn, toast } from '../ui.js';
+import { el, icon, iconBtn, btn, toast, plainWhy } from '../ui.js';
 import * as PH from '../photos.js';
 
 /** iOS converts HEIC to JPEG only when the input asks for images and nothing else. */
@@ -82,7 +82,7 @@ export function photoTray({ existing = [], max = 12, onChange = () => {}, keepDr
         if (keepDraft) await PH.draftSave(it.prepared).catch(() => {});
       } catch (e) {
         items.splice(items.indexOf(it), 1);
-        toast(e.message, { warn: true, ms: 9000 });
+        toast(`That photo was not added: ${plainWhy(e)}.`, { warn: true, ms: 9000 });
       }
       delete it.file;
       draw();

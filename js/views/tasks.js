@@ -441,7 +441,7 @@ async function addGroup(parentId) {
   const inJob = parent && (parent.kind === T.KIND.task || T.isSection(state.idx, parent));
   const what = inJob ? 'section' : parent ? 'category' : 'master category';
   const name = await promptDialog({
-    title: `New ${what}`, label: 'Name', ok: 'Add',
+    title: `New ${what}`, label: 'Name', ok: `Add ${what}`,
     placeholder: inJob ? 'e.g. Laser' : 'e.g. Davits',
   });
   if (name) {

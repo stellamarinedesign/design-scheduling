@@ -101,7 +101,7 @@ export const Store = {
       this.reason = localForced
         ? 'Local mode on this device: saved in this browser only, never the live data. Open with ?local=0 to go live.'
         : isConfigured()
-          ? `Firebase unreachable (${failureReason()}). Saved on this device only.`
+          ? 'The live data could not be reached, so this device is saving in this browser only. Reload to try again.'
           : 'Local mode. Saved on this device only.';
       this._local = lsGet('tasks', []);
       // Another tab of the app on this machine: pick its writes up.

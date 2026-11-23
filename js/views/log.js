@@ -66,14 +66,14 @@ export function renderLog(root) {
   const catBtn = state.role !== 'lead' || !cat ? btn(cat ? 'Change' : 'Category', async () => {
     const r = await categoryDialog({ title: 'Show one category', current: cat, recent: prefs.get('noteRecentCats', []), noneLabel: 'Every category' });
     if (r) setCategory(r.id);
-  }, { cls: 'sm ghost', ic: 'filter', attrs: { 'aria-label': 'Show one category' } }) : null;
+  }, { cls: 'sm ghost picker', ic: 'filter', attrs: { 'aria-label': 'Show one category' } }) : null;
 
   const authors = NT.authorsOf(notes);
   const authorBtn = authors.length > 1 || author ? btn(author ? personName(author) : 'Anyone', (e) => menu(e.currentTarget, [
     { heading: 'Posted by' },
     { label: 'Anyone', checked: !author, onSelect: () => { author = null; redraw(); } },
     ...authors.map((a) => ({ label: personName(a), checked: a === author, onSelect: () => { author = a; redraw(); } })),
-  ], { label: 'Posted by' }), { cls: 'sm ghost', ic: 'user', attrs: { 'aria-haspopup': 'menu', 'aria-label': `Posted by: ${author ? personName(author) : 'anyone'}` } }) : null;
+  ], { label: 'Posted by' }), { cls: 'sm ghost picker', ic: 'user', attrs: { 'aria-haspopup': 'menu', 'aria-label': `Posted by: ${author ? personName(author) : 'anyone'}` } }) : null;
 
   // Outlined, like New job: the one red button in view is the panel's (Make job), or the composer's Post.
   const add = isPhone() ? null : btn(hasDraft() ? 'Note (draft)' : 'Note', () => openComposer(), { cls: 'sm', ic: 'plus', title: 'A new note (N)' });

@@ -27,7 +27,7 @@
 // Enter saves a field; Esc cancels it. A field being edited is never redrawn
 // under the cursor (app.js asks `panelEditing()` first).
 
-import { el, icon, iconBtn, btn, pill, avatar, menu, toast, isPhone, canDrag, prefs, withMenu } from '../ui.js';
+import { el, icon, iconBtn, btn, pill, avatar, menu, toast, isPhone, canDrag, prefs, withMenu, plainWhy } from '../ui.js';
 import { state, node, personName, realName } from '../state.js';
 import * as T from '../tree.js';
 import * as S from '../status.js';
@@ -510,7 +510,7 @@ function briefSection(n) {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancel(); }
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); }
     });
-    sec.append(ta, el('div', { class: 'compose-acts' }, btn('Save', save, { cls: 'sm' }), btn('Cancel', cancel, { cls: 'sm ghost' }), el('span', { class: 'hint' }, 'Ctrl+Enter saves · Esc cancels')));
+    sec.append(ta, el('div', { class: 'compose-acts' }, btn('Save brief', save, { cls: 'sm' }), btn('Cancel', cancel, { cls: 'sm ghost' }), el('span', { class: 'hint' }, 'Ctrl+Enter saves · Esc cancels')));
     requestAnimationFrame(() => { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); });
     return sec;
   }
@@ -701,10 +701,10 @@ function addControls(n) {
   });
   const sections = n.kind === T.KIND.task || T.isSection(state.idx, n);
   return el('div', { class: 'add-wrap' },
-    el('div', { class: 'add-line' }, input, btn('Add', add, { cls: 'sm' })),
+    el('div', { class: 'add-line' }, input, btn('Add task', add, { cls: 'sm' })),
     sections ? el('div', { class: 'row' },
       btn('Section', async () => {
-        const name = await promptDialog({ title: 'New section', label: 'Name', ok: 'Add', placeholder: 'e.g. Laser', body: 'A heading inside the job, to group its tasks.' });
+        const name = await promptDialog({ title: 'New section', label: 'Name', ok: 'Add section', placeholder: 'e.g. Laser', body: 'A heading inside the job, to group its tasks.' });
         if (name) A.createGroup({ name, parentId: n.id });
       }, { cls: 'sm ghost', ic: 'folderPlus', title: 'A heading to group tasks' })) : null);
 }
@@ -738,7 +738,7 @@ function foldersSection(n) {
       btn(isPhone() ? 'Copy' : 'Copy path', () => copyPath(f.path), { cls: 'sm', ic: 'copy', title: 'Copies the full path for this PC: paste it into the File Explorer address bar' }),
       !can ? null : iconBtn('more', `${leafName(f.path)} actions`, (e) => menu(e.currentTarget, [
         { label: f.label ? 'Change label' : 'Add a label', icon: 'edit', onSelect: async () => {
-          const v = await promptDialog({ title: 'Label', value: f.label ?? '', placeholder: 'GA, Laser, Vessel files', required: false });
+          const v = await promptDialog({ title: 'Label', ok: 'Save label', value: f.label ?? '', placeholder: 'GA, Laser, Vessel files', required: false });
           if (v !== null) A.updateFields(n.id, { folders: folders.map((x) => (x === f ? { ...x, label: v } : x)) });
         } },
         { label: 'Remove link', icon: 'trash', danger: true, onSelect: () => A.updateFields(n.id, { folders: folders.filter((x) => x !== f) }, { message: 'Folder link removed', undo: true }) },
@@ -760,7 +760,7 @@ function foldersSection(n) {
     if (e.key === 'Enter') { e.preventDefault(); add(); }
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); input.value = ''; err.textContent = ''; input.blur(); }
   });
-  sec.append(el('div', { class: 'add-line' }, input, btn('Add', () => add(), { cls: 'sm' })), err);
+  sec.append(el('div', { class: 'add-line' }, input, btn('Link folder', () => add(), { cls: 'sm' })), err);
 
   if (canDrag()) {
     const zone = el('div', { class: 'drop-zone' }, 'Or drag a folder here from File Explorer');
@@ -824,7 +824,7 @@ async function placeDropped(pending, id, note) {
       warn: false,
       action: btn('Connect Stella Systems folder', async () => {
         try { await place(await SF.chooseRoot()); }
-        catch (e) { if (e?.name !== 'AbortError') say(e?.message ?? 'That folder could not be connected.'); }
+        catch (e) { if (e?.name !== 'AbortError') say(`That folder was not connected: ${plainWhy(e)}.`); }
       }, { cls: 'sm' }),
     });
     return;

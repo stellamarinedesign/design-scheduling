@@ -17,7 +17,7 @@ import { Store } from './store.js';
 import { openDialog, confirmDialog } from './dialog.js';
 import { openPasswordDialog } from './password.js';
 import { ROLES, ROLE_LABEL, ROLE_WORDS, normaliseAccess, accountRows, withRole, withoutAccount, withMaster, roleOf, tempPassword } from './access.js';
-import { el, btn, toast, prefs, isRefusal } from './ui.js';
+import { el, btn, toast, prefs, isRefusal, plainWhy, plainNext, toastError } from './ui.js';
 import { getPrefix, setPrefix } from './folders.js';
 import { VERSION } from './version.js';
 import { go } from './router.js';
@@ -68,7 +68,7 @@ function yourName(markClean) {
     const v = input.value.trim();
     if (v === (state.people[state.me]?.name ?? '')) return;
     try { await Store.savePerson(state.me, { name: v }); markClean(); toast(v ? `Saved: the team sees you as ${v}` : 'Name cleared'); }
-    catch (e) { toast(`Could not save: ${e.message}`, { warn: true }); }
+    catch (e) { toastError(e, 'Your name did not save'); }
   };
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } });
   input.addEventListener('change', save);
@@ -83,7 +83,14 @@ function appearance() {
     seg.append(el('button', {
       type: 'button', 'aria-pressed': String(current === v),
       onclick: () => {
-        if (v === 'stella') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = v;
+        // Every colour changes at once, none fading on its own (css .theme-switching):
+        // the new theme's styles are worked out with transitions off, which come
+        // back on the next frame.
+        const root = document.documentElement;
+        root.classList.add('theme-switching');
+        if (v === 'stella') delete root.dataset.theme; else root.dataset.theme = v;
+        void root.offsetWidth;
+        requestAnimationFrame(() => root.classList.remove('theme-switching'));
         try { localStorage.setItem(THEME_KEY, v); } catch { /* this session only */ }
         for (const b of seg.children) b.setAttribute('aria-pressed', String(b === seg.querySelector(`button:nth-child(${v === 'stella' ? 1 : 2})`)));
       },
@@ -108,7 +115,7 @@ function thisPc(markClean) {
   const connect = btn('Connect Stella Systems', async () => {
     const sf = await import('./stella-folder.js');
     try { await sf.chooseRoot(); status.textContent = 'Connected: folders dragged in from File Explorer are placed automatically.'; }
-    catch (e) { if (e?.name !== 'AbortError') status.textContent = e.message; }
+    catch (e) { if (e?.name !== 'AbortError') status.textContent = `That folder was not connected: ${plainWhy(e)}.`; }
   }, { cls: 'sm' });
   import('./stella-folder.js').then(async (sf) => {
     if (!sf.supported()) { status.textContent = 'This browser cannot connect a folder (Edge or Chrome on a PC can). Paste paths instead.'; connect.disabled = true; return; }
@@ -119,7 +126,7 @@ function thisPc(markClean) {
   return section('This PC',
     el('div', { class: 'field' }, el('label', {}, 'Where Stella Systems is on this PC'), input, err,
       el('div', { class: 'hint' }, 'Learnt automatically the first time you paste a full folder path. Copy path uses it to give the whole Windows path for this PC.'),
-      el('div', {}, btn('Save', save, { cls: 'sm' }))),
+      el('div', {}, btn('Save path', save, { cls: 'sm' }))),
     el('div', { class: 'settings-row' }, status, connect));
 }
 
@@ -179,20 +186,20 @@ function workday(markClean) {
     if (Store.offline()) {
       markClean();
       toast(`Workday kept on this device (${said}): it reaches the team when back online`);
-      p.catch((e) => toast(isRefusal(e) ? 'The workday did not save: only the Design lead sets it.' : `The workday did not save: ${e.message}`, { warn: true }));
+      p.catch((e) => toast(isRefusal(e) ? 'The workday did not save: only the Design lead sets it.' : `The workday did not save: ${plainWhy(e)}.`, { warn: true }));
       return;
     }
     try {
       await p;
       markClean();
       toast(`Workday saved: ${said}`);
-    } catch (e) { toast(isRefusal(e) ? 'Could not save: only the Design lead sets the workday.' : `Could not save: ${e.message}`, { warn: true }); }
+    } catch (e) { toast(isRefusal(e) ? 'Could not save: only the Design lead sets the workday.' : `The workday did not save: ${plainWhy(e)}. ${plainNext(e)}`, { warn: true }); }
   };
   return section('Workday',
     el('div', { class: 'settings-row-sub' }, 'For time tracking, team-wide: a running timer pauses at lunch, restarts after it, and stops at finish. Each person gets a warning five minutes before.'),
     el('div', { class: 'row workday-row' }, ...fields),
     err,
-    el('div', {}, btn('Save', save, { cls: 'sm' })));
+    el('div', {}, btn('Save workday', save, { cls: 'sm' })));
 }
 
 /**
@@ -212,7 +219,7 @@ function tasksOnYou() {
     const ok = await confirmDialog({
       title: `Unassign you from ${words}?`,
       body: 'Each becomes part of its job again: ticked with the job, off Home and the lists, never sent for check. Ready for check and Sent back go back to In progress. Jobs keep you. Undo is on the message after.',
-      ok: 'Unassign',
+      ok: 'Unassign me', cancel: 'Keep them',
     });
     if (!ok) return;
     const done = A.unassignAllMine({ onUndo: () => prefs.set(key, false) });
@@ -241,7 +248,7 @@ function storage() {
     barEl.firstChild.style.width = `${Math.max(pct, photos ? 1 : 0)}%`;
     line.textContent = `${photos} photo${photos === 1 ? '' : 's'}, about ${mb(bytes)}, across ${notes} Log note${notes === 1 ? '' : 's'} and task updates. `
       + (Store.mode === 'local' ? 'In this browser only.' : `The free plan holds ${mb(GIB)} for everything; photos use about ${pct < 0.1 ? 'under 0.1' : pct.toFixed(1)}% of it.`);
-  }).catch((e) => { line.textContent = isRefusal(e) ? 'Could not count the photos: this account is not allowed to.' : `Could not count the photos just now (${e.message}). Open Settings again to retry.`; });
+  }).catch((e) => { line.textContent = isRefusal(e) ? 'Could not count the photos: this account is not allowed to.' : `Could not count the photos just now: ${plainWhy(e)}. Open Settings again to retry.`; });
   return section('Photo storage', el('div', { class: 'storage' }, line, barEl));
 }
 
@@ -255,10 +262,10 @@ function data(close) {
       const d = JSON.parse(await f.text());
       if (!Array.isArray(d.tasks)) throw new Error('no task list in it');
       const { confirmDialog } = await import('./dialog.js');
-      if (!await confirmDialog({ title: 'Replace this browser\'s data?', body: `The backup holds ${d.tasks.length} items. Everything here now is replaced. This cannot be undone.`, ok: 'Replace', destructive: true })) return;
+      if (!await confirmDialog({ title: 'Replace this browser\'s data?', body: `The backup holds ${d.tasks.length} items. Everything here now is replaced. This cannot be undone.`, ok: 'Replace the data', cancel: 'Keep what is here', destructive: true })) return;
       Store.replaceLocal(d);
       toast('Backup restored');
-    } catch (e) { toast(`That is not a backup from this app: ${e.message}`, { warn: true }); }
+    } catch (e) { toast(e instanceof SyntaxError || /no task list/.test(e?.message ?? '') ? 'That file is not a backup from this app. Choose the .json file that "Back up to a file" made.' : `The backup was not restored: ${plainWhy(e)}.`, { warn: true }); }
   });
   return section('Data',
     el('div', { class: 'row', style: { 'flex-wrap': 'wrap' } },
@@ -300,7 +307,7 @@ async function accounts(host, markClean) {
       draw();
       markClean();
       return true;
-    } catch (e) { toast(`Could not save: ${e.message}`, { warn: true }); return false; }
+    } catch (e) { toastError(e, 'The accounts did not save'); return false; }
   };
 
   const roleSelect = (current, onChange, disabled) => {
@@ -322,7 +329,7 @@ async function accounts(host, markClean) {
       const nm = el('input', { class: 'input acct-name', type: 'text', value: state.people[r.email]?.name ?? '', placeholder: 'Name', maxlength: '60', 'aria-label': `Name for ${r.email}` });
       nm.addEventListener('change', async () => {
         try { await Store.savePerson(r.email, { name: nm.value }); markClean(); toast(`Saved the name for ${r.email}`); }
-        catch (e) { toast(`Could not save the name: ${e.message}`, { warn: true }); }
+        catch (e) { toastError(e, `The name for ${r.email} did not save`); }
       });
       table.append(el('div', { class: 'acct-row' },
         el('div', { class: 'acct-id' }, nm, el('span', { class: 'settings-row-sub', style: { 'overflow-wrap': 'anywhere' } }, r.email)),
@@ -343,13 +350,13 @@ async function accounts(host, markClean) {
       if (!isEmail(email)) { err.textContent = 'That does not look like an email address.'; return; }
       if (accountRows(access).some((x) => x.email === email)) { err.textContent = `${email} is already listed, as ${ROLE_LABEL[roleOf(access, email)]}.`; return; }
       if (await save(withRole(access, email, role), `${email} added as ${ROLE_LABEL[role]}.`)) {
-        if (name.value.trim()) { try { await Store.savePerson(email, { name: name.value }); } catch (e) { toast(`Added, but the name did not save: ${e.message}`, { warn: true }); } }
+        if (name.value.trim()) { try { await Store.savePerson(email, { name: name.value }); } catch (e) { toastError(e, 'Added, but the name did not save'); } }
         await makeUser(email);
       }
     };
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') add(); });
     name.addEventListener('keydown', (e) => { if (e.key === 'Enter') add(); });
-    card.append(el('div', { class: 'row', style: { 'flex-wrap': 'wrap' } }, name, input, roleSelect(role, (v) => { role = v; }), btn('Add', add, { cls: 'sm' })), err);
+    card.append(el('div', { class: 'row', style: { 'flex-wrap': 'wrap' } }, name, input, roleSelect(role, (v) => { role = v; }), btn('Add account', add, { cls: 'sm' })), err);
     if (fresh) card.append(freshBox(fresh));
   };
 

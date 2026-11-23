@@ -233,7 +233,7 @@ export function openComposer({ noteId = null, groupId, jobId } = {}) {
     }, { cls: 'ghost' });
 
     box.append(el('div', { class: 'actions' },
-      btn(editing ? 'Save' : 'Post', post, { cls: 'primary' }),
+      btn(editing ? 'Save changes' : 'Post', post, { cls: 'primary' }),
       btn(editing ? 'Cancel' : 'Close', leave),
       el('span', { class: 'sp' }),
       status,

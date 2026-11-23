@@ -98,7 +98,7 @@ export function openDialog(build, { label = '', wide = false, className = '', gu
       if (done || asking) return;
       if (guard && dirty()) {
         asking = true;
-        const discard = await confirmDialog({ title: 'Discard changes?', body: 'What you typed here has not been saved.', ok: 'Discard', destructive: true });
+        const discard = await confirmDialog({ title: 'Discard changes?', body: 'What you typed here has not been saved.', ok: 'Discard changes', cancel: 'Keep editing', destructive: true });
         asking = false;
         if (!discard) return;
       }
@@ -134,7 +134,7 @@ function trapTab(e, box) {
  * Yes or no. A destructive confirm starts with focus on Cancel.
  * @returns {Promise<boolean>}
  */
-export async function confirmDialog({ title, body = '', ok = 'OK', cancel = 'Cancel', destructive = false, alt = null }) {
+export async function confirmDialog({ title, body = '', ok = 'Go ahead', cancel = 'Cancel', destructive = false, alt = null }) {
   const v = await openDialog((box, close) => {
     box.append(el('h3', null, title));
     if (body) box.append(el('p', 'lede', body));
@@ -180,6 +180,7 @@ export function promptDialog({ title, label = '', value = '', placeholder = '', 
     field.append(input);
     const err = el('div', 'form-err');
     err.setAttribute('role', 'alert');
+    err.id = `${id}err`;
     field.append(err);
     box.append(field);
     const acts = el('div', 'actions');
@@ -187,11 +188,22 @@ export function promptDialog({ title, label = '', value = '', placeholder = '', 
     const no = el('button', 'btn', dismiss);
     acts.append(yes, no);
     box.append(acts);
+    // A refused value is marked on the field as well as said: red, described
+    // by the words, and (css) shaken once, again on every refusal.
+    const refuse = (words) => {
+      err.textContent = words;
+      input.removeAttribute('aria-invalid');
+      void input.offsetWidth;
+      input.setAttribute('aria-invalid', 'true');
+      input.setAttribute('aria-describedby', err.id);
+      input.focus();
+    };
+    input.addEventListener('input', () => { input.removeAttribute('aria-invalid'); err.textContent = ''; });
     const submit = () => {
       const v = input.value.trim();
-      if (required && !v) { err.textContent = 'This cannot be empty.'; input.focus(); return; }
+      if (required && !v) { refuse('This cannot be empty.'); return; }
       const problem = validate?.(v);
-      if (problem) { err.textContent = problem; input.focus(); return; }
+      if (problem) { refuse(problem); return; }
       close(v);
     };
     yes.addEventListener('click', submit);

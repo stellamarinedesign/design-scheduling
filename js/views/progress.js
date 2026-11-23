@@ -37,7 +37,7 @@
 // (Home and End along the row), Enter or Space acts, Shift+F10 and the
 // context-menu key go back a state.
 
-import { el, btn, icon, iconBtn, dot, pill, prefs, isWide, menu, loadProblem, withMenu, canDrag } from '../ui.js';
+import { el, btn, icon, iconBtn, dot, pill, prefs, isWide, menu, loadProblem, withMenu, canDrag, refuse } from '../ui.js';
 import { state, personName } from '../state.js';
 import * as T from '../tree.js';
 import * as S from '../status.js';
@@ -625,7 +625,7 @@ function addForm(l, a) {
   who.addEventListener('change', () => { a.who = who.value || null; });
   const submit = () => {
     const v = name.value.trim();
-    const say = (m) => { a.err = m; err.textContent = m; name.setAttribute('aria-invalid', 'true'); name.setAttribute('aria-describedby', errId); name.focus(); };
+    const say = (m) => { a.err = m; err.textContent = m; refuse(name, err); };
     if (!v) return say('Give it a name.');
     // A name is taken among the rows of its own level (two rows may each have a "with post").
     const level = RG.rowsOf(state.idx, l.id).filter((c) => (T.subParentOf(state.idx, c)?.id ?? null) === (a.subOf ?? null));
@@ -647,6 +647,6 @@ function addForm(l, a) {
     tpl ? el('label', { class: 'check-line' }, withTemplate, `With the ${plural(tpl.template.length, 'stage')}`) : el('span', { class: 'meta' }, 'No columns yet'),
     who,
     el('div', { class: 'rg-add-acts' },
-      btn('Add', submit, { cls: 'primary sm' }),
-      btn('Done', closeAdd, { cls: 'ghost sm', attrs: { 'aria-label': parent ? 'Stop adding sub-jobs' : 'Stop adding rows' } })));
+      btn(parent ? 'Add sub-job' : 'Add row', submit, { cls: 'primary sm' }),
+      btn('Stop adding', closeAdd, { cls: 'ghost sm', attrs: { 'aria-label': parent ? 'Stop adding sub-jobs' : 'Stop adding rows' } })));
 }

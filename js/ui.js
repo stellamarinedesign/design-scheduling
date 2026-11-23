@@ -137,13 +137,16 @@ export const btn = (text, onClick, { cls = '', ic = null, title = null, attrs = 
 }, ic ? icon(ic, 16) : null, text);
 
 /** The status pill. As a button it opens the status menu (one tap to change). */
+// The word sits in its own span, which is what ends in "…" when a row runs
+// short of room. The pill itself is never clipped, so its touch target can
+// reach past its drawn edge (css, the Targets block).
 export function pill(status, { onClick = null, extra = '', label = null } = {}) {
   const props = { class: `pill st-${status} ${extra}`.trim() };
+  const word = label ?? LABEL[status] ?? status;
   if (onClick) {
-    const word = label ?? LABEL[status] ?? status;
-    return el('button', { ...props, type: 'button', title: 'Change status', 'aria-label': `${word}: change status`, 'aria-haspopup': 'menu', onclick: onClick }, word);
+    return el('button', { ...props, type: 'button', title: 'Change status', 'aria-label': `${word}: change status`, 'aria-haspopup': 'menu', onclick: onClick }, el('span', { class: 'pill-word' }, word));
   }
-  return el('span', props, label ?? LABEL[status] ?? status);
+  return el('span', props, el('span', { class: 'pill-word' }, word));
 }
 
 /** The category dot. `colour` is 1–10 (a category token) or null for no colour. */
@@ -160,6 +163,9 @@ export function initials(name) {
   return (parts.length === 1 ? parts[0].slice(0, 2) : parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 export const avatar = (name, title = name) => el('span', { class: 'av', title, 'aria-label': title }, initials(name));
+
+/** A count as a badge shows it: 99 at most, then "99+", so a badge never grows past its place. */
+export const countText = (n) => (n > 99 ? '99+' : String(n));
 
 /** The progress bar on a tile. */
 export function bar(done, total) {
@@ -212,6 +218,63 @@ export function hideToast() {
 /** Did the rules refuse it? (Firestore's permission-denied.) */
 export const isRefusal = (e) => e?.code === 'permission-denied' || /insufficient permissions/i.test(e?.message ?? '');
 
+// Firebase's and the browser's own messages are written for developers
+// ("Failed to get document because the client is offline.", "[code=unavailable]")
+// and are never shown (stella-internal-ux: an error says what happened, why,
+// and what to do). Each code becomes a reason in plain words, and the next
+// step that goes with it. The app's own errors are already sentences and pass
+// through as they are.
+const WHY = {
+  'unavailable': ['the server could not be reached: offline, or the connection dropped', 'It goes through when the connection is back. Otherwise reload the page.'],
+  'deadline-exceeded': ['the server took too long to answer', 'Try again. If it keeps happening, reload the page.'],
+  'resource-exhausted': ['the app has used up its Firebase allowance for today', 'It resets overnight. Tell the Design lead if it keeps happening.'],
+  'unauthenticated': ['this device is signed out', 'Reload the page and sign in again.'],
+  'invalid-argument': ['the server would not take it as it is, often because it is too large', 'Make it smaller (fewer or smaller photos) and try again.'],
+  'failed-precondition': ['the server was not ready for it', 'Reload the page and try again.'],
+  'not-found': ['it is not there any more', 'Reload the page to see what is there now.'],
+  'already-exists': ['it is there already', 'Reload the page to see it.'],
+  'aborted': ['another change got there at the same moment', 'Try again.'],
+  'cancelled': ['it was stopped before it finished', 'Try again.'],
+};
+const BROWSER_WHY = {
+  NotAllowedError: 'the browser did not allow it',
+  SecurityError: 'the browser blocked it',
+  NotFoundError: 'it is not there any more',
+  NotReadableError: 'the file could not be read',
+  EncodingError: 'the file could not be read',
+  QuotaExceededError: 'this device is out of storage space for the app',
+};
+const firebaseLike = (e) => Boolean(e?.code) || e?.name === 'FirebaseError' || /^\[?firebase|^firestore|code=|client is offline/i.test(String(e?.message ?? ''));
+const networkLike = (e) => /failed to fetch|networkerror|load failed|network request failed|offline/i.test(String(e?.message ?? e ?? ''));
+
+/**
+ * Why something failed, as a clause in plain words ("the server could not be
+ * reached: …"), for "<what>: <why>." sentences. Never Firebase's own text.
+ */
+export function plainWhy(e) {
+  if (isRefusal(e)) return 'this account is not allowed to make that change';
+  const code = String(e?.code ?? '').replace(/^(firestore|storage|auth)\//, '');
+  if (WHY[code]) return WHY[code][0];
+  if (networkLike(e)) return WHY.unavailable[0];
+  if (typeof DOMException !== 'undefined' && e instanceof DOMException) return BROWSER_WHY[e.name] ?? 'the browser could not do it';
+  if (firebaseLike(e)) return 'something went wrong on the server';
+  // The app's own errors are plain Errors with a sentence; a TypeError or a
+  // SyntaxError is the browser's wording, and is not said.
+  if (e?.name !== 'Error' || !(e?.message ?? '').trim()) return 'something went wrong in the app';
+  return String(e.message).replace(/\.\s*$/, '');
+}
+
+/** What to do next after `plainWhy(e)`, as one sentence. */
+export function plainNext(e) {
+  if (isRefusal(e)) return 'Reload to see what you can do now.';
+  const code = String(e?.code ?? '').replace(/^(firestore|storage|auth)\//, '');
+  if (WHY[code]) return WHY[code][1];
+  if (networkLike(e)) return WHY.unavailable[1];
+  return 'Try again. If it keeps happening, reload the page.';
+}
+
+const sentence = (s) => s.charAt(0).toUpperCase() + s.slice(1) + (/[.!?]$/.test(s) ? '' : '.');
+
 /**
  * Why something did not load, in two plain sentences: what happened, and
  * what to do. A refusal is not a connection problem, and says so.
@@ -219,17 +282,34 @@ export const isRefusal = (e) => e?.code === 'permission-denied' || /insufficient
  */
 export function loadProblem(e) {
   if (isRefusal(e)) return ['This account is not allowed to see it.', 'If the Design lead has just changed your access, reload. Otherwise ask them.'];
-  return [String(e?.message ?? e ?? 'Something went wrong.'), 'If you are offline, it loads when the connection is back. Otherwise reload the page.'];
+  return [sentence(plainWhy(e)), plainNext(e).replace('It goes through', 'It loads')];
 }
 
 /**
- * An error, said plainly, in the warning toast. A refusal by the rules is
- * said as one: the account may not make that change (a role changed, or a
- * job stopped being shared), and a reload shows what it can do now.
+ * An error, said plainly, in the warning toast: what did not happen, why, and
+ * what to do. A refusal by the rules is said as one: the account may not make
+ * that change (a role changed, or a job stopped being shared), and a reload
+ * shows what it can do now.
  */
 export function toastError(e, what = 'That did not save') {
-  const why = isRefusal(e) ? 'this account is not allowed to make that change. Reload to see what you can do now.' : (e?.message ?? String(e));
-  toast(`${what}: ${why}`, { warn: true, ms: 9000 });
+  toast(`${what}: ${plainWhy(e)}. ${plainNext(e)}`, { warn: true, ms: 9000 });
+}
+
+/**
+ * A refused value: the field turns red, says why (its error line, which it is
+ * described by), takes focus, and shakes once (css: [aria-invalid]). Set
+ * again on a field already marked, it shakes again: the attribute comes off
+ * for one style pass first.
+ */
+export function refuse(field, errLine = null) {
+  if (!field) return;
+  field.removeAttribute('aria-invalid');
+  void field.offsetWidth;
+  field.setAttribute('aria-invalid', 'true');
+  if (errLine?.id) field.setAttribute('aria-describedby', errLine.id);
+  field.focus?.();
+  // Typing clears the mark: the words below it go when the person does something about them.
+  field.addEventListener('input', () => { field.removeAttribute('aria-invalid'); }, { once: true });
 }
 
 // ---------------------------------------------------------------------------
@@ -241,7 +321,14 @@ let openMenu = null;
 export function closeMenu() {
   if (!openMenu) return;
   const { node, anchor, onKey, onDown } = openMenu;
-  node.remove();
+  // Leaves back toward the button that opened it, a little quicker than it
+  // came (css .menu.closing), and takes no clicks or focus on the way out.
+  // Under reduced motion the duration is 0 and it goes at once.
+  node.classList.add('closing');
+  node.inert = true;
+  node.setAttribute('aria-hidden', 'true');
+  const ms = Math.max(0, ...getComputedStyle(node).transitionDuration.split(',').map((s) => parseFloat(s) * (s.trim().endsWith('ms') ? 1 : 1000)));
+  if (ms) setTimeout(() => node.remove(), ms + 20); else node.remove();
   document.removeEventListener('keydown', onKey, true);
   document.removeEventListener('pointerdown', onDown, true);
   anchor?.setAttribute('aria-expanded', 'false');
@@ -287,17 +374,39 @@ export function menu(anchor, items, { label = 'Actions', at = null } = {}) {
   const vh = window.innerHeight;
   let left = Math.min(Math.max(8, r.left), vw - w - 8);
   let top = r.bottom + 4;
-  if (top + h > vh - 8) top = Math.max(8, r.top - h - 4);
+  const above = top + h > vh - 8;
+  if (above) top = Math.max(8, r.top - h - 4);
   node.style.left = `${left}px`;
   node.style.top = `${top}px`;
+  // It grows out of the button that opened it (and goes back into it): the
+  // corner nearest the button, wherever the menu had to move to fit.
+  const ox = Math.min(Math.max((r.left + r.right) / 2 - left, 0), w);
+  node.style.transformOrigin = `${Math.round(ox)}px ${above ? h : 0}px`;
   anchor?.setAttribute('aria-expanded', 'true');
 
+  // Typing jumps to the next item that starts with what was typed.
+  let typed = '';
+  let typedAt = 0;
+  const live = () => buttons.filter((b) => !b.disabled);
   const onKey = (e) => {
-    const i = buttons.indexOf(document.activeElement);
+    const items = live();
+    const i = items.indexOf(document.activeElement);
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeMenu(); anchor?.focus(); }
-    else if (e.key === 'ArrowDown') { e.preventDefault(); (buttons[(i + 1) % buttons.length] ?? buttons[0])?.focus(); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); (buttons[(i - 1 + buttons.length) % buttons.length] ?? buttons[0])?.focus(); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); (items[(i + 1) % items.length] ?? items[0])?.focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); (items[(i - 1 + items.length) % items.length] ?? items[0])?.focus(); }
+    else if (e.key === 'Home') { e.preventDefault(); items[0]?.focus(); }
+    else if (e.key === 'End') { e.preventDefault(); items[items.length - 1]?.focus(); }
     else if (e.key === 'Tab') closeMenu();
+    else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && /\S/.test(e.key)) {
+      const now = Date.now();
+      typed = (now - typedAt < 600 ? typed : '') + e.key.toLowerCase();
+      typedAt = now;
+      const label = (b) => b.textContent.trim().toLowerCase();
+      const from = typed.length > 1 ? i : i + 1;
+      const order = [...items.slice(Math.max(0, from)), ...items.slice(0, Math.max(0, from))];
+      const hit = order.find((b) => label(b).startsWith(typed));
+      if (hit) { e.preventDefault(); hit.focus(); }
+    }
   };
   const onDown = (e) => { if (!node.contains(e.target) && e.target !== anchor && !anchor?.contains(e.target)) closeMenu(); };
   document.addEventListener('keydown', onKey, true);

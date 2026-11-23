@@ -82,7 +82,7 @@ export function waitingDialog(id) {
     drawList();
     const err = el('div', { class: 'form-err', role: 'alert' });
     box.append(err, el('div', { class: 'actions' },
-      btn('Save', () => {
+      btn('Mark waiting', () => {
         const v = note.value.trim();
         if (!v && !chosen.size) { err.textContent = 'Give a reason, or pick the task holding it up.'; return; }
         close({ note: v, blockedBy: [...chosen] });

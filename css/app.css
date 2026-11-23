@@ -84,7 +84,12 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
 .hd .ib:hover { background: rgba(255, 255, 255, .08); }
 .ib.sm { width: 30px; height: 30px; }
 
-.seg { display: inline-flex; border: 1px solid var(--border2); border-radius: var(--radius); overflow: hidden; flex: none; }
+/* Not clipped (a segment's touch target reaches past it): the end segments
+   round their own corners instead, 1px inside the outline's. */
+.seg { display: inline-flex; border: 1px solid var(--border2); border-radius: var(--radius); flex: none; }
+.seg > button:first-child { border-radius: calc(var(--radius) - 1px) 0 0 calc(var(--radius) - 1px); }
+.seg > button:last-child { border-radius: 0 calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0; }
+.seg > button:only-child { border-radius: calc(var(--radius) - 1px); }
 .seg button {
   height: 28px; padding: 0 10px; border: 0; background: transparent; color: var(--text3); font-size: var(--fs-sm); font-weight: 600;
   display: inline-flex; align-items: center; gap: 4px;
@@ -93,6 +98,39 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
 .seg button[aria-pressed="true"] { background: var(--bg2); color: var(--text); }
 /* Inside the seg's clipped corners an outside ring was cut off: drawn inside instead. */
 .seg button:focus-visible { outline-offset: -2px; }
+
+/* ── Targets (stella-internal-ux, Fitts's law) ───────────────────────
+   Every control can be hit at the size the skill asks for, whatever size it
+   is drawn: 36px at desk widths, 44px at phone width. The
+   drawing stays as DESIGN.md has it; the target grows invisibly round it, an
+   ::after centred on the control. Where these controls wrap onto a second
+   line, the gap between the lines is at least what the targets grow by, so
+   two targets never overlap (owner, 2026-11-23; checked at 375px, 900px and
+   desktop). A tick in a tile's top row keeps its own width: it is what
+   narrows first there (the Give-Way Rule). */
+:root { --hit: 36px; }
+@media (max-width: 699px) { :root { --hit: 44px; } }
+:where(.btn.sm, .fp, .ib.sm, .tile-top .ib, .tick, .pill:is(button), .pv-btn, .chip:is(button), .rg-more, .rg-name-btn, .toast-act, .crumbs a, .seg button, .timer-total) { position: relative; }
+:is(.btn.sm, .fp, .ib.sm, .tile-top .ib, .tick, .pill:is(button), .pv-btn, .chip:is(button), .rg-more, .rg-name-btn, .toast-act, .crumbs a, .seg button, .timer-total)::after {
+  content: ''; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: max(100%, var(--hit)); height: max(100%, var(--hit));
+}
+.tile-top > .tick::after, .seg button::after { width: 100%; }   /* side by side with a neighbour: grow up and down only */
+.chips { row-gap: calc(var(--hit) - 28px); }
+.crumbs { row-gap: calc(var(--hit) - 18px); }
+
+/* ── Polish ──────────────────────────────────────────────────────────
+   Headings break into even lines; paragraphs never end on one stranded
+   word. (Titles clamped to two lines are left alone: balancing them would
+   cut more of the title.) */
+.h1, .h2, .box h3, .rg-cat-title, .mj-sec-name, .state-msg h1 { text-wrap: balance; }
+p, .lede, .hint, .brief, .callout-body, .note-text, .empty { text-wrap: pretty; }
+/* A theme switch changes every colour at once: nothing fades one by one (settings.js). */
+.theme-switching *, .theme-switching *::before, .theme-switching *::after { transition: none !important; }
+/* A refused value shakes once as well as turning red and saying why (ui.js refuse). */
+@keyframes refuse { 0%, 100% { transform: translateX(0); } 17% { transform: translateX(-10px); } 33% { transform: translateX(10px); } 50% { transform: translateX(-6px); } 67% { transform: translateX(6px); } 83% { transform: translateX(-3px); } }
+:is(.input, .textarea, .sel, .pv-input)[aria-invalid="true"] { border-color: var(--red-text); animation: refuse 360ms var(--ease-out); }
+@media (prefers-reduced-motion: reduce) { [aria-invalid="true"] { animation: none !important; } }
 
 /* ── Type helpers ────────────────────────────────────────────────── */
 .h1 { font-family: var(--font-head); font-weight: 700; font-size: var(--fs-lg); line-height: 1.25; }
@@ -117,6 +155,7 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
   font-size: var(--fs-sm); white-space: nowrap; flex: none; border: 0; font-weight: 500;
   transition: background-color var(--dur-fast) ease, color var(--dur-fast) ease, transform var(--dur-fast) var(--ease-out);
 }
+.pill > .pill-word { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pill:is(button) { cursor: pointer; min-height: 24px; }
 .pill:is(button):hover { filter: brightness(1.15); }
 .st-todo { background: var(--st-todo-bg); color: var(--st-todo); }
@@ -176,7 +215,9 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
   flex: none; white-space: nowrap;   /* a row of pills scrolls sideways on a phone; a pill never wraps */
 }
 .fp:hover { border-color: var(--border2); }
-.fp[aria-pressed="true"] { background: var(--surface); border-color: var(--border2); color: var(--text); }
+/* Pressed: Chip Grey, like a pressed segment. Shadow Grey was the Workshop theme's white on
+   its white ground, so a pressed pill and an unpressed one looked the same there. */
+.fp[aria-pressed="true"] { background: var(--bg2); border-color: var(--border2); color: var(--text); }
 .fp b { font-weight: 600; color: var(--text3); }
 
 /* ── Tiles ───────────────────────────────────────────────────────── */
@@ -203,8 +244,7 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
 /* The top row never runs past the tile, however narrow: the age and ⋯ keep
    their size and the status pill gives way, ending in "…". Its menu and its
    accessible name still say the status whole. */
-.tile-top > .pill { flex: 0 1 auto; min-width: 0; display: block; overflow: hidden; text-overflow: ellipsis; line-height: 22px; }
-.tile-top > .pill:is(button) { line-height: 24px; }
+.tile-top > .pill { flex: 0 1 auto; min-width: 0; }
 .tile-top > .meta { flex: none; }
 /* Short of room, the tick's touch target narrows first (drawn at 20px, it never
    goes below that), and only then the pill. */
@@ -320,6 +360,7 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
 .welcome .acts { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
 .skel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); min-height: 128px; }
 .skel-line { height: 12px; border-radius: var(--radius-pill); background: var(--bg2); }
+.boot-skel .skel-line { width: min(180px, 50%); }
 .state-msg { color: var(--text2); display: flex; flex-direction: column; gap: var(--sp-3); max-width: 62ch; padding: var(--sp-5) 0; }
 
 /* ── Task panel ──────────────────────────────────────────────────── */
@@ -364,6 +405,15 @@ body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
   border: 1px solid transparent; background: transparent; color: var(--text); font-size: 14px; max-width: calc(100% + 8px);
 }
 .pv-btn:hover { border-color: var(--border); background: var(--bg); }
+/* A button that opens a choice looks like one at rest, not only on hover: a
+   muted chevron after its value (stella-internal-ux, dropdowns). It is the
+   ::before, put last; the ::after is the button's touch target. */
+:is(.picker, .pick-btn, .pv-btn[aria-haspopup="menu"])::before {
+  content: ''; order: 9; flex: none; width: 14px; height: 14px; margin-left: -2px; background: var(--text3);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.btn.picker::before { margin-left: 0; }
 .pv-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pv-input {
   height: 32px; width: 100%; padding: 0 8px; margin-left: -8px; border-radius: var(--radius); border: 1px solid transparent;
@@ -493,6 +543,7 @@ button.srow-label:hover { text-decoration: underline; }
   display: flex; align-items: center; gap: var(--sp-2); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
   padding: 4px 4px 4px 10px; min-height: 40px;
 }
+.fold > :is(.btn, .ib) { border-radius: calc(var(--radius) - 4px); }   /* inside the row's corner, 4px in */
 .fold-path { flex: 1; min-width: 0; font-family: var(--mono); font-size: var(--fs-sm); color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 .fold-path bdi { direction: ltr; unicode-bidi: isolate; }
 .fold-label { font-size: var(--fs-micro); font-weight: 700; letter-spacing: var(--label-spacing); text-transform: uppercase; color: var(--text3); flex: none; }
@@ -523,14 +574,19 @@ button.srow-label:hover { text-decoration: underline; }
 }
 
 /* ── Menus, dialogs, toast (the floating layers) ─────────────────── */
+/* A menu grows out of the button that opened it (ui.js sets transform-origin
+   at that button) in 160ms, and goes back into it about a fifth quicker
+   (.closing). Both come from --dur, so reduced motion takes them to 0. Its
+   items' corners sit inside its own: the menu's radius less its 4px padding. */
 .menu {
   position: fixed; z-index: 90; min-width: 200px; max-width: min(320px, calc(100vw - 16px)); max-height: min(70vh, 480px); overflow: auto;
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px; box-shadow: var(--shadow-panel);
-  transform-origin: top left; transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 4px; box-shadow: var(--shadow-panel);
+  transform-origin: top left; transition: opacity calc(var(--dur) * .8) var(--ease-out), transform calc(var(--dur) * .8) var(--ease-out);
 }
 @starting-style { .menu { opacity: 0; transform: scale(.97); } }
+.menu.closing { opacity: 0; transform: scale(.97); pointer-events: none; transition-duration: calc(var(--dur) * .64); }
 .menu-item {
-  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 36px; padding: 6px 10px; border: 0; border-radius: var(--radius);
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 36px; padding: 6px 10px; border: 0; border-radius: calc(var(--radius-lg) - 4px);
   background: transparent; color: var(--text); font-size: 14px; text-align: left;
 }
 .menu-item:hover, .menu-item:focus-visible { background: var(--bg); outline: none; }
@@ -561,7 +617,7 @@ input::-ms-reveal { display: none; }
 .reveal-wrap .input { flex: 1; padding-right: 64px; }
 .reveal {
   position: absolute; right: 4px; top: 50%; transform: translateY(-50%); height: 28px; padding: 0 10px;
-  border: 0; border-radius: var(--radius); background: transparent; color: var(--text2); font-size: var(--fs-sm); font-weight: 600;
+  border: 0; border-radius: calc(var(--radius) - 4px);   /* 4px inside the field's corner */ background: transparent; color: var(--text2); font-size: var(--fs-sm); font-weight: 600;
 }
 .reveal:hover { background: var(--bg2); color: var(--text); }
 .reveal:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
@@ -589,7 +645,8 @@ input::-ms-reveal { display: none; }
   width: max-content; max-width: min(560px, calc(100vw - 32px)); padding: 10px 10px 10px 16px; border-radius: var(--radius);
   background: var(--toast-bg); color: var(--accent-text); box-shadow: var(--shadow-panel);
   opacity: 0; transform: translate(-50%, 8px);
-  transition: opacity 150ms var(--ease-out), transform 150ms var(--ease-out);
+  /* Out a quarter quicker than in (150ms), from the token so reduced motion stops it moving. */
+  transition: opacity calc(var(--dur) * .75) var(--ease-out), transform calc(var(--dur) * .75) var(--ease-out);
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); transition-duration: var(--dur); }
 .toast.warn { background: var(--toast-warn-bg); }
@@ -727,7 +784,7 @@ input::-ms-reveal { display: none; }
 .imp-title { overflow-wrap: break-word; -webkit-hyphens: auto; hyphens: auto; display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
 .imp-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sel {
-  height: 32px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text); padding: 0 8px; font-size: var(--fs-sm); max-width: 220px;
+  height: 36px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text); padding: 0 8px; font-size: var(--fs-sm); max-width: 220px;
 }
 .sel:focus { border-color: var(--focus); outline: none; }
 .imp-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
@@ -761,7 +818,10 @@ input::-ms-reveal { display: none; }
 .app:not([data-role="lead"]) .side,
 .app:not([data-role="lead"]) .hd .menu-btn,
 .app:not([data-role="lead"]) .hd .new-job { display: none; }
-.tab .count { margin-left: 2px; }
+/* A count is pinned to its tab's top corner, over the end of the word, so a
+   tab never moves when its count comes or goes (stella-internal-ux, badges). */
+.tab { position: relative; }
+.tab .count { position: absolute; top: 8px; left: calc(100% - 16px); min-width: 18px; height: 18px; padding: 0 5px; }
 .tb-ic { position: relative; display: grid; place-items: center; }
 .tb-ic .count { position: absolute; top: -6px; left: calc(100% - 6px); min-width: 18px; height: 18px; padding: 0 5px; }
 /* Local mode: where changes go, and who this browser is viewing as. */
@@ -832,7 +892,7 @@ input::-ms-reveal { display: none; }
 
 /* ── A designer's Tasks list: grouped by what to do next ─────────── */
 .view-inner.my { gap: var(--sp-5); max-width: 1280px; }
-.my-head .my-search { width: 240px; height: 32px; }
+.my-head .my-search { width: 240px; height: 36px; }
 .my-grp { display: flex; flex-direction: column; gap: var(--sp-2); }
 .my-grp-head { display: flex; align-items: center; gap: var(--sp-2); min-height: 32px; }
 .my-list { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); overflow: hidden; display: flex; flex-direction: column; }
@@ -882,9 +942,9 @@ input::-ms-reveal { display: none; }
 /* ── The Log: a feed of even-height cards ─────────────────────────── */
 .view-inner.log { gap: var(--sp-4); }
 .log-head { gap: var(--sp-2) var(--sp-3); }
-.log-head .log-search { width: 240px; height: 32px; }
+.log-head .log-search { width: 240px; height: 36px; }
 .log-sub { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin-top: calc(-1 * var(--sp-2)); }
-.chip.on { border-color: var(--border2); color: var(--text); background: var(--surface); }
+.chip.on { border-color: var(--border2); color: var(--text); background: var(--bg2); }
 /* Every card in the feed the same height: the photo, or more of the text. */
 .ncards { display: grid; grid-template-columns: repeat(auto-fill, minmax(264px, 1fr)); grid-auto-rows: 1fr; gap: var(--sp-3); }
 .ncard {
@@ -1035,7 +1095,7 @@ input::-ms-reveal { display: none; }
 
 .view-inner.jobs { gap: var(--sp-4); max-width: 1400px; }
 .jobs-head { gap: var(--sp-2) var(--sp-3); }
-.jobs-head .jobs-search { width: 220px; height: 32px; }
+.jobs-head .jobs-search { width: 220px; height: 36px; }
 .mj-sec { display: flex; flex-direction: column; gap: var(--sp-2); }
 .mj-sec-head { font: inherit; }
 .mj-toggle {
@@ -1199,7 +1259,7 @@ button.rc:hover i { border-color: var(--text2); }
 }
 .rg-more:hover { background: var(--bg2); color: var(--text); }
 /* Short of room the job's own title gives way first, then the status ends in "…" (its menu and name say it whole). */
-.rg-job .pill { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.rg-job .pill { flex-shrink: 1; min-width: 0; }
 .rg-job-title { min-width: 0; flex: 0 1000 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); color: var(--text3); }
 .rg-who { flex: none; display: inline-flex; }
 .rg-age { flex: none; font-variant-numeric: tabular-nums; }
@@ -1378,7 +1438,10 @@ button.rc:hover i { border-color: var(--text2); }
      duration, and a dot keeps "106h 55m" and "4m" apart. */
   .tile-foot:has(> .time-mark) { flex-wrap: wrap; row-gap: 2px; }
   .tile-foot > .time-mark + .foot-age::before { content: '·'; margin-right: 6px; color: var(--text3); }
-  .tile-top .ib { width: 44px; height: 44px; margin: -8px -10px -8px -12px; }
+  /* The tick's and ⋯'s 44px targets reach over the top row's 4px gap only as far as the
+     pill's edge, never into it. */
+  .tile-top .ib { width: 44px; height: 44px; margin: -8px -10px -8px -8px; }
+  .tile-top > .tick { margin-right: -4px; }
   /* A category tile on a phone gives its name the width: tighter padding, and
      its 44px menu target sits in the corner instead of beside the name. */
   .card { padding: 12px; }
@@ -1391,7 +1454,33 @@ button.rc:hover i { border-color: var(--text2); }
   /* The ground inset costs width, so on a phone the panel's Tiles/List switch shows its icons
      only and the heading keeps to one line. The words stay for screen readers. */
   .psec.kids .seg span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-  .input, .textarea, .sel, .pv-input, .title-edit, .title-shown, .search-box .input { font-size: 16px; }   /* The 16px Input Rule: iOS never zooms */
+  /* Targets that would otherwise reach into a neighbour's (checked with the panel open):
+     icon-only segments are drawn 44px wide, since they sit side by side; the crumbs
+     keep a target's half-height clear of the title; a task tile's pill sits right
+     under its tick, so it keeps its drawn height there and the tick reaches less far down. */
+  .seg button { min-width: 44px; justify-content: center; }
+  .panel-top .crumbs { margin-bottom: 4px; }
+  .ktile-foot .pill:is(button)::after { height: 100%; }
+  .ktile-top > .tick { margin-bottom: -4px; }
+  .input, .textarea, .sel, .pv-input, .pv-input.mono, .title-edit, .title-shown, .search-box .input { font-size: 16px; }   /* The 16px Input Rule: iOS never zooms (the Rev field too) */
+  /* 44px targets drawn at that size: the sidebar sheet's rows, selects, tick labels. */
+  .si, .si.sub, .si.master-link { min-height: 44px; }
+  .sel { height: 44px; }
+  .check-line, .rg-add .check-line { min-height: 44px; }
+  /* Lines of grown targets that wrap stay a target apart (the Targets block). */
+  .filters { row-gap: 8px; }
+  .props { row-gap: 12px; }
+  .rq-acts { gap: 8px; }
+  /* A row that scrolls sideways has room inside it for its targets, and fades
+     at the edge so it is plain there is more. */
+  :is(.log-head, .jobs-head, .rg-head-bar) .filters { padding-block: 4px; margin-block: -4px; }
+  :is(.log-head, .jobs-head, .rg-head-bar) .filters, .backlog-row {
+    padding-right: 24px; scrollbar-width: none;   /* the fade says there is more */
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+  }
+  /* One red button in view: a view showing its own primary (a welcome block's
+     first step, Progress's Add row) has it instead of the + button. */
+  .app:has(.view .btn.primary) .fab { display: none; }
   .input, .pv-input { height: 44px; }
   .tick { width: 44px; height: 44px; margin: -8px; }   /* a 44px target, drawn at 28 */
   button.srow-label { min-height: 44px; }

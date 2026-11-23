@@ -16,7 +16,7 @@ import { ROLE_LABEL } from './access.js';
 import { Store } from './store.js';
 import { state, subscribe, setNodes, setError, allNotes } from './state.js';
 import { initRouter, route, go, currentTab, roleTabs, isSpecial, closePanel } from './router.js';
-import { el, icon, isWide, closeMenu, installContextMenus } from './ui.js';
+import { el, icon, isWide, closeMenu, installContextMenus, countText, plainWhy } from './ui.js';
 import * as A from './actions.js';
 import * as TM from './team.js';
 import * as TR from './timer.js';
@@ -51,7 +51,7 @@ const TABS = {
   progress: { label: 'Progress', icon: 'register' },
   team: { label: 'Team', icon: 'team' },
   log: { label: 'Log', icon: 'log' },
-  jobs: { label: 'Jobs', icon: 'tasks' },
+  jobs: { label: 'Design jobs', icon: 'tasks' },   // "jobs" on the board are production orders (owner, 2026-11-23)
 };
 
 $('menuBtn').append(icon('menu', 20));
@@ -159,6 +159,9 @@ function drawView() {
   const ae = document.activeElement;
   const caret = fk && typeof ae?.selectionStart === 'number' ? [ae.selectionStart, ae.selectionEnd] : null;
   view.textContent = '';
+  // The skeleton index.html painted while the app started is gone now.
+  view.removeAttribute('aria-busy');
+  view.removeAttribute('aria-label');
   const tab = currentTab();
   const p = route.parts;
   // The archive and import pages load on demand. A later draw (Apply moving
@@ -207,11 +210,11 @@ function drawChrome() {
     if (on) a.setAttribute('aria-current', 'page');
     const c = a.querySelector('.count');
     const n = counts[a.dataset.tab] ?? 0;
-    if (c) { c.hidden = !n; c.textContent = String(n); }
+    if (c) { c.hidden = !n; c.textContent = countText(n); }
     a.setAttribute('aria-label', n ? `${TABS[a.dataset.tab]?.label}, ${n} ${COUNT_WORDS[a.dataset.tab] ?? ''}` : TABS[a.dataset.tab]?.label ?? '');
   }
   const title = special ? (route.parts[0] === 'archive' ? 'Archive' : 'Import')
-    : tab === 'home' ? 'Home' : tab === 'team' ? 'Team' : tab === 'log' ? 'Log' : tab === 'jobs' ? 'Jobs' : tab === 'progress' ? 'Progress'
+    : tab === 'home' ? 'Home' : tab === 'team' ? 'Team' : tab === 'log' ? 'Log' : tab === 'jobs' ? 'Design jobs' : tab === 'progress' ? 'Progress'
       : tab === 'tasks' ? (lead() ? viewTitle(route.parts[0] === 'tasks' ? route.parts[1] : null) : 'Tasks') : 'Design Scheduling';
   // The + button adds what this page holds: a note on the Log; a job or a task elsewhere.
   const onLog = tab === 'log' && !special;
@@ -382,8 +385,10 @@ async function start() {
 boot().catch((e) => {
   console.error(e);
   view.textContent = '';
+  view.removeAttribute('aria-busy');
+  view.removeAttribute('aria-label');
   view.append(el('div', { class: 'state-msg' },
     el('h1', { class: 'h1' }, 'Design Scheduling could not start'),
-    el('p', {}, String(e?.message ?? e)),
+    el('p', {}, `${plainWhy(e).replace(/^./, (ch) => ch.toUpperCase())}.`),
     el('p', {}, 'Reload the page. If it keeps happening, the browser console has the detail.')));
 });

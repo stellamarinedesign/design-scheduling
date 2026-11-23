@@ -1,7 +1,7 @@
 // views/archive.js — what was archived, newest first, with Restore. Read on
 // demand (the live query watches only what is not archived).
 
-import { el, btn, pill, dot } from '../ui.js';
+import { el, btn, pill, dot, plainWhy, plainNext } from '../ui.js';
 import { state } from '../state.js';
 import * as T from '../tree.js';
 import * as A from '../actions.js';
@@ -22,7 +22,7 @@ export async function renderArchive(root) {
   } catch (e) {
     host.textContent = '';
     host.removeAttribute('aria-busy');
-    host.append(el('div', { class: 'state-msg', role: 'alert' }, el('p', {}, `The archive did not load: ${e.message}`), el('div', {}, btn('Try again', () => { root.textContent = ''; renderArchive(root); }))));
+    host.append(el('div', { class: 'state-msg', role: 'alert' }, el('p', {}, `The archive did not load: ${plainWhy(e)}.`), el('p', {}, plainNext(e)), el('div', {}, btn('Try again', () => { root.textContent = ''; renderArchive(root); }))));
     return;
   }
   draw(host, root);

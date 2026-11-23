@@ -12,7 +12,7 @@
 // time; before the job is Done the box says the time is so far, and an
 // internal document says so too.
 
-import { el, btn, toast, prefs, isRefusal, loadProblem } from '../ui.js';
+import { el, btn, toast, prefs, isRefusal, loadProblem, plainWhy, plainNext } from '../ui.js';
 import { state, node, realName } from '../state.js';
 import * as QT from '../quote.js';
 import { Store } from '../store.js';
@@ -213,7 +213,7 @@ export function openExport(jobId) {
         busy = false;
         make.lastChild.textContent = label;
         draw();
-        toast(isRefusal(e) ? 'The template could not be read: this account is not allowed to.' : `The document was not made: ${e.message}`, { warn: true });
+        toast(isRefusal(e) ? 'The template could not be read: this account is not allowed to.' : `The document was not made: ${plainWhy(e)}. ${plainNext(e)}`, { warn: true });
       }
     }
 
@@ -271,9 +271,9 @@ export function quoteSettings(section, markClean) {
   const rateSlot = el('div', { class: 'row qx-rate-row' }, el('div', { class: 'skel qx-rate-skel', 'aria-busy': 'true', 'aria-label': 'Loading the rate' }));
   const load = async () => {
     try { q = (await Store.getQuote()) ?? {}; err.textContent = ''; }
-    catch (e) { err.textContent = isRefusal(e) ? 'This account is not allowed to read the export settings.' : `The export settings did not load (${e.message}). Open Settings again to retry.`; }
+    catch (e) { err.textContent = isRefusal(e) ? 'This account is not allowed to read the export settings.' : `The export settings did not load: ${plainWhy(e)}. Open Settings again to retry.`; }
     rate.value = rateText(q.rate);
-    rateSlot.replaceChildren(el('label', { class: 'field' }, el('span', { class: 'lbl' }, 'Default rate ($/h)'), rate), btn('Save', saveRate, { cls: 'sm' }));
+    rateSlot.replaceChildren(el('label', { class: 'field' }, el('span', { class: 'lbl' }, 'Default rate ($/h)'), rate), btn('Save rate', saveRate, { cls: 'sm' }));
     draw();
   };
 
@@ -294,20 +294,20 @@ export function quoteSettings(section, markClean) {
       q = { ...q, template: meta };
       toast(`Template saved: exports use ${t.name} from now on`);
     } catch (e) {
-      err.textContent = isRefusal(e) ? 'That did not save: only the Design lead sets the template.' : e.message;
+      err.textContent = isRefusal(e) ? 'That did not save: only the Design lead sets the template.' : `The template was not saved: ${plainWhy(e)}.`;
     }
     working = false;
     draw();
   });
 
   async function remove() {
-    const ok = await confirmDialog({ title: 'Remove the template?', body: `Exports come out on a plain page until another is uploaded. ${q.template?.name ?? 'The file'} stays wherever you keep it.`, ok: 'Remove', destructive: true });
+    const ok = await confirmDialog({ title: 'Remove the template?', body: `Exports come out on a plain page until another is uploaded. ${q.template?.name ?? 'The file'} stays wherever you keep it.`, ok: 'Remove the template', cancel: 'Keep it', destructive: true });
     if (!ok) return;
     if (Store.offline()) { err.textContent = 'Removing the template needs a connection.'; return; }
     working = true;
     draw();
     try { await Store.removeQuoteTemplate(); q = { ...q, template: null }; toast('Template removed: exports come out on a plain page'); }
-    catch (e) { err.textContent = isRefusal(e) ? 'That did not save: only the Design lead sets the template.' : `That did not save: ${e.message}`; }
+    catch (e) { err.textContent = isRefusal(e) ? 'That did not save: only the Design lead sets the template.' : `That did not save: ${plainWhy(e)}.`; }
     working = false;
     draw();
   }
@@ -328,11 +328,11 @@ export function quoteSettings(section, markClean) {
       q = { ...q, rate: r.rate };
       markClean();
       toast(`${said}, kept on this device until the connection is back`);
-      p.catch((e) => toast(isRefusal(e) ? 'The rate did not save: only the Design lead sets it.' : `The rate did not save: ${e.message}`, { warn: true }));
+      p.catch((e) => toast(isRefusal(e) ? 'The rate did not save: only the Design lead sets it.' : `The rate did not save: ${plainWhy(e)}.`, { warn: true }));
       return;
     }
     try { await p; q = { ...q, rate: r.rate }; rate.value = rateText(r.rate); markClean(); toast(said); }
-    catch (e) { toast(isRefusal(e) ? 'Could not save: only the Design lead sets the rate.' : `Could not save: ${e.message}`, { warn: true }); }
+    catch (e) { toast(isRefusal(e) ? 'Could not save: only the Design lead sets the rate.' : `The rate did not save: ${plainWhy(e)}. ${plainNext(e)}`, { warn: true }); }
   };
   rate.addEventListener('input', () => { rateErr.textContent = ''; rate.removeAttribute('aria-invalid'); rate.removeAttribute('aria-describedby'); });
   rate.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); saveRate(); } });

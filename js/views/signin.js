@@ -1,21 +1,28 @@
 // views/signin.js — the sign-in screen (Firebase mode only), and the screen
 // for an account nobody has listed yet. Local mode never shows either.
 
-import { el, btn, withReveal } from '../ui.js';
+import { el, btn, withReveal, refuse, plainWhy } from '../ui.js';
 import { Auth, friendlyAuthError } from '../auth.js';
 
 export function renderSignIn(app) {
   app.textContent = '';
   const email = el('input', { class: 'input', type: 'email', id: 'siEmail', autocomplete: 'username', spellcheck: 'false' });
   const pw = el('input', { class: 'input', type: 'password', id: 'siPw', autocomplete: 'current-password' });
-  const err = el('div', { class: 'form-err', role: 'alert' });
+  const err = el('div', { class: 'form-err', role: 'alert', id: 'siErr' });
   const go = btn('Sign in', async () => {
     err.textContent = '';
     go.disabled = true;
+    go.lastChild.textContent = 'Signing in…';
     // The sign-in screen replaced the app's shell, so the way back in is a
     // fresh load: Firebase remembers the sign-in and the shell starts signed in.
     try { await Auth.signIn(email.value, pw.value); location.reload(); }
-    catch (e) { err.textContent = friendlyAuthError(e); go.disabled = false; }
+    catch (e) {
+      err.textContent = friendlyAuthError(e);
+      go.disabled = false;
+      go.lastChild.textContent = 'Sign in';
+      // A wrong address or password: the field it is about shakes once.
+      if (/email|password/i.test(err.textContent)) refuse(/does not look like an email/i.test(err.textContent) ? email : pw, err);
+    }
   }, { cls: 'primary' });
   for (const i of [email, pw]) i.addEventListener('keydown', (e) => { if (e.key === 'Enter') go.click(); });
   app.append(el('header', { class: 'hd' }, el('span', { class: 'hd-logo', 'aria-hidden': 'true' }), el('span', { class: 'hd-title' }, 'Design Scheduling')),
@@ -43,7 +50,7 @@ export function renderNotListed(app, address, { canClaim = false } = {}) {
       const me = String(address ?? '').trim().toLowerCase();
       await Store.saveAccess({ leads: [me], designers: [], contributors: [], managers: [], masters: [me] });
       location.reload();
-    } catch (e) { err.textContent = `That did not save: ${e.message}`; claim.disabled = false; }
+    } catch (e) { err.textContent = `That did not save: ${plainWhy(e)}. Reload and try again.`; claim.disabled = false; }
   }, { cls: 'primary' }) : null;
   app.append(el('header', { class: 'hd' }, el('span', { class: 'hd-logo', 'aria-hidden': 'true' }), el('span', { class: 'hd-title' }, 'Design Scheduling')),
     el('main', { class: 'view' }, el('div', { class: 'state-msg', style: { margin: '10vh auto 0' } },

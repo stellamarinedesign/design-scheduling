@@ -45,14 +45,14 @@ export function renderJobs(root) {
     el('button', { type: 'button', 'aria-pressed': String(view === 'list'), onclick: () => { prefs.set('jobsView', 'list'); redraw(); } }, 'Full list'));
   // Nothing shared: no filters to offer, only the heading and the reason.
   if (state.ready && !SH.sharedJobs(state.idx).length) {
-    inner.append(el('div', { class: 'view-head jobs-head' }, el('h1', { class: 'h1' }, 'Jobs')),
+    inner.append(el('div', { class: 'view-head jobs-head' }, el('h1', { class: 'h1' }, 'Design jobs')),
       el('section', { class: 'welcome' },
         el('h2', { class: 'h2' }, 'Nothing shared yet'),
         el('p', {}, 'The Design lead chooses which jobs show here. When they share one, you see where it stands and can ask about it. The Log is open to you meanwhile.')));
     return;
   }
   inner.append(el('div', { class: 'view-head jobs-head' },
-    el('h1', { class: 'h1' }, 'Jobs'),
+    el('h1', { class: 'h1' }, 'Design jobs'),
     el('div', { class: 'filters', role: 'group', 'aria-label': 'Filter the jobs' },
       SH.JOB_FILTERS.map((f) => el('button', {
         class: 'fp', type: 'button', 'aria-pressed': String(f.key === filter),
@@ -64,7 +64,7 @@ export function renderJobs(root) {
 
   if (state.error && !state.ready) {
     inner.append(el('div', { class: 'state-msg', role: 'alert' },
-      el('h2', { class: 'h2' }, 'The jobs did not load'),
+      el('h2', { class: 'h2' }, 'The design jobs did not load'),
       ...loadProblem(state.error).map((line) => el('p', {}, line)),
       el('div', {}, btn('Reload', () => location.reload()))));
     return;

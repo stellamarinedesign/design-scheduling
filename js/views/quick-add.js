@@ -35,7 +35,7 @@ export function openQuickAdd({ parentId, capture = false, own = state.role !== '
     const title = el('input', { class: 'input', id: 'qaTitle', type: 'text', placeholder: 'What needs doing?', autocomplete: 'off', maxlength: '300', 'data-autofocus': '' });
     box.append(el('div', { class: 'field' }, el('label', { for: 'qaTitle' }, 'Title'), title));
 
-    const placeBtn = el('button', { class: 'pv-btn', type: 'button', id: 'qaPlace', style: { 'margin-left': '0', border: '1px solid var(--border)' } });
+    const placeBtn = el('button', { class: 'pv-btn picker', type: 'button', id: 'qaPlace', style: { 'margin-left': '0', border: '1px solid var(--border)' } });
     const tplLine = el('label', { class: 'check-line' });
     const tplBox = el('input', { type: 'checkbox', checked: true });
 
@@ -106,7 +106,7 @@ export function openQuickAdd({ parentId, capture = false, own = state.role !== '
     });
     brief.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); add(); } });
     box.append(el('div', { class: 'actions' },
-      btn('Add', () => add(), { cls: 'primary' }),
+      btn('Add job', () => add(), { cls: 'primary' }),
       btn('Add and open', () => add({ andOpen: true })),
       btn('Cancel', dismiss, { cls: 'ghost' })),
     el('div', { class: 'hint' }, capture ? 'Captured from the hotkey. Enter adds; Shift+Enter adds and keeps this open.' : 'Enter adds · Shift+Enter adds another · Esc cancels'));
@@ -141,7 +141,7 @@ function openOwnAdd({ capture = false } = {}) {
     title.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add({ another: e.shiftKey }); } });
     brief.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); add(); } });
     box.append(el('div', { class: 'actions' },
-      btn('Add', () => add(), { cls: 'primary' }),
+      btn('Add task', () => add(), { cls: 'primary' }),
       btn('Add and open', () => add({ andOpen: true })),
       btn('Cancel', dismiss, { cls: 'ghost' })),
     el('div', { class: 'hint' }, capture ? 'Captured from the hotkey. Enter adds; Shift+Enter adds and keeps this open.' : 'Enter adds · Shift+Enter adds another · Esc cancels'));

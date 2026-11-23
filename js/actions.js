@@ -293,7 +293,7 @@ export async function setStatus(id, to, { comment, note, blockedBy, reason, adva
       const ans = !what ? 'alt' : await confirmDialog({
         title: 'Close what is still open inside?',
         body: `${t.title} still has ${what}.${inCheck ? ` ${plural(inCheck, 'task')} waiting for check ${inCheck === 1 ? 'stays' : 'stay'} as ${inCheck === 1 ? 'it is' : 'they are'}.` : ''}`,
-        ok: 'Close them too', alt: 'Leave them open', cancel: 'Cancel',
+        ok: 'Close them too', alt: 'Leave them open', cancel: 'Not yet',
       });
       if (!ans) return;
       if (ans === 'ok') {
@@ -554,7 +554,7 @@ export async function remove(id) {
   const ok = await confirmDialog({
     title: `Delete ${T.nameOf(n) || 'this'}?`,
     body: below.length ? `Everything inside it goes too (${plural(below.length, 'item')}). This cannot be undone. Archive keeps it out of sight instead.` : 'This cannot be undone. Archive keeps it out of sight instead.',
-    ok: 'Delete', destructive: true,
+    ok: 'Delete for good', cancel: 'Keep it', destructive: true,
   });
   if (!ok) return false;
   const all = [id, ...below];
@@ -580,7 +580,7 @@ const allLinked = (ids) => mergeNotes(state.log.triage, state.log.feed, state.lo
 
 /** Delete an archived node for good (from the archive page). */
 export async function removeArchived(item, archived) {
-  const ok = await confirmDialog({ title: `Delete ${T.nameOf(item)} for good?`, body: 'It and everything archived inside it go. This cannot be undone.', ok: 'Delete', destructive: true });
+  const ok = await confirmDialog({ title: `Delete ${T.nameOf(item)} for good?`, body: 'It and everything archived inside it go. This cannot be undone.', ok: 'Delete for good', cancel: 'Keep it', destructive: true });
   if (!ok) return false;
   const ids = [item.id];
   const walk = (id) => { for (const c of archived) if (c.parentId === id) { ids.push(c.id); walk(c.id); } };
@@ -1149,7 +1149,7 @@ export async function deleteNote(id) {
   const ok = await confirmDialog({
     title: 'Delete this note?',
     body: `"${NT.titleOf(n)}"${n.photos?.length ? ` and its ${plural(n.photos.length, 'photo')}` : ''} will be gone for everyone. ${n.kind === 'reference' ? 'Archiving keeps it out of the feed instead.' : ''}`.trim(),
-    ok: 'Delete', destructive: true,
+    ok: 'Delete note', cancel: 'Keep it', destructive: true,
   });
   if (!ok) return false;
   write({ noteRemove: [id], imageRemove: deletable(n.photos) }, 'The note was not deleted');
@@ -1215,7 +1215,7 @@ export async function dismissNote(noteId) {
   if (!n || !canTriage()) return;
   const reason = await promptDialog({
     title: 'Dismiss this note?', label: 'Why', placeholder: 'e.g. Already fixed on the current design',
-    ok: 'Dismiss', body: `"${NT.titleOf(n)}" stays in the Log, marked Dismissed, with your reason.`, multiline: true,
+    ok: 'Dismiss note', dismiss: 'Keep it open', body: `"${NT.titleOf(n)}" stays in the Log, marked Dismissed, with your reason.`, multiline: true,
   });
   if (!reason) return;
   notePatch(n, NT.dismissPatch(n, reason, { by: state.me, at: nowISO() }), 'Dismissed');

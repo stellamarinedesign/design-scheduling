@@ -12,7 +12,7 @@
 // left of the job's tasks, kept as extras or archived. "Keep its tasks as
 // they are" only moves it.
 
-import { el, btn, icon, iconBtn, dot, pill } from '../ui.js';
+import { el, btn, icon, iconBtn, dot, pill, refuse } from '../ui.js';
 import { state, node, personName } from '../state.js';
 import * as T from '../tree.js';
 import * as S from '../status.js';
@@ -92,7 +92,7 @@ export function newLine({ parentId = null } = {}) {
     box.append(el('h3', {}, 'New product line'),
       el('p', { class: 'lede' }, 'A table on the Progress page. Its columns are its tasks template, and each row is a job in it.'));
     const name = el('input', { class: 'input', id: 'nlName', type: 'text', maxlength: '120', autocomplete: 'off', placeholder: 'e.g. Custom Lifters', 'data-autofocus': '' });
-    const placeBtn = el('button', { class: 'pv-btn ln-place', type: 'button', id: 'nlIn' });
+    const placeBtn = el('button', { class: 'pv-btn ln-place picker', type: 'button', id: 'nlIn' });
     const drawPlace = () => {
       placeBtn.textContent = '';
       const g = place ? node(place) : null;
@@ -118,7 +118,7 @@ export function newLine({ parentId = null } = {}) {
     drawPlace();
     const go1 = () => {
       const v = name.value.trim();
-      if (!v) { err.textContent = 'Give it a name.'; name.setAttribute('aria-invalid', 'true'); name.focus(); return; }
+      if (!v) { err.textContent = 'Give it a name.'; refuse(name); return; }
       if (!place) { err.textContent = 'Choose the category it goes in.'; placeBtn.focus(); return; }
       const from = copy.value ? node(copy.value) : null;
       const template = from ? (T.stepsTemplateOf(state.idx, from.id)?.template ?? null) : null;

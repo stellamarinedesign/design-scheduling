@@ -99,7 +99,7 @@ async function decode(file) {
       const out = await conv({ blob: file, toType: 'image/jpeg', quality: 0.9 });
       jpeg = Array.isArray(out) ? out[0] : out;
     } catch (e) {
-      throw new Error(`${file.name || 'This photo'} is HEIC, which this browser cannot open (${e.message}). Send it from the iPhone as JPEG (Settings › Camera › Formats › Most Compatible), or add it from the phone itself.`);
+      throw new Error(`${file.name || 'This photo'} is HEIC, which this browser cannot open. Send it from the iPhone as JPEG (Settings › Camera › Formats › Most Compatible), or add it from the phone itself.`);
     }
     try { return await createImageBitmap(jpeg); } catch { return viaImg(jpeg); }
   }

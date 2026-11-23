@@ -305,7 +305,7 @@ export function openTimeLog(jobId) {
         can ? el('div', { class: 'tl-acts' },
           btn('Edit', () => { form = { kind: 'edit', id: e.id }; draw(); }, { cls: 'sm ghost', ic: 'edit' }),
           iconBtn('trash', `Delete ${TC.clockAmPm(e.start)} entry`, async () => {
-            const ok = await confirmDialog({ title: 'Delete this time?', body: `${TC.fmt(TC.msOf(e, fresh, now))} on ${task ? task.title : 'the job'}, ${dayLabel(TC.dayOfInstant(e.start))}, by ${personName(e.by)}. It comes off the job's total.`, ok: 'Delete', destructive: true });
+            const ok = await confirmDialog({ title: 'Delete this time?', body: `${TC.fmt(TC.msOf(e, fresh, now))} on ${task ? task.title : 'the job'}, ${dayLabel(TC.dayOfInstant(e.start))}, by ${personName(e.by)}. It comes off the job's total.`, ok: 'Delete the time', cancel: 'Keep it', destructive: true });
             if (ok) TR.deleteEntry(e);
           }, 'sm')) : null);
     };
@@ -354,7 +354,7 @@ export function openTimeLog(jobId) {
           el('label', { class: 'field tl-task-field' }, el('span', { class: 'lbl' }, 'Task'), task)),
         err,
         el('div', { class: 'row' },
-          btn(entry ? 'Save' : 'Add', save, { cls: 'sm primary' }),
+          btn(entry ? 'Save time' : 'Add time', save, { cls: 'sm primary' }),
           btn('Cancel', onDone, { cls: 'sm ghost' }),
           entry ? null : el('span', { class: 'hint' }, `Recorded as you, ${realName(state.me) || 'you'}`)));
       wrap.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && ev.target.tagName !== 'SELECT') { ev.preventDefault(); save(); } });

@@ -12,7 +12,7 @@
 // with the note's words as the reason, the note is answered by it, and the
 // toast offers Undo - a status change, like any other.
 
-import { el, btn, menu, isPhone } from '../ui.js';
+import { el, btn, menu, isPhone, countText } from '../ui.js';
 import { state, personName } from '../state.js';
 import * as T from '../tree.js';
 import * as S from '../status.js';
@@ -63,7 +63,7 @@ export function requestsSection() {
   return el('section', { class: 'sec', 'aria-label': 'Questions and requests' },
     el('div', { class: 'sec-head' },
       el('h2', { class: 'h2' }, 'Questions & requests'),
-      el('span', { class: 'count', 'aria-label': `${total} open` }, String(total)),
+      el('span', { class: 'count', 'aria-label': `${total} open` }, countText(total)),
       el('span', { class: 'meta' }, isPhone() ? '' : 'From managers, on shared jobs')),
     el('div', { class: 'rows rq-list' }, jobs.map(requestRow)));
 }

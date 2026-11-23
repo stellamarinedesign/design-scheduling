@@ -14,7 +14,7 @@
 // how long it has sat in that status (two weeks fills it), and a quiet flag
 // when nothing has come from them for a few days.
 
-import { el, btn, iconBtn, pill, dot, avatar } from '../ui.js';
+import { el, btn, iconBtn, pill, dot, avatar, countText } from '../ui.js';
 import { state, personName } from '../state.js';
 import * as T from '../tree.js';
 import * as S from '../status.js';
@@ -38,7 +38,7 @@ const statusPill = (t) => pill(t.status, A.canWrite(t) ? { onClick: (e) => { e.s
 export function checksSection() {
   const list = TM.checkQueue(state.idx);
   const head = el('div', { class: 'sec-head' }, el('h2', { class: 'h2' }, 'Ready for checking'),
-    list.length ? el('span', { class: 'count', 'aria-label': `${list.length} waiting` }, String(list.length)) : el('span', { class: 'meta' }, 'Nothing is waiting for your check.'));
+    list.length ? el('span', { class: 'count', 'aria-label': `${list.length} waiting` }, countText(list.length)) : el('span', { class: 'meta' }, 'Nothing is waiting for your check.'));
   const sec = el('section', { class: 'sec', 'aria-label': 'Ready for checking' }, head);
   if (!list.length) return sec;
   const grid = el('div', { class: 'grid check-grid' });
