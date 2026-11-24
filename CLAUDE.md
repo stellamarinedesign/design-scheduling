@@ -185,6 +185,7 @@ parent. Starting here is what loads this file, the project skills and the Impecc
 
 ## Design workflow
 - For any UI work, use the impeccable skill. PRODUCT.md and DESIGN.md are the source of truth.
+- All UI work also follows the stella-internal-ux skill, Stella's shared UX and motion rules. Where they differ, this file, PRODUCT.md and DESIGN.md win. DESIGN.md ("Stella internal UX") records how each rule is applied here.
 - The Stella tokens in css/style.css and the Friz Quadrata headings are fixed. Never change the fonts, palette or tokens without asking me first.
 - This is a production tool, not a marketing site. Favour density, consistency and one-tap actions over distinctiveness.
 - After any visible UI change, screenshot in local mode at 375px and desktop width, then run /impeccable audit on the changed view.
