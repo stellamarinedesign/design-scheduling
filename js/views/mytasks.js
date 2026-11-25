@@ -5,8 +5,9 @@
 //
 // GROUPS, top to bottom: Sent back to you (fix these first) · In progress ·
 // Waiting · To do · Ready for check (with the lead, out of the way of the
-// work in hand; owner, 2026-11-09) · Done this month, folded. The grouping
-// replaces the status filter pills.
+// work in hand; owner, 2026-11-09) · Product jobs with the customer, folded
+// (2026-11-26) · Done this month, folded. The grouping replaces the status
+// filter pills.
 //
 // A ROW: the whole path on top (categories, then its job, then any task it
 // sits in: a task inside a job is often just "Laser", owner 2026-11-09);
@@ -29,13 +30,13 @@ import * as A from '../actions.js';
 import * as TM from '../team.js';
 import { daysUntil, dayLabel } from '../dates.js';
 import { openTask, go } from '../router.js';
-import { statusMenu, taskMenu, enableDrag } from './tile.js';
+import { statusMenu, taskMenu, enableDrag, customerFold } from './tile.js';
 import { errorState } from './home.js';
 import { openQuickAdd } from './quick-add.js';
 import { timeMark } from './timer-ui.js';
 
 let query = '';
-let doneOpen = false;
+const foldOpen = { done: false, customer: false };   // this visit only
 
 const rerender = () => go('/tasks', { keepTask: true });
 const sortOf = () => { const s = prefs.get('mySort', 'due'); return TM.MY_SORTS[s] ? s : 'due'; };
@@ -99,7 +100,7 @@ export function renderMyTasks(root) {
   }
   for (const g of groups) {
     if (!g.rows.length) continue;
-    if (g.key === 'done') { inner.append(doneGroup(g)); continue; }
+    if (g.folds) { inner.append(foldGroup(g)); continue; }
     inner.append(group(g, sort));
   }
 }
@@ -138,10 +139,14 @@ function group(g, sort) {
     list);
 }
 
-function doneGroup(g) {
+/** Product jobs with the customer, and Done this month: a line each, until opened. */
+function foldGroup(g) {
+  const open = foldOpen[g.key];
+  const toggle = () => { foldOpen[g.key] = !open; rerender(); };
   const wrap = el('section', { class: 'my-grp', 'aria-label': g.label },
-    el('div', { class: 'row' }, btn(`${g.label} · ${g.rows.length}`, () => { doneOpen = !doneOpen; rerender(); }, { cls: 'sm ghost', ic: doneOpen ? 'chevDown' : 'chevRight', attrs: { 'aria-expanded': String(doneOpen) } })));
-  if (doneOpen) wrap.append(el('div', { class: 'my-list', role: 'list' }, g.rows.map((t) => myRow(t, {}))));
+    g.key === 'customer' ? customerFold(g.rows, open, toggle)
+      : el('div', { class: 'row' }, btn(`${g.label} · ${g.rows.length}`, toggle, { cls: 'sm ghost', ic: open ? 'chevDown' : 'chevRight', attrs: { 'aria-expanded': String(open), 'data-fk': 'fold-done' } })));
+  if (open) wrap.append(el('div', { class: 'my-list', role: 'list' }, g.rows.map((t) => myRow(t, {}))));
   return wrap;
 }
 

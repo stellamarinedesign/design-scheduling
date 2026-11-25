@@ -3,7 +3,9 @@
 // 1. MY WORK: filter pills (In progress · Waiting · Fix, with counts) over a
 //    tile grid of my tasks at ANY depth — nesting organises, it never hides.
 //    Two rows by default, "Show all (N)" for the rest. Drag reorders (Home's
-//    own `homeOrder`); on touch the ⋯ menu has Move earlier / later.
+//    own `homeOrder`); on touch the ⋯ menu has Move earlier / later. Waiting
+//    is the waits to chase; product jobs with the customer fold into one line
+//    under them, the longest wait first (status.js splitWaits).
 // 2. BACKLOG: one row of my To-do jobs and sub-jobs untouched for 14 days or
 //    more, picked afresh each day, weighted toward the oldest. ▶ Start on each.
 // 3. READY FOR CHECKING and 4. CREW: the team (views/crew.js).
@@ -11,9 +13,10 @@
 import { el, btn, prefs, isPhone, loadProblem } from '../ui.js';
 import { state, isMine } from '../state.js';
 import * as T from '../tree.js';
+import * as S from '../status.js';
 import * as A from '../actions.js';
 import * as BL from '../backlog.js';
-import { tile, enableDrag, backlogDays } from './tile.js';
+import { tile, enableDrag, backlogDays, customerFold } from './tile.js';
 import { go } from '../router.js';
 import { newMasterCategory } from './sidebar.js';
 import { checksSection, crewSection } from './crew.js';
@@ -59,21 +62,23 @@ export function renderHome(root) {
   let filter = prefs.get('homeFilter', 'in_progress');
   if (!FILTERS.some((f) => f.key === filter)) filter = 'in_progress';
   const f = FILTERS.find((x) => x.key === filter);
-  const list = ordered(mine.filter((t) => f.match(t.status)));
+  const { chase, customer } = S.splitWaits(state.idx, mine);
+  const list = ordered(chase.filter((t) => f.match(t.status)));
 
   const head = el('div', { class: 'sec-head' },
     el('h2', { class: 'h2' }, 'My work'),
     el('div', { class: 'filters', role: 'group', 'aria-label': 'Filter my work' },
       FILTERS.map((x) => el('button', {
         class: 'fp', type: 'button', 'aria-pressed': String(x.key === filter),
+        title: x.key === 'waiting' && customer.length ? `To chase. ${customer.length} more with the customer, folded below` : null,
         onclick: () => { prefs.set('homeFilter', x.key); showAll = false; go('/home', { keepTask: true }); },
-      }, x.label, el('b', {}, String(mine.filter((t) => x.match(t.status)).length))))),
+      }, x.label, el('b', {}, String(chase.filter((t) => x.match(t.status)).length))))),
     el('span', { class: 'sp' }),
     !isPhone() && list.length > 1 ? el('span', { class: 'meta' }, 'Drag tiles to reorder') : null);
 
   const sec = el('section', { class: 'sec', 'aria-label': 'My work' }, head);
   if (!list.length) {
-    sec.append(el('div', { class: 'empty' }, emptyLine(filter)));
+    sec.append(el('div', { class: 'empty' }, emptyLine(filter, customer.length)));
   } else {
     const grid = el('div', { class: 'grid' });
     list.forEach((t, i) => grid.append(tile(t, {
@@ -107,6 +112,11 @@ export function renderHome(root) {
         more.firstChild.textContent = showAll ? 'Show fewer' : `Show all (${list.length})`;
       }, { cls: 'ghost sm' }));
     });
+  }
+  if (filter === 'waiting' && customer.length) {
+    const open = prefs.get('homeCustomer', false);
+    sec.append(customerFold(customer, open, () => { prefs.set('homeCustomer', !open); go('/home', { keepTask: true }); }));
+    if (open) sec.append(el('div', { class: 'grid' }, customer.map((t) => tile(t, { path: true, drag: false }))));
   }
   inner.append(sec);
 
@@ -161,8 +171,8 @@ function moveIn(list, from, to) {
   return ids;
 }
 
-function emptyLine(filter) {
-  if (filter === 'waiting') return 'Nothing of yours is waiting on anyone.';
+function emptyLine(filter, withCustomer) {
+  if (filter === 'waiting') return withCustomer ? 'Nothing of yours to chase.' : 'Nothing of yours is waiting on anyone.';
   if (filter === 'fix') return 'Nothing sent back to fix.';
   return el('span', {}, el('strong', {}, 'Nothing in progress. '), 'Start something from the Backlog below, or from Tasks: Start is one tap.');
 }

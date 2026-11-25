@@ -33,7 +33,8 @@
 // Everything here is pure: it reads an index (tree.js) and returns patches and
 // updates for the store to write in one batch.
 
-import { ancestorChain, descendantIds, childrenOf, nameOf, KIND, isLight, isContainer, jobOf } from './tree.js';
+import { ancestorChain, descendantIds, childrenOf, nameOf, KIND, isLight, isContainer, jobOf, lineOfRow, shownStatus } from './tree.js';
+import { ageDays } from './dates.js';
 
 export const STATUSES = ['todo', 'in_progress', 'waiting', 'check', 'fix', 'done', 'cancelled'];
 
@@ -174,6 +175,48 @@ export function stageWaitJob(idx, stageId, to, ctx) {
     return r.error ? none : r;
   }
   return none;
+}
+
+/**
+ * WITH THE CUSTOMER (owner, 2026-11-26). A job of a product line in Waiting
+ * because of a waiting stage: that stage is under way, and no other job holds
+ * it up. Nothing to do until the customer answers, so the Waiting lists fold
+ * these away from the waits somebody has to chase (splitWaits). A product
+ * job waiting on anything else - a supplier, another job - is chased like any
+ * other. Told from the stage, not from how the job came to be waiting: a job
+ * brought into its line mid-wait reads the same.
+ */
+export function waitsOnCustomer(idx, t) {
+  if (t?.status !== 'waiting' || !lineOfRow(idx, t)) return false;
+  if (blockersOf(idx, t).open.length) return false;
+  return descendantIds(idx, t.id).some((id) => {
+    const s = idx.byId.get(id);
+    return isWaitStage(idx, s) && ['waiting', 'in_progress'].includes(shownStatus(idx, s));
+  });
+}
+
+/** When a wait began, as best known. */
+const waitSince = (t) => String(t?.waiting?.since ?? t?.statusAt ?? t?.updatedAt ?? '');
+
+/**
+ * Waiting work in two: `chase`, in the order given, and `customer`, the
+ * longest wait first.
+ */
+export function splitWaits(idx, rows) {
+  const customer = rows.filter((t) => waitsOnCustomer(idx, t)).sort((a, b) => waitSince(a).localeCompare(waitSince(b)));
+  const ids = new Set(customer.map((t) => t.id));
+  return { chase: rows.filter((t) => !ids.has(t.id)), customer };
+}
+
+/** What the folded half of a Waiting list is called, and how long the oldest has been there. */
+export const CUSTOMER_WAITS = 'Product jobs with the customer';
+export function longestWait(rows, now = Date.now()) {
+  const since = rows.map(waitSince).filter(Boolean).sort()[0];
+  if (!since) return '';
+  const days = ageDays(since, now);
+  if (days < 1) return 'longest since today';
+  if (days < 14) return `longest ${days} day${days === 1 ? '' : 's'}`;
+  return `longest ${Math.floor(days / 7)} weeks`;
 }
 
 /**

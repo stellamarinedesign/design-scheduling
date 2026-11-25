@@ -970,7 +970,7 @@ export async function run() {
   test('a Crew lane: active work, sent back first, counts and when they were heard from', () => {
     const lane = TM.crewLane(T.buildIndex(teamNodes()), DA, { now: T0 });
     expect(lane.rows.map((t) => t.id), ['j3', 'j2', 't1', 'j1'], 'by status, then the longest sitting (t1 since October) first');
-    expect(lane.counts, { active: 4, check: 1, fix: 1, waiting: 0, todo: 0 });
+    expect(lane.counts, { active: 4, check: 1, fix: 1, waiting: 0, customer: 0, todo: 0 });
     expect(lane.seen, ago(1), 'their own last activity (lastBy)');
     ok(!lane.quiet, 'not quiet');
     const quiet = TM.crewLane(T.buildIndex(apply(teamNodes(), [{ id: 'j1', lastActivityAt: ago(9) }, { id: 'j3', lastActivityAt: ago(9) }, { id: 'j2', lastActivityAt: ago(9) }])), DA, { now: T0 });
@@ -1036,12 +1036,55 @@ export async function run() {
     expect(ids.fix, ['j3']);
     expect(ids.progress.sort(), ['j1', 't1'], 'In progress holds only the work in hand');
     expect(ids.check, ['j2'], 'Ready for check has its own group');
-    expect(g.map((x) => x.key), ['fix', 'progress', 'waiting', 'todo', 'check', 'done'], 'below To do, above Done');
+    expect(g.map((x) => x.key), ['fix', 'progress', 'waiting', 'todo', 'check', 'customer', 'done'], 'below To do, above Done');
     expect(ids.done, ['j4']);
     const old = T.buildIndex(apply(teamNodes(), [{ id: 'j4', assignee: DA, doneAt: ago(60) }]));
     expect(TM.myTaskGroups(old, DA, { now: T0 }).find((x) => x.key === 'done').rows, [], 'done long ago drops off');
     const q = TM.myTaskGroups(idx, DA, { now: T0, query: 'bracket' });
     expect(q.flatMap((x) => x.rows.map((t) => t.id)), ['j1']);
+  });
+  // Product jobs with the customer, apart from the waits somebody chases (2026-11-26).
+  const waitNodes = () => {
+    const job = (id, parentId, extra = {}) => ({ id, kind: 'task', parentId, order: 1, title: id, status: 'waiting', assignee: DA, archivedAt: null,
+      waiting: { note: '', since: ago(10), prevStatus: 'todo', blockedBy: [] }, ...extra });
+    const stage = (id, jobId, status, extra = {}) => ({ id, kind: 'task', parentId: jobId, order: 1, title: 'Approval', status, waits: true, assignee: null, archivedAt: null, ...extra });
+    return [
+      { id: 'line', kind: 'group', parentId: null, order: 1, name: 'Plinths', line: true },
+      { id: 'cat', kind: 'group', parentId: null, order: 2, name: 'Fixes' },
+      job('p1', 'line'), stage('p1a', 'p1', 'waiting'),
+      job('p2', 'line', { waiting: { note: 'Approval with the customer', since: ago(60), prevStatus: 'in_progress', blockedBy: [], stageId: 'p2a' } }), stage('p2a', 'p2', 'in_progress'),
+      job('supplier', 'line', { waiting: { note: 'Supplier sample', since: ago(3), blockedBy: [] } }), stage('sa', 'supplier', 'done'),
+      job('blocked', 'line', { waiting: { note: '', since: ago(4), blockedBy: ['p3'] } }), stage('ba', 'blocked', 'waiting'),
+      job('p3', 'line', { status: 'in_progress', waiting: null }), stage('p3a', 'p3', 'waiting'),
+      job('plain', 'cat'), stage('pla', 'plain', 'waiting'),
+    ];
+  };
+  test('with the customer: a product job waiting on its waiting stage, and nothing else', () => {
+    const idx = T.buildIndex(waitNodes());
+    const is = (id) => S.waitsOnCustomer(idx, idx.byId.get(id));
+    expect(['p1', 'p2'].map(is), [true, true], 'the stage under way, however the wait began');
+    expect(is('supplier'), false, 'its approval is done: something else holds it');
+    expect(is('blocked'), false, 'another job holds it up');
+    expect(is('p3'), false, 'not waiting at all');
+    expect(is('plain'), false, 'not a product line');
+    expect(S.waitsOnCustomer(idx, null), false);
+  });
+  test('the waiting list in two: to chase, in its order; with the customer, the longest wait first', () => {
+    const idx = T.buildIndex(waitNodes());
+    const r = S.splitWaits(idx, ['p1', 'supplier', 'p2', 'plain', 'p3', 'blocked'].map((id) => idx.byId.get(id)));
+    expect(r.chase.map((t) => t.id), ['supplier', 'plain', 'p3', 'blocked']);
+    expect(r.customer.map((t) => t.id), ['p2', 'p1']);
+    expect([S.longestWait(r.customer, T0), S.longestWait([idx.byId.get('p1')], T0), S.longestWait([], T0)], ['longest 8 weeks', 'longest 10 days', '']);
+  });
+  test('Crew, Team and a designer\'s list keep them apart too; nothing is counted twice or lost', () => {
+    const idx = T.buildIndex(waitNodes());
+    const lane = TM.crewLane(idx, DA, { now: T0 });
+    expect([lane.rows.length, lane.customer.map((t) => t.id)], [4, ['p2', 'p1']]);
+    expect([lane.counts.active, lane.counts.waiting, lane.counts.customer], [4, 3, 2]);
+    const col = Object.fromEntries(TM.teamColumn(idx, DA).map((g) => [g.key, g.rows.map((t) => t.id)]));
+    expect([col.waiting, col.customer], [['plain', 'blocked', 'supplier'], ['p2', 'p1']]);
+    const mine = Object.fromEntries(TM.myTaskGroups(idx, DA, { now: T0 }).map((g) => [g.key, g.rows.map((t) => t.id).sort()]));
+    expect([mine.waiting, mine.customer], [['blocked', 'plain', 'supplier'], ['p1', 'p2']]);
   });
   test('a designer\'s list sorts by due date first, undated last', () => {
     const idx = T.buildIndex(apply(teamNodes(), [

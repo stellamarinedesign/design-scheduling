@@ -124,6 +124,9 @@ parent. Starting here is what loads this file, the project skills and the Impecc
     starts; ticking it Done ends the wait.
   - A job's own status is set from its pill. Ticking stages never changes it (owner,
     2026-11-19).
+  - A product job in Waiting on its waiting stage is **with the customer**
+    (`status.waitsOnCustomer`): every Waiting list folds those apart from the waits to chase
+    (`splitWaits`; owner, 2026-11-26).
   - Rows can stay off the Tasks lists (`listed: false`); assigning someone lists them.
   - A new revision resets a row's stages in place, keeping its history and time.
   - **Sub-jobs:** a row can have sub-jobs (`subOf: <row id>`). They are full jobs in the same

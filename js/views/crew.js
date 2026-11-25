@@ -12,7 +12,8 @@
 // CREW: a lane per designer (the lead is not one of them): what each has
 // under way - sent back, for check, in progress, waiting - with a bar for
 // how long it has sat in that status (two weeks fills it), and a quiet flag
-// when nothing has come from them for a few days.
+// when nothing has come from them for a few days. Their product jobs with the
+// customer fold into one line at the foot of the lane (status.js splitWaits).
 
 import { el, btn, iconBtn, pill, dot, avatar, countText } from '../ui.js';
 import { state, personName } from '../state.js';
@@ -21,8 +22,8 @@ import * as S from '../status.js';
 import * as A from '../actions.js';
 import * as TM from '../team.js';
 import { ageLabel, whenLabel } from '../dates.js';
-import { openTask } from '../router.js';
-import { statusMenu, taskMenu } from './tile.js';
+import { openTask, redraw } from '../router.js';
+import { statusMenu, taskMenu, customerFold } from './tile.js';
 import { withMenu } from '../ui.js';
 
 /** A person's initials badge, named for screen readers. */
@@ -117,12 +118,16 @@ export function countsLine(c) {
     c.check ? `${c.check} for check` : null,
     c.fix ? `${c.fix} sent back` : null,
     c.todo ? `${c.todo} to do` : null,
+    c.customer ? `${c.customer} with the customer` : null,
   ].filter(Boolean).join(' · ');
 }
 
 // ---------------------------------------------------------------------------
 // Crew
 // ---------------------------------------------------------------------------
+
+/** Whose jobs with the customer are unfolded (this visit only). */
+const customerOpen = new Set();
 
 export function crewSection() {
   const crew = TM.crewOf(state.access);
@@ -144,8 +149,13 @@ export function crewSection() {
         el('span', { class: 'meta' }, countsLine(lane.counts)),
         el('span', { class: 'sp' }),
         seenLine(lane)));
-    if (!lane.rows.length) box.append(el('div', { class: 'lane-empty meta wrap' }, lane.counts.todo ? `Nothing under way; ${lane.counts.todo} to do.` : 'Nothing assigned to them.'));
+    if (!lane.rows.length) box.append(el('div', { class: 'lane-empty meta wrap' }, lane.counts.todo ? `Nothing under way; ${lane.counts.todo} to do.` : lane.customer.length ? 'Nothing under way.' : 'Nothing assigned to them.'));
     for (const t of lane.rows) box.append(laneRow(t, { track: true }));
+    if (lane.customer.length) {
+      const open = customerOpen.has(email);
+      box.append(customerFold(lane.customer, open, () => { if (open) customerOpen.delete(email); else customerOpen.add(email); redraw(); }, { key: `customer-${email}` }));
+      if (open) for (const t of lane.customer) box.append(laneRow(t, { track: true }));
+    }
     sec.append(box);
   }
   return sec;

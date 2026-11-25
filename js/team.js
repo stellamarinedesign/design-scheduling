@@ -20,7 +20,7 @@
 // or Move to…; it keeps its assignee, so it stays on the designer's list.
 
 import { KIND, ancestorChain, childrenOf, progress, nameOf, newOrder, ORDER_GAP, isJob, isLight, isContainer, shownStatus, nextTask } from './tree.js';
-import { isOpen } from './status.js';
+import { isOpen, splitWaits, CUSTOMER_WAITS } from './status.js';
 import { ageDays, ageLabel, dayOf, parseDay } from './dates.js';
 
 // ---------------------------------------------------------------------------
@@ -210,18 +210,20 @@ export const QUIET_DAYS = 5;
 /**
  * A designer's Crew lane: their active work (sent back, for check, in
  * progress, waiting) with the oldest-sitting first in each, the counts for
- * the lane's heading, and when they were last heard from.
+ * the lane's heading, and when they were last heard from. Product jobs with
+ * the customer (status.js) are `customer`, apart from `rows`: nothing is
+ * under way on them.
  */
 export function crewLane(idx, email, { now = Date.now() } = {}) {
   const mine = tasks(idx).filter((t) => t.assignee === email);
-  const rows = mine.filter((t) => ACTIVE.includes(t.status))
-    .sort((a, b) => ACTIVE.indexOf(a.status) - ACTIVE.indexOf(b.status) || String(statusSince(a)).localeCompare(String(statusSince(b))));
+  const { chase: rows, customer } = splitWaits(idx, mine.filter((t) => ACTIVE.includes(t.status))
+    .sort((a, b) => ACTIVE.indexOf(a.status) - ACTIVE.indexOf(b.status) || String(statusSince(a)).localeCompare(String(statusSince(b)))));
   const count = (s) => mine.filter((t) => t.status === s).length;
   const seen = lastSeen(idx, email);
   const quietFor = seen ? ageDays(seen, now) : null;
   return {
-    email, rows,
-    counts: { active: rows.length, check: count('check'), fix: count('fix'), waiting: count('waiting'), todo: count('todo') },
+    email, rows, customer,
+    counts: { active: rows.length, check: count('check'), fix: count('fix'), waiting: count('waiting') - customer.length, customer: customer.length, todo: count('todo') },
     seen, quiet: quietFor !== null && quietFor >= QUIET_DAYS, quietFor,
   };
 }
@@ -255,22 +257,26 @@ export const doneThisMonth = (t, now = Date.now()) => t?.status === 'done' && da
 
 /**
  * A person's open work for a Team column, grouped as they act on it. To do
- * comes last and starts folded (the lead's own list runs long).
+ * comes last and starts folded (the lead's own list runs long); product jobs
+ * with the customer (status.js) are a folded group of their own after Waiting.
  */
 export const TEAM_GROUPS = [
   { key: 'fix', statuses: ['fix'] },
   { key: 'check', statuses: ['check'] },
   { key: 'in_progress', statuses: ['in_progress'] },
   { key: 'waiting', statuses: ['waiting'] },
-  { key: 'todo', statuses: ['todo'] },
+  { key: 'customer', statuses: [], folds: true },
+  { key: 'todo', statuses: ['todo'], folds: true },
 ];
 export function teamColumn(idx, email, { includeUnassigned = false } = {}) {
   // Unassigned, for the lead's own column, means jobs: a task inside a job
   // with nobody on it is part of the job, not a row of its own.
   const mine = tasks(idx).filter((t) => t.assignee === email || (includeUnassigned && !t.assignee && isJob(idx, t)));
+  const { chase, customer } = splitWaits(idx, mine);
   return TEAM_GROUPS.map((g) => ({
     key: g.key,
-    rows: mine.filter((t) => g.statuses.includes(t.status))
+    folds: Boolean(g.folds),
+    rows: g.key === 'customer' ? customer : chase.filter((t) => g.statuses.includes(t.status))
       .sort((a, b) => String(statusSince(a)).localeCompare(String(statusSince(b)))),
   }));
 }
@@ -346,7 +352,8 @@ export function unassignAllPatches(idx, who, { at }) {
 /**
  * The groups, in the order a designer acts on them. Ready for check is with
  * the lead, so it sits below To do, out of the way of the work in hand
- * (owner, 2026-11-09).
+ * (owner, 2026-11-09); product jobs with the customer (status.js) sit below
+ * that, folded (owner, 2026-11-26).
  */
 export const MY_GROUPS = [
   { key: 'fix', label: 'Sent back to you', hint: 'Fix these first' },
@@ -354,7 +361,8 @@ export const MY_GROUPS = [
   { key: 'waiting', label: 'Waiting' },
   { key: 'todo', label: 'To do' },
   { key: 'check', label: 'Ready for check', hint: 'With the Design lead' },
-  { key: 'done', label: 'Done this month' },
+  { key: 'customer', label: CUSTOMER_WAITS, folds: true },
+  { key: 'done', label: 'Done this month', folds: true },
 ];
 const groupKey = (s) => ({ fix: 'fix', in_progress: 'progress', check: 'check', waiting: 'waiting', todo: 'todo', done: 'done' }[s] ?? null);
 
@@ -392,9 +400,10 @@ export function myTaskGroups(idx, me, { now = Date.now(), sort = 'due', query = 
     && (t.status !== 'done' || doneThisMonth(t, now))
     && (!words.length || words.every((w) => `${norm(t.title)} ${norm(pathOf(t))} ${norm(t.brief)}`.includes(w))));
   const cmp = CMP[sort] ?? CMP.due;
+  const { chase, customer } = splitWaits(idx, mine);
   return MY_GROUPS.map((g) => ({
     ...g,
-    rows: mine.filter((t) => groupKey(t.status) === g.key)
+    rows: g.key === 'customer' ? customer : chase.filter((t) => groupKey(t.status) === g.key)
       .sort(g.key === 'done' ? (a, b) => String(b.doneAt).localeCompare(String(a.doneAt)) : cmp),
   }));
 }

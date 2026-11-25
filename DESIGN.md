@@ -1108,6 +1108,12 @@ here:
   read better at 240px).
 - Saves confirm with a toast rather than the button's own label ("Saved") and one pulse.
 
+**Waiting, in two** (2026-11-26): a Waiting list (Home, Crew, Team, a designer's Tasks) shows the
+waits somebody has to chase. Product jobs with the customer (a product line's job whose "waits on
+the customer" stage is under way, held up by nothing else) fold into one line under it: ghost
+button with the count, and the longest wait beside it, so nothing has to be opened to see it. The
+pill and the band count the waits to chase. The longest wait comes first inside.
+
 ## Do's and Don'ts
 
 ### Do:

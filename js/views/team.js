@@ -3,8 +3,9 @@
 //
 // Designers first, then the lead (you), whose column also holds the
 // unassigned work that is yours by default. In each column: sent back, for
-// check, in progress and waiting, the longest-sitting first; To do last and
-// folded, since a lead's own To-do list runs long. The heading counts done
+// check, in progress and waiting, the longest-sitting first; product jobs
+// with the customer folded under Waiting; To do last and folded, since a
+// lead's own To-do list runs long. The heading counts done
 // this week and this month (approved work; cancelled never counts) and how
 // long the oldest check has waited.
 //
@@ -20,10 +21,11 @@ import * as TM from '../team.js';
 import { ageLabel } from '../dates.js';
 import { ROLE_LABEL, roleOf } from '../access.js';
 import { laneRow, face, seenLine } from './crew.js';
+import { customerFold } from './tile.js';
 import { errorState } from './home.js';
 
-/** Which columns have their To do unfolded (this visit only). */
-const todoOpen = new Set();
+/** Which columns have their To do, or their waits on the customer, unfolded: "todo:<who>" (this visit only). */
+const unfolded = new Set();
 
 export function renderTeam(root) {
   const inner = el('div', { class: 'view-inner' });
@@ -71,15 +73,20 @@ function column(email) {
   const body = el('div', { class: 'team-body' });
   for (const g of groups) {
     if (!g.rows.length) continue;
-    const folded = g.key === 'todo' && !todoOpen.has(email);
-    if (g.key === 'todo') {
-      body.append(btn(`${S.LABEL.todo} ${g.rows.length}`, () => {
-        if (todoOpen.has(email)) todoOpen.delete(email); else todoOpen.add(email);
+    if (g.folds) {
+      const key = `${g.key}:${email}`;
+      const isOpen = unfolded.has(key);
+      const toggle = () => {
+        if (isOpen) unfolded.delete(key); else unfolded.add(key);
         const sec = document.querySelector(`.team-col[data-who="${CSS.escape(email)}"]`);
         sec?.replaceWith(column(email));
         wireAssignDrag(document.querySelector('.team-cols'));
-      }, { cls: 'sm ghost team-fold', ic: folded ? 'chevRight' : 'chevDown', attrs: { 'aria-expanded': String(!folded) } }));
-      if (folded) continue;
+      };
+      const line = g.key === 'customer' ? customerFold(g.rows, isOpen, toggle, { label: 'With the customer', key })
+        : btn(`${S.LABEL.todo} ${g.rows.length}`, toggle, { cls: 'sm ghost', ic: isOpen ? 'chevDown' : 'chevRight', attrs: { 'aria-expanded': String(isOpen), 'data-fk': `fold-${key}` } });
+      line.classList.add('team-fold');
+      body.append(line);
+      if (!isOpen) continue;
     } else {
       body.append(el('div', { class: 'band' }, el('span', { class: 'lbl' }, S.LABEL[g.key]), el('span', { class: 'meta' }, String(g.rows.length))));
     }

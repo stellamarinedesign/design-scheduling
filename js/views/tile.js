@@ -16,7 +16,7 @@
 // goes To do → In progress → Done for whoever may edit the job; with tasks
 // inside, it shows how they stand and is not ticked itself.
 
-import { el, icon, iconBtn, btn, pill, dot, avatar, bar, menu, canDrag, withMenu } from '../ui.js';
+import { el, icon, iconBtn, btn, pill, dot, avatar, bar, menu, canDrag, isPhone, withMenu } from '../ui.js';
 import { state, node, personName } from '../state.js';
 import * as T from '../tree.js';
 import * as S from '../status.js';
@@ -262,6 +262,16 @@ export function row(t, { path = false, assignee = false, drag = true } = {}) {
       t.status === 'todo' && !isSub && A.canWrite(t) ? iconBtn('play', `Start ${t.title}`, (e) => { e.stopPropagation(); A.start(t.id); }, 'sm') : null,
       iconBtn('more', `More actions for ${t.title}`, (e) => { e.stopPropagation(); taskMenu(e.currentTarget, t); }, 'sm')));
   return withMenu(r, (at) => taskMenu(r.querySelector('.trow-end .ib:last-child') ?? r, t, { at }));
+}
+
+/**
+ * The line the product jobs with the customer fold into, under a Waiting
+ * list (status.js splitWaits): how many, and the longest wait, without opening.
+ */
+export function customerFold(rows, open, toggle, { label = isPhone() ? 'With the customer' : S.CUSTOMER_WAITS, key = 'customer' } = {}) {
+  return el('div', { class: 'row wait-fold' },
+    btn(`${label} ${rows.length}`, toggle, { cls: 'sm ghost', ic: open ? 'chevDown' : 'chevRight', attrs: { 'aria-expanded': String(open), 'data-fk': `fold-${key}` } }),
+    el('span', { class: 'meta' }, S.longestWait(rows)));
 }
 
 /** The labelled divider above a status band. */

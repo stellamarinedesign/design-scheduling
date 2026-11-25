@@ -111,6 +111,25 @@ export async function loadSample() {
     lastNote: { text: 'Hinge plate increased to 10 mm; laser files regenerated.', by: sam, at: ago(8) } });
   task('Tie bar machining drawing', rotary, 'waiting', 9, { assignee: sam, lastBy: sam, waiting: { note: 'Flange spec from the supplier', since: ago(9), prevStatus: 'in_progress', blockedBy: [] } });
   const membrane = task('Membrane bracket revision', water, 'done', 3);
+  // A product line (the Progress page): some rows with the customer, one
+  // waiting on a supplier, one under way.
+  const stages = [{ label: 'Concept' }, { label: 'Approval', waits: true }, { label: '3D model' }, { label: 'Drawings' }, { label: 'Laser files' }];
+  const line = group('Davit bases', prod, { line: true, listed: true, colour: 4, stepsTemplate: stages });
+  const product = (title, at, days, extra = {}) => {
+    const waits = stages[at].waits;
+    const id = task(title, line, waits ? 'waiting' : 'in_progress', Math.min(days, 5), extra);
+    const ids = stages.map((s, i) => task(s.label, id, i < at ? 'done' : i > at ? 'todo' : waits ? 'waiting' : 'in_progress', days,
+      { assignee: null, ...(s.waits ? { waits: true } : {}), ...(i === at && waits ? { waiting: { note: 'On the customer', since: ago(days), prevStatus: 'todo', blockedBy: [] } } : {}) }));
+    if (waits) Object.assign(nodes.find((n) => n.id === id), { waiting: { note: 'Approval with the customer', since: ago(days), prevStatus: 'in_progress', blockedBy: [], stageId: ids[at] } });
+    return id;
+  };
+  product('300kg base, flush mount', 1, 58);
+  product('400kg base, with gussets', 1, 23);
+  product('550kg base, tall post', 1, 12, { assignee: sam, lastBy: sam });
+  product('550kg base, offset', 1, 6);
+  product('650kg base, with post', 2, 1);
+  const supply = product('900kg base, twin tube', 3, 4);
+  Object.assign(nodes.find((n) => n.id === supply), { status: 'waiting', waiting: { note: 'Tube sizes from the supplier', since: ago(4), prevStatus: 'in_progress', blockedBy: [] } });
   const gone = task('Twin-membrane frame for a custom build', water, 'cancelled', 9, { cancelled: { by: me, at: ago(9), reason: 'Customer cancelled (verbal)', prevStatus: 'in_progress' } });
   say(gone, 'cancel', 'Customer cancelled (verbal)', 9, { from: 'in_progress', to: 'cancelled' });
   task('Aircon unit drawings', fixes, 'todo', 24);
