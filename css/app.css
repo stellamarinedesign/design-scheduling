@@ -833,6 +833,7 @@ input::-ms-reveal { display: none; }
 /* Local mode: where changes go, and who this browser is viewing as. */
 .mode-note { display: flex; align-items: center; gap: var(--sp-2) var(--sp-3); flex-wrap: wrap; }
 .mode-text { flex: 1 1 260px; min-width: 0; }
+.mode-text.boot-text { flex: 0 1 auto; }   /* Reload sits beside the words, not across the page */
 .view-as { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--text2); }
 .view-as .sel { height: 28px; }
 .pv-static { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; color: var(--text); font-size: 14px; min-width: 0; }

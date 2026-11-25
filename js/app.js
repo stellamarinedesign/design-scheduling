@@ -14,9 +14,10 @@ import { VERSION } from './version.js';
 import { Auth, setAccess, currentAccess, ROLE, setLocalRole } from './auth.js';
 import { ROLE_LABEL } from './access.js';
 import { Store } from './store.js';
+import { skipNextLoad } from './saved-copy.js';
 import { state, subscribe, setNodes, setError, allNotes } from './state.js';
 import { initRouter, route, go, currentTab, roleTabs, isSpecial, closePanel } from './router.js';
-import { el, icon, isWide, closeMenu, installContextMenus, countText, plainWhy } from './ui.js';
+import { el, btn, icon, isWide, closeMenu, installContextMenus, countText, plainWhy } from './ui.js';
 import * as A from './actions.js';
 import * as TM from './team.js';
 import * as TR from './timer.js';
@@ -299,6 +300,23 @@ function localStrip(note) {
 // boot
 // ---------------------------------------------------------------------------
 
+/** Something real is on screen: the start-up watch (startwatch.js) ends. */
+const bootDone = () => window.__boot?.finish();
+
+/** It could not start: why, in plain words, and the way to try again. */
+function couldNotStart(e) {
+  console.error(e);
+  bootDone();
+  view.textContent = '';
+  view.removeAttribute('aria-busy');
+  view.removeAttribute('aria-label');
+  view.append(el('div', { class: 'view-inner' }, el('div', { class: 'state-msg', role: 'alert' },
+    el('h1', { class: 'h1' }, 'Design Scheduling could not start'),
+    el('p', {}, `${plainWhy(e).replace(/^./, (ch) => ch.toUpperCase())}.`),
+    el('p', {}, 'Reload the page. If it keeps happening, close the app fully and open it again.'),
+    el('div', { class: 'row' }, btn('Reload page', () => location.reload())))));
+}
+
 async function boot() {
   console.info(`Design Scheduling ${VERSION}`);
   await Auth.init(async ({ mode, email }) => {
@@ -309,11 +327,12 @@ async function boot() {
       const { noUserAction } = await import('./hub-bridge.js');
       const act = noUserAction({ started: state.started, hubState: Auth.hubState });
       if (act === 'reload') { location.reload(); return; }
+      bootDone();
       if (act === 'nothing') return;
       (await import('./views/signin.js')).renderSignIn(document.getElementById('app'));
       return;
     }
-    if (mode === 'firebase' && email && !state.started) await start();
+    if (mode === 'firebase' && email && !state.started) await start().catch(couldNotStart);
   });
   if (Auth.mode === 'local') await start();
 }
@@ -357,6 +376,12 @@ async function confirmAccess() {
 async function start() {
   state.started = true;
   state.mode = await Store.init();
+  // A saved copy that does not answer would hold up everything below: load
+  // again, once, without it (saved-copy.js).
+  if (!(await Store.savedCopyAnswers())) {
+    console.warn('[store] the saved copy on this device did not answer');
+    if (skipNextLoad()) { location.reload(); return; }
+  }
   // The device's copy of the access list first (store.js loadAccess), unless
   // the last load found the role had changed. A copy that lists this person
   // nowhere is never trusted: they may have been added since, so the server
@@ -373,6 +398,9 @@ async function start() {
   state.me = Auth.me;
   state.role = Auth.role;
   if (Auth.mode === 'firebase' && Auth.role === ROLE.NONE) {
+    bootDone();
+    // The list could not be read: that is not the same as not being on it.
+    if (Store.accessError) { couldNotStart(Store.accessError); return; }
     (await import('./views/signin.js')).renderNotListed(document.getElementById('app'), Auth.user?.email, { canClaim: Store.accessMissing === true });
     return;
   }
@@ -392,14 +420,18 @@ async function start() {
   // moment on every load, so that is said only after a few seconds of it.
   let unconfirmed = false;
   let unconfirmedTimer = null;
+  // Only once the data is drawn: until then there is no saved copy to speak
+  // of, and the start-up watch speaks (startwatch.js).
+  const kept = () => (Store.keepsOffline ? 'Changes are kept on this device and sent when the connection is back.'
+    : 'Keep this page open: changes are sent when the connection is back, and lost if it is closed first.');
   const sayMode = () => {
     const live = state.mode !== 'local';
-    const offline = live && !navigator.onLine;
-    const stale = live && !offline && unconfirmed;
+    const offline = live && state.ready && !navigator.onLine;
+    const stale = live && state.ready && !offline && unconfirmed;
     note.hidden = live && !offline && !stale;
     if (!live) localStrip(note);
-    else note.textContent = offline ? 'Offline: showing saved data. Changes are kept on this device and sent when the connection is back.'
-      : stale ? 'Showing saved data: the server has not answered yet, so some of it may be out of date. Changes are kept on this device.' : '';
+    else note.textContent = offline ? `Offline: showing saved data. ${kept()}`
+      : stale ? `Showing saved data: the server has not answered yet, so some of it may be out of date. ${kept()}` : '';
   };
   sayMode();
   window.addEventListener('online', sayMode);
@@ -420,8 +452,11 @@ async function start() {
   // crossing the phone breakpoint - a rotated phone, a resized window -
   // draws again.
   window.matchMedia('(max-width: 699px)').addEventListener('change', () => { closeMenu(); drawAll(); });
+  let drawn = false;
   subscribe((meta) => {
     drawAll(meta);
+    // The first answer (or why there is none) is on screen: the watch ends.
+    if (!drawn && (state.ready || state.error)) { drawn = state.ready; bootDone(); sayMode(); }
     if (!state.reconciled && state.ready) { state.reconciled = true; A.reconcileOnLoad(); }
     A.ensureInboxes();
     A.ensureSharing();
@@ -453,13 +488,4 @@ async function start() {
   if (!location.hash && roleTabs().length) go(`/${roleTabs()[0]}`);
 }
 
-boot().catch((e) => {
-  console.error(e);
-  view.textContent = '';
-  view.removeAttribute('aria-busy');
-  view.removeAttribute('aria-label');
-  view.append(el('div', { class: 'state-msg' },
-    el('h1', { class: 'h1' }, 'Design Scheduling could not start'),
-    el('p', {}, `${plainWhy(e).replace(/^./, (ch) => ch.toUpperCase())}.`),
-    el('p', {}, 'Reload the page. If it keeps happening, the browser console has the detail.')));
-});
+boot().catch(couldNotStart);

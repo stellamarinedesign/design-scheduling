@@ -32,6 +32,7 @@
 import { getFirebase, failureReason, isConfigured, localForced } from './firebase.js';
 import { LOCAL_ACCESS, LOCAL_PEOPLE } from './team.js';
 import { idb } from './idb.js';
+import { copyAnswers } from './saved-copy.js';
 
 export const COL = {
   settings: 'settings',     // settings/access: who is what (the rules read it)
@@ -88,6 +89,7 @@ const byNewest = (a, b) => String(b.at).localeCompare(String(a.at));
 export const Store = {
   mode: 'local',          // 'firestore' | 'local'
   reason: '',             // why local, when local
+  keepsOffline: true,     // a change made offline survives closing the page (saved-copy.js: not on every load)
   _db: null,
   _fs: null,
   _watchers: new Set(),
@@ -116,9 +118,21 @@ export const Store = {
     }
     this._db = fb.db;
     this._fs = fb.fs;
+    this.keepsOffline = fb.keepsOffline;
     this.mode = 'firestore';
     this.reason = '';
     return this.mode;
+  },
+
+  /**
+   * Does this device's saved copy answer (saved-copy.js)? Asked before the
+   * first read: a stuck copy holds every read up, the server's too. Nothing
+   * to ask when this load runs without it.
+   */
+  async savedCopyAnswers(wait) {
+    if (this.mode !== 'firestore' || !this.keepsOffline) return true;
+    const { doc, getDocFromCache } = this._fs;
+    return copyAnswers(() => getDocFromCache(doc(this._db, COL.settings, 'access')), wait);
   },
 
   // ---- the tree ------------------------------------------------------------
@@ -178,7 +192,10 @@ export const Store = {
   /**
    * A live query of the tree: `onDocs(snap)` on the first answer and whenever
    * its documents change; whether the copy is the server's goes to `fresh`.
-   * A failed query is not "unconfirmed": it says so on screen its own way.
+   * AN EMPTY COPY THE SERVER HAS NOT CONFIRMED IS NOT AN ANSWER: a device with
+   * nothing saved, or a load without the copy (saved-copy.js), gets one when
+   * there is no connection, and drawing it would say there are no jobs. The
+   * skeleton stays until the server speaks.
    */
   _listen(q, onDocs, onError) {
     const { onSnapshot } = this._fs;
@@ -186,6 +203,7 @@ export const Store = {
     let first = true;
     const stop = onSnapshot(q, { includeMetadataChanges: true }, (snap) => {
       this._setFresh(key, !snap.metadata.fromCache);
+      if (first && snap.empty && snap.metadata.fromCache) return;
       if (!first && !snap.docChanges().length) return;
       first = false;
       onDocs(snap);
@@ -675,10 +693,12 @@ export const Store = {
    * stale copy would undo a change made on another device.
    */
   accessFromCache: false,
+  accessError: null,      // it could not be read, and not because the rules refused
   async loadAccess({ cacheFirst = false } = {}) {
     // Local mode's invented team (team.js), so "View as" has people to be.
     if (this.mode === 'local') return structuredClone(LOCAL_ACCESS);
     this.accessFromCache = false;
+    this.accessError = null;
     if (cacheFirst) {
       try {
         const { doc, getDocFromCache } = this._fs;
@@ -696,6 +716,8 @@ export const Store = {
       // Unreadable is not missing: an unlisted account cannot read an
       // existing document, and must not be offered the claim.
       this.accessMissing = false;
+      // No answer is not "not listed" either: app.js says which.
+      if (e?.code !== 'permission-denied') this.accessError = e;
       console.error('[access]', e.message);
       return {};
     }

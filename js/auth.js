@@ -60,7 +60,11 @@ export const Auth = {
    * @returns {Promise<'firebase'|'local'>}
    */
   async init(onChange) {
-    const { getFirebase } = await import('./firebase.js');
+    const { getFirebase, firebaseConfig, isConfigured, localForced } = await import('./firebase.js');
+    // The hub's file is asked for now, beside Firebase, and waited for after
+    // the first auth state (joinHub), so it is not one more wait at the end.
+    const { joinHub, askForHub } = await import('./hub-bridge.js');
+    const load = isConfigured() && !localForced ? askForHub() : undefined;
     const fb = await getFirebase();
 
     if (!fb) {
@@ -79,8 +83,7 @@ export const Auth = {
     // THE HUB, before the app's own listener: it may sign this app in (or
     // out) as the hub's person first. Fails open: with no hub this is as
     // before. app.js and settings.js read `hub` and `hubState`.
-    const [{ joinHub }, { firebaseConfig }] = await Promise.all([import('./hub-bridge.js'), import('./firebase.js')]);
-    const joined = await joinHub({ fb, projectId: firebaseConfig.projectId, slot: document.getElementById('hubSlot') });
+    const joined = await joinHub({ fb, projectId: firebaseConfig.projectId, slot: document.getElementById('hubSlot'), load });
     this.hub = joined?.Hub ?? null;
     this.hubState = joined?.state ?? null;
     fb.fa.onAuthStateChanged(fb.auth, (user) => {

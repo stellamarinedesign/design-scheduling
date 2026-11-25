@@ -9,6 +9,8 @@
 // secret scanning flags the `AIzaSy…` string — a Firebase web key is public
 // by design.
 
+import { takeSkip } from './saved-copy.js';
+
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.2';
 
 // ---------------------------------------------------------------------------
@@ -102,12 +104,18 @@ export async function getFirebase() {
     // promises. Without it the cache is memory only and a reload loses the
     // edit. The multiple-tab manager lets two tabs of the app share it
     // (Home in one, Tasks in another) instead of the second failing over.
+    // NOT ON A LOAD THAT FOUND IT STUCK (saved-copy.js): memory only for that
+    // one load, and `keepsOffline` says so to the strip.
+    const keepsOffline = !takeSkip();
     _fb = {
       app,
       db: fs.initializeFirestore(app, {
         experimentalAutoDetectLongPolling: true,
-        localCache: fs.persistentLocalCache({ tabManager: fs.persistentMultipleTabManager() }),
+        localCache: keepsOffline
+          ? fs.persistentLocalCache({ tabManager: fs.persistentMultipleTabManager() })
+          : fs.memoryLocalCache(),
       }),
+      keepsOffline,
       auth: fa.getAuth(app),
       fs,
       fa,

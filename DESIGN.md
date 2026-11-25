@@ -1028,7 +1028,18 @@ The Excel Progress sheet made live (Phase 4, built 2026-11-09; product lines wit
   4 seconds (connected Wi-Fi that goes nowhere), the strip under the header says "Showing saved
   data: the server has not answered yet, so some of it may be out of date." It goes as soon as
   the server answers, with no redraw. Offline, it says "Offline: showing saved data" and that
-  changes are kept on this device.
+  changes are kept on this device. Neither is said before there is data on screen.
+- **Never a skeleton for ever** (2026-11-25): `js/startwatch.js`, inline in the page, says so in
+  a strip under the header after 8 seconds with nothing drawn: "Still loading. If it does not open
+  soon, reload the page." with a small **Reload page** beside it; after one reload, "Still not
+  loading. Close the app fully, then open it again."; offline, at once, "Offline. The app opens
+  when the connection is back." It never reloads by itself, is silent under the hub's card, and
+  goes when something real is drawn.
+- **Could not start:** an access list that could not be read is an error with **Reload page**
+  ("Design Scheduling could not start"), never "Signed in, but not listed yet".
+- **A stuck saved copy** (`js/saved-copy.js`): with no answer from it in 4 seconds the page
+  reloads once and runs that load without it, waiting for the server. On that load the offline
+  strip says to keep the page open, since closing it loses unsent changes.
 - **Skeletons:** flat Shadow Grey blocks with a hairline and 8px corners. Each is the size of
   what it stands for: a 128px tile, a 280px note card, a 64px row (inside a list, with only its
   bottom hairline), or a 60px block and a tile in the panel. They do not shimmer. Their container

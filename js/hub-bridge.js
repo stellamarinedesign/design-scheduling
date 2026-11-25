@@ -43,6 +43,17 @@ export async function loadHub({ url = HUB_URL, wait = WAIT_MS, load = (u) => imp
 }
 
 /**
+ * Ask for the hub's file now and use it later: what comes back is loadHub's
+ * `load`. The four-second limit still starts when it is waited for, not now,
+ * so a slow first load has the whole start-up to fetch it in.
+ */
+export function askForHub(url = HUB_URL, load = (u) => import(u)) {
+  const asked = Promise.resolve().then(() => load(url));
+  asked.catch(() => {});       // loadHub says so when it is waited for
+  return () => asked;
+}
+
+/**
  * The app's own session as Firebase first reports it. Once: the hub is not
  * asked anything until the app knows whether it is already signed in, and a
  * one-shot listener works on every SDK version.

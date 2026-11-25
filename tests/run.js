@@ -19,6 +19,7 @@ import * as RG from '../js/register.js';
 import * as PX from '../js/import/progress.js';
 import * as QT from '../js/quote.js';
 import * as HB from '../js/hub-bridge.js';
+import * as SC from '../js/saved-copy.js';
 import { sampleNodes, sampleStepNodes, tiledoData, tiledoArchive, excelRows, lineNodes, progressRows } from './samples.js';
 
 const results = [];
@@ -1913,6 +1914,16 @@ export async function run() {
     const Hub = { connect() {} };
     ok((await HB.loadHub({ load: async () => ({ Hub }) })) === Hub, 'the Hub from a file that loads');
   });
+  await testAsync('askForHub: asks at once, hands the answer over later, and a failure is still null', async () => {
+    const asked = [];
+    const Hub = {};
+    const load = HB.askForHub('/x.js', async (u) => { asked.push(u); return { Hub }; });
+    await Promise.resolve();
+    expect(asked, ['/x.js'], 'asked before anyone waits');
+    ok((await HB.loadHub({ load })) === Hub, 'the same answer, when waited for');
+    expect(asked.length, 1, 'asked once');
+    expect(await HB.loadHub({ load: HB.askForHub('/x.js', async () => { throw new Error('404'); }) }), null, 'a failure fails open');
+  });
   await testAsync('firstUser: the first auth state, once, then it stops listening', async () => {
     let stopped = 0;
     let cb;
@@ -1952,6 +1963,100 @@ export async function run() {
     expect(reloads, 1, 'a device the hub left alone is never reloaded');
     expect(await HB.joinHub({ fb: { fa, auth }, projectId: 'p', load: async () => { throw new Error('404'); } }), null, 'no hub: as before');
     expect(await HB.joinHub({ fb: { fa, auth }, projectId: 'p', load: async () => ({ Hub: { connect: async () => { throw new Error('bug'); } } }) }), null, 'a hub that throws fails open');
+  });
+
+  // -------------------------------------------------------------------------
+  group = 'start-up';
+  const box = () => { const m = {}; return { getItem: (k) => m[k] ?? null, setItem: (k, v) => { m[k] = String(v); }, removeItem: (k) => { delete m[k]; } }; };
+  test('a load without the saved copy: asked for once, taken once', () => {
+    const s = box();
+    expect(SC.takeSkip(s), false, 'not asked for');
+    expect(SC.skipNextLoad(s), true, 'written down');
+    expect([SC.takeSkip(s), SC.takeSkip(s)], [true, false], 'one load only');
+  });
+  test('no session storage: no reload without the copy, so it cannot go round', () => {
+    const shut = { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); }, removeItem() {} };
+    expect([SC.skipNextLoad(shut), SC.takeSkip(shut)], [false, false]);
+    expect(SC.skipNextLoad({ getItem: () => null, setItem() {}, removeItem() {} }), false, 'storage that keeps nothing');
+    expect([SC.skipNextLoad(null), SC.takeSkip(null)], [false, false], 'none at all');
+  });
+  await testAsync('the saved copy: any answer will do, a refusal too; silence is stuck', async () => {
+    expect(await SC.copyAnswers(async () => ({}), 50), true, 'it has it');
+    expect(await SC.copyAnswers(async () => { throw new Error('not in the cache'); }, 50), true, 'it has not');
+    expect(await SC.copyAnswers(() => { throw new Error('at once'); }, 50), true, 'it threw');
+    expect(await SC.copyAnswers(() => new Promise(() => {}), 20), false, 'nothing');
+  });
+  const nl = (s) => s.replace(/\r\n/g, '\n').trim();
+  const watchSrc = nl(await (await fetch('../js/startwatch.js', { cache: 'no-store' })).text());
+  await testAsync("the page's start-up watch is the file's (python tools/importmap.py)", async () => {
+    const page = nl(await (await fetch('../index.html', { cache: 'no-store' })).text());
+    const m = page.match(/<!-- startwatch:start[^\n]*\n<script>\n([\s\S]*?)\n<\/script>\n<!-- startwatch:end -->/);
+    ok(m, 'no startwatch block in index.html');
+    ok(m[1].trim() === watchSrc, 'index.html has an older copy');
+    ok(page.indexOf('startwatch:start') < page.indexOf('<link rel="stylesheet"'), 'before anything the page waits on');
+  });
+  // The watch, run with stand-ins: a clock, a page and a session.
+  const runWatch = () => {
+    const BASE = 1e12;           // a real clock is never near zero
+    const w = { now: BASE, online: true, over: null, reloads: 0, store: {}, on: {}, tick: null, text: '', cleared: false };
+    const app = { contains: (n) => n === 'inside' };
+    const p = { get textContent() { return w.text; }, set textContent(v) { w.text = v; } };
+    const note = { hidden: true, querySelector: () => p };
+    w.note = note;
+    const win = { innerWidth: 800, addEventListener: (k, f) => { w.on[k] = f; } };
+    const doc = {
+      body: 'body', documentElement: 'html',
+      getElementById: (id) => (id === 'app' ? app : id === 'bootNote' ? note : null),
+      elementFromPoint: () => w.over ?? 'inside',
+      addEventListener: (k, f) => { w.on[k] = f; },
+    };
+    const session = { getItem: (k) => w.store[k] ?? null, setItem: (k, v) => { w.store[k] = v; }, removeItem: (k) => { delete w.store[k]; } };
+    new Function('window', 'document', 'navigator', 'sessionStorage', 'location', 'Date', 'setInterval', 'clearInterval', watchSrc)(
+      win, doc, { get onLine() { return w.online; } }, session, { reload: () => { w.reloads += 1; } },
+      { now: () => w.now }, (f) => { w.tick = f; return 1; }, () => { w.cleared = true; });
+    w.boot = win.__boot;
+    w.at = (ms) => { w.now = BASE + ms; w.tick(); return note.hidden ? null : w.text; };
+    return w;
+  };
+  test('start-up watch: nothing for 8 seconds, then says it is slow; gone for good once something is on screen', () => {
+    const w = runWatch();
+    expect([w.at(1000), w.at(7999)], [null, null]);
+    ok(/^Still loading/.test(w.at(8000)), 'says so');
+    w.boot.finish();
+    ok(w.note.hidden && w.cleared, 'the line goes and the watch stops');
+    expect(w.at(60000), null, 'and never comes back');
+    expect(w.reloads, 0, 'it never reloads by itself');
+  });
+  test('start-up watch: reloaded once already, it says to close the app; offline is said at once', () => {
+    const w = runWatch();
+    w.on.click({ target: { closest: (s) => s === '#bootReload' } });
+    expect(w.reloads, 1, 'the button reloads');
+    ok(/^Still not loading\. Close the app fully/.test(w.at(9000)), 'the second time');
+    ok(/^Still loading/.test(w.at(130000)), 'an old reload is forgotten');
+    const o = runWatch();
+    o.online = false;
+    ok(/^Offline/.test(o.at(1000)), 'offline, with no wait');
+    o.online = true;
+    o.now += 4000;
+    o.on.online();
+    expect([o.at(6000), o.at(12999)], [null, null], 'back: the count starts again');
+    ok(/^Still loading/.test(o.at(13000)));
+  });
+  test("start-up watch: silent under the hub's card, and counts again once it has gone", () => {
+    const w = runWatch();
+    w.over = 'the hub';
+    expect(w.at(20000), null, 'the person is signing in, not waiting');
+    w.over = null;
+    expect(w.at(27999), null);
+    ok(/^Still loading/.test(w.at(28000)));
+  });
+  test('a page the browser brings back whole reloads; an ordinary load does not', () => {
+    const w = runWatch();
+    w.on.pageshow({ persisted: false });
+    expect(w.reloads, 0);
+    w.boot.finish();
+    w.on.pageshow({ persisted: true });
+    expect(w.reloads, 1);
   });
 
   group = 'writes';

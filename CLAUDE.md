@@ -53,7 +53,12 @@ parent. Starting here is what loads this file, the project skills and the Impecc
   Keep their comment style, which explains *why*.
 - **Version stamping.** `js/version.js` holds the version. Bump it in every commit that changes
   what ships. The same string is the `?v=` on the stylesheet links and the import map.
-  Regenerate the map with `python tools/importmap.py` after adding or removing a module.
+  Regenerate the map with `python tools/importmap.py` after adding or removing a module or an
+  import, or editing `js/startwatch.js`. It also writes the `modulepreload` links and the inline
+  start-up watch.
+- **A stuck saved copy never stops a start** (`js/saved-copy.js`, 2026-11-25): if Firestore's
+  persistent cache doesn't answer in 4 seconds, the app reloads once and runs that one load from
+  memory. Never clear the stuck copy: unsent changes are in it.
 - **Security rules** are `firestore.rules`, deployed from this folder with
   `firebase deploy --only firestore:rules`. The rules are the enforcement; hiding controls in
   the UI is tidiness.
