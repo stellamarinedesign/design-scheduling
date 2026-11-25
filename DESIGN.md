@@ -1108,6 +1108,18 @@ here:
   read better at 240px).
 - Saves confirm with a toast rather than the button's own label ("Saved") and one pulse.
 
+**A folder's files** (2026-11-26): under each folder link in the task panel, on a PC whose Stella
+Systems folder is connected (Edge or Chrome), the newest PDFs, drawings and checklists in it: a
+"N files" fold, then up to five rows (kind in micro caps, name, the sub-folder, the date in tabular
+figures), "Show all N" for the rest. A PDF opens in a new tab; a Word document is shown in File
+Explorer (with the PC helper) or its path copied. Read again when the window comes back to the front,
+so an export from CAD is there without a reload. A folder too big to read whole says so. On a PC not
+connected yet, one line under the links offers Connect, or "Not on this PC" to hide it.
+
+**Opening a folder** (2026-11-26): the row's one button is **Open** (File Explorer, with the PC
+helper: Settings › This PC), **OneDrive** on a phone when Stella Systems on the web is set, else
+**Copy path**. The others are in its ⋯.
+
 **Waiting, in two** (2026-11-26): a Waiting list (Home, Crew, Team, a designer's Tasks) shows the
 waits somebody has to chase. Product jobs with the customer (a product line's job whose "waits on
 the customer" stage is under way, held up by nothing else) fold into one line under it: ghost

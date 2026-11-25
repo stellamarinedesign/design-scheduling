@@ -10,9 +10,10 @@
 //
 // A folder dragged in from File Explorer is placed by asking the browser where
 // it sits relative to Stella Systems, which is what makes drag-and-drop work
-// without anybody typing a path.
+// without anybody typing a path. The board's listFiles() is not here: the
+// task panel walks a folder its own way (folder-files.js).
 
-import { ROOT_NAME, splitPath, joinPath, isArchiveName, docKind } from './paths.js';
+import { ROOT_NAME, splitPath, joinPath } from './paths.js';
 
 const DB = 'stella-design-files';
 const STORE = 'handles';
@@ -95,28 +96,6 @@ export async function handleAt(root, path, kind) {
     dir = await dir.getDirectoryHandle(parts[i]);
   }
   return dir;
-}
-
-/**
- * The Word documents and PDFs under a folder, with their dates (Phase 4:
- * folder contents in the task panel). Archive folders are not entered.
- * @returns {Promise<Array<{dirs: string[], name: string, lastModified: number, handle}>>}
- */
-export async function listFiles(dir, { maxDepth = 6, limit = 4000 } = {}) {
-  const out = [];
-  async function walk(d, dirs, depth) {
-    for await (const [name, h] of d.entries()) {
-      if (out.length >= limit) return;
-      if (h.kind === 'directory') {
-        if (depth < maxDepth && !isArchiveName(name) && !name.startsWith('.')) await walk(h, [...dirs, name], depth + 1);
-      } else if (docKind(name)) {
-        const f = await h.getFile();
-        out.push({ dirs, name, lastModified: f.lastModified, handle: h });
-      }
-    }
-  }
-  await walk(dir, [], 0);
-  return out;
 }
 
 /**

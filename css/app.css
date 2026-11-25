@@ -14,6 +14,7 @@ input, textarea { caret-color: var(--focus); }
 ::-webkit-scrollbar-track { background: transparent; }
 ::placeholder { color: var(--text3); opacity: 1; }
 a { text-underline-offset: 2px; }
+a.btn { text-decoration: none; color: var(--text); }   /* a link drawn as a button (a folder's OneDrive) */
 
 body { height: 100dvh; overflow: hidden; font-variant-numeric: tabular-nums; }
 .app { display: flex; flex-direction: column; height: 100dvh; }
@@ -552,6 +553,31 @@ button.srow-label:hover { text-decoration: underline; }
 .fold-path { flex: 1; min-width: 0; font-family: var(--mono); font-size: var(--fs-sm); color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 .fold-path bdi { direction: ltr; unicode-bidi: isolate; }
 .fold-label { font-size: var(--fs-micro); font-weight: 700; letter-spacing: var(--label-spacing); text-transform: uppercase; color: var(--text3); flex: none; }
+/* A folder's newest files, under its row (folder-files.js). */
+.ff { display: flex; flex-direction: column; gap: 2px; margin: -2px 0 4px 26px; container-type: inline-size; }
+.ff:empty { display: none; }
+.ff-head { display: flex; align-items: center; gap: var(--sp-2); min-height: 32px; }
+.ff-toggle { font-variant-numeric: tabular-nums; }
+.ff-list { display: flex; flex-direction: column; border-left: 1px solid var(--border); list-style: none; margin: 0; padding: 0; }
+.ff-list > li { display: contents; }
+.ff-row {
+  display: grid; grid-template-columns: 72px minmax(0, 1fr) minmax(0, max-content) 76px; align-items: center; gap: var(--sp-2);
+  min-height: 36px; padding: 4px 8px 4px 12px; background: none; border: 0; border-radius: 0 var(--radius) var(--radius) 0;
+  color: var(--text); text-align: left; font: inherit; cursor: pointer;
+  transition: background-color var(--dur-fast) ease;
+}
+.ff-row:hover { background: var(--bg); }
+.ff-row:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.ff-kind { font-size: var(--fs-micro); font-weight: 700; letter-spacing: var(--label-spacing); text-transform: uppercase; color: var(--text3); }
+.ff-name { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ff-dir { font-size: var(--fs-sm); color: var(--text3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
+.ff-date { font-size: var(--fs-sm); color: var(--text3); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ff-line { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; min-height: 32px; }
+.ff-line.warn { color: var(--amber-text); }
+.ff-connect { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.ff-connect[hidden] { display: none; }
+/* A narrow panel (half-screen): the sub-folder gives way to the name. */
+@container (max-width: 420px) { .ff-row { grid-template-columns: 64px minmax(0, 1fr) 72px; } .ff-dir { display: none; } }
 .drop-zone { border: 1px dashed var(--border); border-radius: var(--radius); padding: 10px 12px; color: var(--text3); font-size: var(--fs-sm); }
 .drop-zone.over { border-color: var(--focus); color: var(--text); background: var(--bg); }
 .drop-note { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text2); }

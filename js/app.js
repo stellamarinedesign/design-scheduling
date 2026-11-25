@@ -89,9 +89,10 @@ const openSearch = () => { if (lead() || designer()) searchNow(); };
  * job for the lead, a task of their own for a designer.
  */
 const quickAdd = (opts) => {
-  if (currentTab() === 'log' && !(lead() && isSpecial())) openComposer();
-  else if (lead()) openQuickAdd(opts ?? {});
-  else if (designer()) openQuickAdd({ ...(opts ?? {}), own: true });
+  if (currentTab() === 'log' && !(lead() && isSpecial())) return openComposer();
+  if (lead()) return openQuickAdd(opts ?? {});
+  if (designer()) return openQuickAdd({ ...(opts ?? {}), own: true });
+  return null;
 };
 $('searchField').addEventListener('click', openSearch);
 $('searchBtn').addEventListener('click', openSearch);
@@ -479,11 +480,21 @@ async function start() {
   A.startLog();
   // Time tracking: the lead's and designers' timers (timer.js).
   if (works) TR.startTimers();
+  // Where Stella Systems opens on the web, for folder links on a phone.
+  if (works) Store.watchLibrary((address) => { if (address !== state.library) { state.library = address; if (state.ready) drawAll(); } });
 
-  // ?capture=1 (the AutoHotkey hotkey, Phase 4): straight into quick add.
-  if (new URLSearchParams(location.search).get('capture') === '1') {
+  // ?capture=1 (the PC helper's hotkey, tools/pc-helper): straight into
+  // quick add. With close=1 it is the hotkey's own small window, which goes
+  // once the box is done with - unless the new job was opened to work on.
+  // A browser closes only a window with nothing behind it in its history: the
+  // helper opens it at #/home, and nothing here adds an entry first.
+  const ask = new URLSearchParams(location.search);
+  if (ask.get('capture') === '1') {
     history.replaceState(null, '', location.pathname + location.hash);
-    quickAdd({ capture: true });
+    const added = quickAdd({ capture: true });
+    if (ask.get('close') === '1') {
+      Promise.resolve(added).then((id) => { if (!state.openId) setTimeout(() => window.close(), id ? 1200 : 0); });
+    }
   }
   if (!location.hash && roleTabs().length) go(`/${roleTabs()[0]}`);
 }

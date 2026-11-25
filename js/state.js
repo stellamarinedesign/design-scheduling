@@ -40,6 +40,8 @@ export const state = {
   // lead's: everyone's; a designer's: their own), this person's entries of
   // today, the team's workday, and the entries of the job open in the panel.
   time: { running: [], today: [], workday: null, loaded: false, job: { id: null, list: [], loaded: false } },
+  // Stella Systems on the web (settings/library): a folder link opens in OneDrive on a phone.
+  library: null,
 };
 
 const subs = new Set();

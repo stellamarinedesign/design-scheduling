@@ -30,9 +30,8 @@ export const isArchiveName = (name) => /archiv|supersed/i.test(String(name ?? ''
 
 /**
  * What a file is, for a folder listing: a Word document or a PDF, which are
- * the paperwork drafting produces, or nothing. Kept from the board so
- * stella-folder.js's listFiles() works unchanged for the Phase 4 folder
- * contents in the task panel.
+ * the paperwork drafting produces, or nothing. The task panel's folder
+ * contents read it (folder-files.js).
  * @returns {'checklist'|'checklistPdf'|'word'|'drawings'|'pdf'|null}
  */
 export function docKind(name) {

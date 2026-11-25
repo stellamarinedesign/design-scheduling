@@ -41,6 +41,9 @@ const WORKDAY_DOC = 'workday';
 /** settings/quote: the time export's default rate and which template is current (quote.js). */
 const QUOTE_DOC = 'quote';
 
+/** settings/library: where Stella Systems opens on the web (folders.js parseWebRoot). */
+const LIBRARY_DOC = 'library';
+
 const LS = 'stella.design.';
 const lsGet = (k, fallback) => {
   try { const v = localStorage.getItem(LS + k); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
@@ -103,6 +106,7 @@ export const Store = {
         if (e.key === `${LS}notes`) this._notifyNotes();
         if (e.key === `${LS}time`) this._notifyTime();
         if (e.key === `${LS}workday`) for (const f of this._workdayWatchers ?? []) f();
+        if (e.key === `${LS}library`) for (const f of this._libraryWatchers ?? []) f();
       });
       return this.mode;
     }
@@ -556,6 +560,36 @@ export const Store = {
     }
     const { doc, setDoc } = this._fs;
     await setDoc(doc(this._db, COL.settings, WORKDAY_DOC), w);
+  },
+
+  /**
+   * settings/library, live: Stella Systems' address on the web, or null when
+   * never set. Read by everyone who opens jobs; a refusal (rules not yet
+   * deployed) is the same as not set.
+   */
+  watchLibrary(cb) {
+    if (this.mode === 'local') {
+      const send = () => cb(lsGet('library', null)?.webRoot ?? null);
+      this._libraryWatchers = (this._libraryWatchers ?? new Set()).add(send);
+      queueMicrotask(send);
+      return () => this._libraryWatchers.delete(send);
+    }
+    const { doc, onSnapshot } = this._fs;
+    return onSnapshot(doc(this._db, COL.settings, LIBRARY_DOC),
+      (d) => cb(d.exists() ? (d.data().webRoot ?? null) : null),
+      (e) => { console.warn('[library]', e.message); cb(null); });
+  },
+
+  /** The lead sets it (an address made by folders.parseWebRoot), or clears it with null. */
+  async saveLibrary(webRoot) {
+    const v = { webRoot: webRoot ?? null };
+    if (this.mode === 'local') {
+      lsSet('library', v);
+      for (const f of this._libraryWatchers ?? []) f();
+      return;
+    }
+    const { doc, setDoc } = this._fs;
+    await setDoc(doc(this._db, COL.settings, LIBRARY_DOC), v);
   },
 
   // ---- the time export: settings/quote, and its template in parts ---------

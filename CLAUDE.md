@@ -161,6 +161,12 @@ parent. Starting here is what loads this file, the project skills and the Impecc
 - **Folder links** are stored relative to `Stella Systems`, using `/` separators. Pasted paths
   are normalised (`js/folders.js`). The full Windows path is rebuilt per PC from a per-device
   prefix.
+  - The task panel lists a linked folder's newest files on a PC with Stella Systems connected
+    (`js/folder-files.js`, Edge or Chrome).
+  - **Open** goes through the PC helper (`tools/pc-helper`, a `stella-open:` link, installed per
+    PC). The helper is the security boundary: it opens only what is inside Stella Systems.
+  - On a phone a link opens in OneDrive on the web when the lead has set Stella Systems' web
+    address (`settings/library`).
 - **Photos live in Firestore, not Firebase Storage.** The Blaze plan isn't available.
   - Images are resized in the browser and stored as `Bytes` in their own `images` documents,
     under 1 MiB each, with a small thumbnail on the note or update.

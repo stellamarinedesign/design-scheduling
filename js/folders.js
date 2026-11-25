@@ -104,3 +104,64 @@ export const displayPath = (rel) => splitPath(rel).join(' / ');
 
 /** The last folder name, which is what a person recognises a link by. */
 export const leafName = (rel) => splitPath(rel).slice(-1)[0] ?? '';
+
+// ---------------------------------------------------------------------------
+// "Open in Explorer": the PC helper (tools/pc-helper, Phase 4, 2026-11-26)
+// ---------------------------------------------------------------------------
+
+/**
+ * The address the PC helper answers: `stella-open:` and the path below
+ * Stella Systems, escaped whole. The helper, not this, is what keeps it safe:
+ * it opens only a folder that is really inside this PC's Stella Systems, and
+ * hands it to File Explorer without a shell (tools/pc-helper/StellaHelper.cs).
+ */
+export const explorerUrl = (rel) => `stella-open:${encodeURIComponent(joinPath(splitPath(rel)))}`;
+
+// ---------------------------------------------------------------------------
+// Stella Systems on the web (Phase 4, 2026-11-26): a folder link that opens
+// in OneDrive on a phone, which has no File Explorer and no synced folder.
+// ---------------------------------------------------------------------------
+
+const WEB_HOW = `Open ${ROOT_NAME} in OneDrive on the web, then copy the address bar.`;
+
+/**
+ * Stella Systems on the web, from an address copied out of OneDrive or
+ * SharePoint in a browser: a library view (…/onedrive.aspx?id=…,
+ * …/AllItems.aspx?id=…) or the folder's own address. A folder deeper inside is
+ * cut back to Stella Systems. Kept as `origin` and `path`; `view` is the page
+ * a browser opens it through, worked out from the path, so a "Shared with me"
+ * address (which goes through the paster's own site) still opens for everyone.
+ * @returns {{root: {origin, path, view, address}|null}|{error: string}}
+ */
+export function parseWebRoot(input) {
+  const s = String(input ?? '').trim();
+  if (!s) return { root: null };
+  let u;
+  try { u = new URL(s); } catch { return { error: `That is not a web address. ${WEB_HOW}` }; }
+  if (u.protocol !== 'https:' || !/(^|\.)sharepoint\.com$/i.test(u.hostname)) {
+    return { error: `That is not a OneDrive or SharePoint address (those end in sharepoint.com). ${WEB_HOW}` };
+  }
+  if (/^\/:[a-z]:\//i.test(u.pathname)) return { error: `That is a sharing link, which can stop working. ${WEB_HOW}` };
+  let raw = u.searchParams.get('id') ?? u.searchParams.get('RootFolder');
+  if (!raw) { try { raw = decodeURIComponent(u.pathname); } catch { raw = u.pathname; } }
+  const parts = splitPath(raw);
+  const at = parts.findIndex((p) => p.toLowerCase() === ROOT_NAME.toLowerCase());
+  if (at === -1) return { error: `That address is not the ${ROOT_NAME} folder. ${WEB_HOW}` };
+  // The document library the folder is in: a person's OneDrive, or a site's library.
+  let view;
+  if (parts[0].toLowerCase() === 'personal' && at >= 2) view = `/personal/${parts[1]}/_layouts/15/onedrive.aspx`;
+  else if (/^(sites|teams)$/i.test(parts[0]) && at >= 2) view = `/${parts.slice(0, 3).join('/')}/Forms/AllItems.aspx`;
+  else if (at >= 0 && !/^(sites|teams|personal)$/i.test(parts[0])) view = `/${parts[0]}/Forms/AllItems.aspx`;
+  else return { error: `That address is not the ${ROOT_NAME} folder. ${WEB_HOW}` };
+  const path = `/${parts.slice(0, at + 1).join('/')}`;
+  const origin = u.origin.toLowerCase();
+  return { root: { origin, path, view, address: `${origin}${path}` } };
+}
+
+/** A folder's address in OneDrive on the web, or null when Stella Systems on the web is not set. */
+export function webLink(address, rel) {
+  const r = address ? parseWebRoot(address).root : null;
+  if (!r) return null;
+  const tail = joinPath(splitPath(rel));
+  return `${r.origin}${encodeURI(r.view)}?id=${encodeURIComponent(tail ? `${r.path}/${tail}` : r.path)}`;
+}

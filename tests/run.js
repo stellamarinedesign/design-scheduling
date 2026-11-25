@@ -21,6 +21,7 @@ import * as QT from '../js/quote.js';
 import * as HB from '../js/hub-bridge.js';
 import * as SC from '../js/saved-copy.js';
 import * as HC from '../js/hub-card.js';
+import * as FF from '../js/folder-files.js';
 import { COL } from '../js/collections.js';
 import { sampleNodes, sampleStepNodes, tiledoData, tiledoArchive, excelRows, lineNodes, progressRows } from './samples.js';
 
@@ -638,6 +639,63 @@ export async function run() {
     const n = F.normaliseFolder(full('alex'));
     expect(F.fullPath(n.path, n.prefix), full('alex'));
     expect(F.fullPath('A/B', ''), null, 'no prefix yet');
+  });
+  test('Open in Explorer: the helper is handed the path inside Stella Systems, escaped whole', () => {
+    expect(F.explorerUrl('Example Products/02 - Production/Job A'), 'stella-open:Example%20Products%2F02%20-%20Production%2FJob%20A');
+    expect(F.explorerUrl('/A//B/'), 'stella-open:A%2FB', 'tidied first');
+    expect(F.explorerUrl('A&B/"x" %41'), 'stella-open:A%26B%2F%22x%22%20%2541', 'nothing passes through as it is');
+  });
+  test('Stella Systems on the web: from a OneDrive view, a library view, or the folder\'s own address', () => {
+    const own = 'https://example-my.sharepoint.com/personal/owner_example_com';
+    const view = `${own}/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Fowner_example_com%2FDocuments%2FStella%20Systems%2FExample%20Products&view=0`;
+    const r = F.parseWebRoot(view).root;
+    expect(r, { origin: 'https://example-my.sharepoint.com', path: '/personal/owner_example_com/Documents/Stella Systems',
+      view: '/personal/owner_example_com/_layouts/15/onedrive.aspx', address: 'https://example-my.sharepoint.com/personal/owner_example_com/Documents/Stella Systems' }, 'cut back to Stella Systems');
+    const shared = 'https://example-my.sharepoint.com/personal/someone_else_com/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Fowner_example_com%2FDocuments%2FStella%20Systems&listurl=x';
+    expect(F.parseWebRoot(shared).root.view, '/personal/owner_example_com/_layouts/15/onedrive.aspx', 'through the owner\'s site, not the paster\'s');
+    expect(F.parseWebRoot(`${own}/Documents/Stella%20Systems/`).root.path, '/personal/owner_example_com/Documents/Stella Systems', 'the folder\'s own address');
+    const site = F.parseWebRoot('https://example.sharepoint.com/sites/Design/Shared%20Documents/Forms/AllItems.aspx?id=%2Fsites%2FDesign%2FShared%20Documents%2FStella%20Systems').root;
+    expect([site.view, site.path], ['/sites/Design/Shared Documents/Forms/AllItems.aspx', '/sites/Design/Shared Documents/Stella Systems']);
+    expect(F.parseWebRoot('  ').root, null, 'empty clears it');
+  });
+  test('Stella Systems on the web: refused with what to do instead', () => {
+    for (const bad of ['not a url', 'http://example-my.sharepoint.com/personal/o/Documents/Stella%20Systems', 'https://example.com/Stella%20Systems',
+      'https://example-my.sharepoint.com/:f:/g/personal/o/EabcDEF', 'https://example-my.sharepoint.com/personal/o/Documents/Elsewhere']) {
+      ok(/OneDrive on the web/.test(F.parseWebRoot(bad).error ?? ''), bad);
+    }
+  });
+  test('a folder\'s link in OneDrive on the web: the owner\'s view, the folder as its id', () => {
+    const address = 'https://example-my.sharepoint.com/personal/owner_example_com/Documents/Stella Systems';
+    expect(F.webLink(address, 'Example Products/Job A'), 'https://example-my.sharepoint.com/personal/owner_example_com/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Fowner_example_com%2FDocuments%2FStella%20Systems%2FExample%20Products%2FJob%20A');
+    expect(F.webLink(null, 'A'), null, 'not set');
+  });
+  // A stand-in folder: {name: child}, a child an object (a folder) or a number (a file's date).
+  const tree = (spec, log = []) => ({
+    kind: 'directory',
+    async *entries() {
+      for (const [name, v] of Object.entries(spec)) {
+        log.push(name);
+        yield [name, typeof v === 'number' ? { kind: 'file', getFile: async () => ({ lastModified: v }) } : tree(v, log)];
+      }
+    },
+  });
+  await testAsync('a folder\'s files: documents only, newest first, archive and Old folders left out', async () => {
+    const r = await FF.walkDocs(tree({
+      'GA.pdf': 5, 'notes.txt': 9, 'Laser checklist.docx': 7, '~$Laser checklist.docx': 8,
+      PDFs: { 'Part 1.pdf': 6, Deep: { Deeper: { 'Gone too deep.pdf': 10 } } }, Archive: { 'Old GA.pdf': 11 }, Old: { 'R1.pdf': 12 },
+      'Superseded R2.pdf': 13, 'Set combined.pdf': 4,
+    }), { depth: 2 });
+    expect(r.files.map((f) => [f.name, f.kind, f.dirs.join('/')]), [
+      ['Laser checklist.docx', 'checklist', ''], ['Part 1.pdf', 'pdf', 'PDFs'], ['GA.pdf', 'pdf', ''], ['Set combined.pdf', 'drawings', ''],
+    ]);
+    ok(!r.cut, 'all of it was looked through');
+    ok(FF.opensInTab('drawings') && !FF.opensInTab('checklist'), 'PDFs open in a tab; Word does not');
+  });
+  await testAsync('a folder\'s files: nearest first, and a huge folder stops at its budget and says so', async () => {
+    const seen = [];
+    const r = await FF.walkDocs(tree({ A: { 'deep.pdf': 9 }, 'top.pdf': 1, B: { 'deep2.pdf': 8 } }, seen), { budget: 4 });
+    expect(seen, ['A', 'top.pdf', 'B', 'deep.pdf', 'deep2.pdf'], 'the folder itself before its sub-folders');
+    expect([r.files.map((f) => f.name), r.cut], [['deep.pdf', 'top.pdf'], true]);
   });
 
   // -------------------------------------------------------------------------

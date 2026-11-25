@@ -131,6 +131,17 @@ service cloud.firestore {
       }
     }
 
+    // ---- Stella Systems on the web (2026-11-26) ---------------------------
+    // The library's address, so a folder link opens in OneDrive on a phone.
+    // Read by everyone listed; set by the lead; an address and nothing else.
+    match /settings/library {
+      function webRoot() { return request.resource.data.get('webRoot', null); }
+      allow read: if listed();
+      allow write: if lead() && request.resource.data.keys().hasOnly(['webRoot'])
+        && (webRoot() == null || (webRoot() is string && webRoot().size() <= 1000
+            && webRoot().matches('^https://[a-z0-9.-]+[.]sharepoint[.]com/.+')));
+    }
+
     // ---- people: display names --------------------------------------------
     // Your own name, or (the lead, a master) anyone's. Just a name.
     match /people/{who} {

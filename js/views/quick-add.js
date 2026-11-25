@@ -1,5 +1,5 @@
 // views/quick-add.js — the one way to add: "New job" in the header, N, the
-// phone's + button, or ?capture=1 (the AutoHotkey hotkey, Phase 4). It
+// phone's + button, or ?capture=1 (the PC helper's hotkey, tools/pc-helper). It
 // defaults to where you are: the category or job on screen, else the last
 // place used.
 //

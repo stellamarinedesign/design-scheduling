@@ -3,8 +3,9 @@
 // PC's Stella Systems folder; the Backlog threshold; the team's workday (lunch
 // and finish, where timers pause and stop); the time export's Word template
 // and default rate (views/quote-ui.js); the lead's one-off "Unassign me";
-// local-mode backup; and, for a master, the accounts: their names, and
-// their roles to read.
+// local-mode backup; Stella Systems on the web (the lead) and whether this
+// PC has the Open in Explorer helper; and, for a master, the accounts:
+// their names, and their roles to read.
 //
 // ACCOUNTS LIVE IN ONE PLACE. Who has which role is the `settings/access`
 // document, and the Firestore rules read that same document. Since the hub
@@ -18,7 +19,7 @@ import { openDialog, confirmDialog } from './dialog.js';
 import { openPasswordDialog } from './password.js';
 import { ROLE_LABEL, normaliseAccess, accountRows } from './access.js';
 import { el, btn, toast, prefs, isRefusal, plainWhy, plainNext, toastError } from './ui.js';
-import { getPrefix, setPrefix } from './folders.js';
+import { getPrefix, setPrefix, parseWebRoot } from './folders.js';
 import { VERSION } from './version.js';
 import { go } from './router.js';
 import { state, realName } from './state.js';
@@ -38,7 +39,7 @@ export function openSettings() {
     box.append(el('h3', {}, 'Settings'));
     const lead = state.role === 'lead';
     const designs = lead || state.role === 'designer';
-    box.append(...[account(close), yourName(markClean), appearance(), designs ? thisPc(markClean) : null, lead ? backlog(markClean) : null, lead ? workday(markClean) : null, lead ? quoteSettings(section, markClean) : null, lead ? tasksOnYou() : null, lead ? storage() : null, lead || Store.mode === 'local' ? data(close) : null].filter(Boolean));
+    box.append(...[account(close), yourName(markClean), appearance(), designs ? thisPc(markClean) : null, lead ? onTheWeb(markClean) : null, lead ? backlog(markClean) : null, lead ? workday(markClean) : null, lead ? quoteSettings(section, markClean) : null, lead ? tasksOnYou() : null, lead ? storage() : null, lead || Store.mode === 'local' ? data(close) : null].filter(Boolean));
     const acc = el('div', { class: 'settings-section', hidden: true });
     box.append(acc);
     if (Auth.mode === 'firebase' && Auth.isMaster) { acc.hidden = false; accounts(acc, markClean); }
@@ -124,11 +125,49 @@ function thisPc(markClean) {
     status.textContent = s === 'none' ? 'Not connected. Connect it once per PC to drag folders in from File Explorer.'
       : s === 'granted' ? 'Connected.' : 'Connected; the browser will ask again before reading it.';
   });
+  // The Open in Explorer helper (tools/pc-helper): nothing the browser can
+  // check, so the person says so, per device.
+  const helper = el('input', { type: 'checkbox', id: 'pcHelper', checked: prefs.get('pcHelper', false) });
+  helper.addEventListener('change', () => {
+    prefs.set('pcHelper', helper.checked);
+    toast(helper.checked ? 'Folder links now open in File Explorer on this PC. The browser asks once first; tick "Always allow".' : 'Folder links copy their path again on this PC');
+  });
   return section('This PC',
     el('div', { class: 'field' }, el('label', {}, 'Where Stella Systems is on this PC'), input, err,
       el('div', { class: 'hint' }, 'Learnt automatically the first time you paste a full folder path. Copy path uses it to give the whole Windows path for this PC.'),
       el('div', {}, btn('Save path', save, { cls: 'sm' }))),
-    el('div', { class: 'settings-row' }, status, connect));
+    el('div', { class: 'settings-row' }, status, connect),
+    el('div', { class: 'settings-row' },
+      el('label', { class: 'check-line', for: 'pcHelper' }, helper, 'Open in Explorer is set up on this PC'),
+      el('div', { class: 'settings-row-sub' }, 'Folder links get an Open button that opens them in File Explorer. Set it up once per PC with the Design Scheduling helper\'s Install, then tick this. It also adds Ctrl+Alt+N for a new job from anywhere.')));
+}
+
+/**
+ * Stella Systems on the web (the lead, team-wide): a folder link then opens
+ * in OneDrive on a phone, and from a link's ⋯ on a PC. settings/library.
+ */
+function onTheWeb(markClean) {
+  const input = el('input', { class: 'input mono', type: 'url', value: state.library ?? '', placeholder: 'https://…sharepoint.com/…/Stella Systems', 'aria-label': 'Stella Systems on the web', spellcheck: 'false', autocomplete: 'off' });
+  const err = el('div', { class: 'form-err', role: 'alert', id: 'web-err' });
+  const said = el('div', { class: 'hint' }, state.library ? `Set: ${state.library}` : 'Not set: on a phone, folder links only copy their path.');
+  input.addEventListener('input', () => { err.textContent = ''; input.removeAttribute('aria-invalid'); });
+  const save = async () => {
+    const r = parseWebRoot(input.value);
+    if (r.error) { err.textContent = r.error; input.setAttribute('aria-invalid', 'true'); input.setAttribute('aria-describedby', 'web-err'); input.focus(); return; }
+    const address = r.root?.address ?? null;
+    try {
+      const p = Store.saveLibrary(address);
+      if (!Store.offline()) await p;
+      input.value = address ?? '';
+      said.textContent = address ? `Set: ${address}` : 'Not set: on a phone, folder links only copy their path.';
+      markClean();
+      toast(address ? 'Saved: folder links open in OneDrive on a phone' : 'Cleared: folder links copy their path on a phone');
+    } catch (e) { toast(isRefusal(e) ? 'Could not save: only the Design lead sets this.' : `It did not save: ${plainWhy(e)}. ${plainNext(e)}`, { warn: true }); }
+  };
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } });
+  return section('Stella Systems on the web',
+    el('div', { class: 'settings-row-sub' }, 'Lets a folder link open in OneDrive on a phone. Open Stella Systems in OneDrive on the web, copy the address bar and paste it here. Team-wide.'),
+    el('div', { class: 'field' }, input, err, said, el('div', {}, btn('Save address', save, { cls: 'sm' }))));
 }
 
 function backlog(markClean) {

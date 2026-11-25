@@ -6,7 +6,7 @@
 # Jekyll already skips dot-folders, so .claude/ never ships.
 exclude:
   - tests/
-  - tools/
+  - tools/        # the importmap script, the dev server, and the PC helper (tools/pc-helper)
   - README.md
   - CLAUDE.md
   - PRODUCT.md

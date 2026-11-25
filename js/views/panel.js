@@ -8,7 +8,8 @@
 // and a compact row of properties; then CHILDREN FIRST - its tasks, as tiles
 // or a list (remembered per node), each with the check control; then the
 // review box (Approve and Send back, or the action for where it is), Brief,
-// Folders and the Updates timeline.
+// Folders (each with its newest files, on a PC whose Stella Systems folder is
+// connected) and the Updates timeline.
 //
 // ONE KIND OF TASK (2026-11-06): inside a job everything is a task, added
 // from one "Add a task" box (Enter adds, focus stays). TILES shows the direct
@@ -35,7 +36,8 @@ import * as A from '../actions.js';
 import { Store } from '../store.js';
 import * as SF from '../stella-folder.js';
 import { whenLabel, daysUntil, ageLabel } from '../dates.js';
-import { normaliseFolder, learnPrefix, fullPath, displayPath, leafName } from '../folders.js';
+import { normaliseFolder, learnPrefix, fullPath, displayPath, leafName, explorerUrl, webLink } from '../folders.js';
+import * as FF from '../folder-files.js';
 import { statusMenu, taskMenu, checkBox, whoBadge, subtext, enableDrag, assignMenu } from './tile.js';
 import * as BL from '../backlog.js';
 import { backlogPool } from './home.js';
@@ -724,6 +726,24 @@ function sectionMenu(anchor, g, { at = null } = {}) {
 // folders
 // ---------------------------------------------------------------------------
 
+/**
+ * The folder row's one button, by where this is: Open (File Explorer, through
+ * the PC helper, tools/pc-helper), OneDrive (a phone, when Stella Systems on
+ * the web is set), else Copy path. The others are in its ⋯.
+ */
+function folderActions(f) {
+  const web = webLink(state.library, f.path);
+  const explorer = !isPhone() && helperOn();
+  const main = explorer ? btn('Open', () => openInExplorer(f.path), { cls: 'sm', ic: 'open', title: 'Opens it in File Explorer' })
+    : isPhone() && web ? el('a', { class: 'btn sm', href: web, target: '_blank', rel: 'noopener', title: 'Opens it in OneDrive' }, icon('open', 16), 'OneDrive')
+      : btn(isPhone() ? 'Copy' : 'Copy path', () => copyPath(f.path), { cls: 'sm', ic: 'copy', title: 'Copies the full path for this PC: paste it into the File Explorer address bar' });
+  const more = [
+    explorer || (isPhone() && web) ? { label: 'Copy path', icon: 'copy', onSelect: () => copyPath(f.path) } : null,
+    web && !isPhone() ? { label: 'Open in OneDrive on the web', icon: 'open', onSelect: () => window.open(web, '_blank', 'noopener') } : null,
+  ].filter(Boolean);
+  return { main, more };
+}
+
 function foldersSection(n) {
   const sec = el('section', { class: 'psec', 'aria-label': 'Folders' });
   sec.append(el('div', { class: 'psec-head' }, el('h2', { class: 'lbl' }, 'Folders')));
@@ -731,19 +751,26 @@ function foldersSection(n) {
   const can = editable(n);
   if (!can && !folders.length) { sec.append(el('p', { class: 'meta' }, 'No folders linked.')); return sec; }
   for (const f of folders) {
+    const { main, more } = folderActions(f);
+    const edits = can ? [
+      { label: f.label ? 'Change label' : 'Add a label', icon: 'edit', onSelect: async () => {
+        const v = await promptDialog({ title: 'Label', ok: 'Save label', value: f.label ?? '', placeholder: 'GA, Laser, Vessel files', required: false });
+        if (v !== null) A.updateFields(n.id, { folders: folders.map((x) => (x === f ? { ...x, label: v } : x)) });
+      } },
+      { label: 'Remove link', icon: 'trash', danger: true, onSelect: () => A.updateFields(n.id, { folders: folders.filter((x) => x !== f) }, { message: 'Folder link removed', undo: true }) },
+    ] : [];
+    const items = [...more, ...(more.length && edits.length ? ['sep'] : []), ...edits];
     sec.append(el('div', { class: 'fold' },
       icon('folder', 16),
       f.label ? el('span', { class: 'fold-label' }, f.label) : null,
       el('span', { class: 'fold-path', title: displayPath(f.path) }, el('bdi', {}, isPhone() ? shortPath(f.path, 3) : displayPath(f.path))),
-      btn(isPhone() ? 'Copy' : 'Copy path', () => copyPath(f.path), { cls: 'sm', ic: 'copy', title: 'Copies the full path for this PC: paste it into the File Explorer address bar' }),
-      !can ? null : iconBtn('more', `${leafName(f.path)} actions`, (e) => menu(e.currentTarget, [
-        { label: f.label ? 'Change label' : 'Add a label', icon: 'edit', onSelect: async () => {
-          const v = await promptDialog({ title: 'Label', ok: 'Save label', value: f.label ?? '', placeholder: 'GA, Laser, Vessel files', required: false });
-          if (v !== null) A.updateFields(n.id, { folders: folders.map((x) => (x === f ? { ...x, label: v } : x)) });
-        } },
-        { label: 'Remove link', icon: 'trash', danger: true, onSelect: () => A.updateFields(n.id, { folders: folders.filter((x) => x !== f) }, { message: 'Folder link removed', undo: true }) },
-      ]), 'sm')));
+      main,
+      items.length ? iconBtn('more', `${leafName(f.path)} actions`, (e) => menu(e.currentTarget, items), 'sm') : null));
+    const files = filesArea(f.path);
+    if (files) sec.append(files);
   }
+  const connect = folders.length ? connectLine() : null;
+  if (connect) sec.append(connect);
   if (!can) return sec;
   const err = el('div', { class: 'form-err', role: 'alert' });
   const input = el('input', { class: 'input', type: 'text', placeholder: 'Paste a folder path', 'aria-label': 'Paste a folder path', spellcheck: 'false' });
@@ -840,12 +867,176 @@ async function placeDropped(pending, id, note) {
   });
 }
 
-async function copyPath(rel) {
+// ---------------------------------------------------------------------------
+// what is in a linked folder (folder-files.js), and opening it
+// ---------------------------------------------------------------------------
+
+/** Per device: the PC helper is installed here (Settings › This PC). */
+export const helperOn = () => prefs.get('pcHelper', false);
+
+/** Hand a path to the PC helper, which opens it in File Explorer. The browser asks first, once. */
+function openInExplorer(rel) {
+  const a = el('a', { href: explorerUrl(rel), hidden: true });
+  document.body.append(a);
+  a.click();
+  a.remove();
+}
+
+/**
+ * Each folder's files, kept while the app is open: {at, files, cut} once read,
+ * {error} when it could not be, `busy` while it is being read. Read again when
+ * a panel shows it after REREAD, or when this window comes back to the front
+ * (an export from CAD shows up without a reload).
+ */
+const folderFiles = new Map();
+const REREAD = 15000;
+let rootSeen = null;           // what the browser last said about the connected folder
+
+/** Which folders' file lists are folded (per device). */
+const filesShut = () => new Set(prefs.get('folderFilesShut', []));
+
+/** The newest files under one folder link, or null where nothing can be read (a phone, Safari, Firefox). */
+function filesArea(path) {
+  if (isPhone() || !SF.supported()) return null;
+  const host = el('div', { class: 'ff', dataset: { path } });
+  drawFiles(host);
+  return host;
+}
+
+/** Draw what is known now, and read the folder if it is due. */
+async function drawFiles(host) {
+  const path = host.dataset.path;
+  const { handle, state: st } = await SF.rootState();
+  rootSeen = st;
+  if (!host.isConnected && host.parentNode) return;
+  host.textContent = '';
+  if (st === 'none') return;                       // connectLine says it, once for the section
+  if (st !== 'granted') {
+    host.append(btn('Show the files in it', async () => {
+      let ok = false;
+      try { ok = await SF.allowRoot(handle); } catch { ok = false; }
+      if (ok) redrawFiles();
+      else toast('The browser was not allowed to read the Stella Systems folder, so the files cannot be shown.', { warn: true });
+    }, { cls: 'sm ghost', ic: 'chevRight', title: 'The browser asks once each visit before it reads the folder', attrs: { 'data-fk': `ff-allow-${path}` } }));
+    return;
+  }
+  const c = folderFiles.get(path);
+  const shut = filesShut().has(path);
+  if (c?.files || c?.error) drawList(host, path, c, shut);
+  else host.append(el('div', { class: 'ff-line meta', 'aria-busy': 'true' }, 'Looking in the folder…'));
+  if (!shut && !c?.busy && (!c || Date.now() - c.at > REREAD)) readFolder(path, handle);
+}
+
+async function readFolder(path, root) {
+  const was = folderFiles.get(path);
+  folderFiles.set(path, { ...was, busy: true });
+  let next;
+  try {
+    const dir = await SF.handleAt(root, path, 'folder');
+    const r = await FF.walkDocs(dir);
+    next = { at: Date.now(), files: r.files, cut: r.cut };
+  } catch (e) {
+    next = { at: Date.now(), error: e };
+  }
+  folderFiles.set(path, next);
+  for (const h of document.querySelectorAll('#panel .ff')) if (h.dataset.path === path) drawFiles(h);
+}
+
+function redrawFiles() {
+  for (const h of document.querySelectorAll('#panel .ff')) drawFiles(h);
+  const c = document.querySelector('#panel .ff-connect');
+  if (c && rootSeen && rootSeen !== 'none') c.remove();
+}
+
+// Back from CAD or File Explorer: what is open is read again.
+window.addEventListener('focus', () => {
+  for (const [p, c] of folderFiles) if (c.at) folderFiles.set(p, { ...c, at: 0 });
+  if (document.querySelector('#panel .ff')) redrawFiles();
+});
+
+function drawList(host, path, c, shut) {
+  if (c.error) {
+    const gone = c.error?.name === 'NotFoundError' || c.error?.name === 'TypeMismatchError';
+    host.append(el('div', { class: 'ff-line meta warn' },
+      gone ? 'Not found on this PC: it may have been moved or renamed, or not be synced here.' : `The files could not be read: ${plainWhy(c.error)}.`,
+      gone ? null : btn('Try again', () => { folderFiles.delete(path); redrawFiles(); }, { cls: 'sm ghost' })));
+    return;
+  }
+  const all = c.files ?? [];
+  const open = el('button', {
+    class: 'btn sm ghost ff-toggle', type: 'button', 'aria-expanded': String(!shut), dataset: { fk: `ff-${path}` },
+    onclick: () => {
+      const s = filesShut();
+      if (s.has(path)) s.delete(path); else s.add(path);
+      prefs.set('folderFilesShut', [...s]);
+      redrawFiles();
+    },
+  }, icon(shut ? 'chevRight' : 'chevDown', 16), all.length ? `${all.length === 1 ? '1 file' : `${all.length}${c.cut ? '+' : ''} files`}` : 'No files');
+  host.append(el('div', { class: 'ff-head' }, open,
+    !all.length ? el('span', { class: 'meta' }, 'No PDFs, drawings or checklists in it') : el('span', { class: 'meta' }, 'Newest first')));
+  if (shut || !all.length) return;
+  const showAll = host.dataset.all === '1';
+  const list = el('ul', { class: 'ff-list', 'aria-label': `Files in ${leafName(path)}` });
+  for (const f of showAll ? all : all.slice(0, FF.SHOWN)) list.append(el('li', {}, fileRow(path, f)));
+  host.append(list);
+  if (all.length > FF.SHOWN || c.cut) {
+    host.append(el('div', { class: 'ff-line' },
+      all.length > FF.SHOWN ? btn(showAll ? 'Show the newest only' : `Show all ${all.length}`, () => { host.dataset.all = showAll ? '' : '1'; drawFiles(host); }, { cls: 'sm ghost', attrs: { 'data-fk': `ff-all-${path}` } }) : null,
+      c.cut ? el('span', { class: 'meta' }, 'A big folder: only part of it was looked through.') : null));
+  }
+}
+
+function fileRow(path, f) {
+  const rel = [path, ...f.dirs, f.name].join('/');
+  const tab = FF.opensInTab(f.kind);
+  const how = tab ? 'Opens it in a new tab' : helperOn() ? 'Shows it in File Explorer' : 'Copies its path';
+  return el('button', {
+    class: 'ff-row', type: 'button', title: `${how}: ${[...f.dirs, f.name].join(' / ')}`,
+    onclick: () => openFile(f, rel),
+  },
+  el('span', { class: 'ff-kind' }, FF.KIND_WORD[f.kind] ?? ''),
+  el('span', { class: 'ff-name' }, f.name),
+  f.dirs.length ? el('span', { class: 'ff-dir' }, f.dirs.join(' › ')) : el('span'),
+  el('span', { class: 'ff-date' }, whenLabel(new Date(f.lastModified).toISOString())));
+}
+
+async function openFile(f, rel) {
+  if (!FF.opensInTab(f.kind)) {
+    if (helperOn()) openInExplorer(rel);
+    else copyPath(rel, { file: true });
+    return;
+  }
+  try {
+    const url = URL.createObjectURL(await f.handle.getFile());
+    const w = window.open(url, '_blank');
+    if (!w) toast('The browser blocked the new tab. Allow pop-ups for this site, then try again.', { warn: true });
+    setTimeout(() => URL.revokeObjectURL(url), 10 * 60 * 1000);
+  } catch (e) {
+    toast(`${f.name} did not open: ${plainWhy(e)}. ${e?.name === 'NotFoundError' ? 'It may have been moved or renamed.' : 'Try again.'}`, { warn: true });
+  }
+}
+
+/** Once for the section: this PC could show the files, if its Stella Systems folder were connected. */
+function connectLine() {
+  if (isPhone() || !SF.supported() || prefs.get('folderConnectHidden', false)) return null;
+  const line = el('div', { class: 'ff-connect meta', hidden: rootSeen !== 'none' },
+    el('span', {}, 'Connect this PC\'s Stella Systems folder to see the newest files in these folders.'),
+    btn('Connect Stella Systems', async () => {
+      try { await SF.chooseRoot(); rootSeen = 'granted'; line.remove(); redrawFiles(); }
+      catch (e) { if (e?.name !== 'AbortError') toast(`That folder was not connected: ${plainWhy(e)}.`, { warn: true }); }
+    }, { cls: 'sm' }),
+    btn('Not on this PC', () => { prefs.set('folderConnectHidden', true); line.remove(); }, { cls: 'sm ghost', title: 'Hides this line on this device. Settings › This PC connects it later.' }));
+  SF.rootState().then(({ state: st }) => { rootSeen = st; line.hidden = st !== 'none'; });
+  return line;
+}
+
+async function copyPath(rel, { file = false } = {}) {
   const full = fullPath(rel);
   const text = full ?? `Stella Systems\\${rel.split('/').join('\\')}`;
   try {
     await navigator.clipboard.writeText(text);
-    toast(full ? 'Copied: paste it into the File Explorer address bar' : 'Copied the path inside Stella Systems. Paste a full path once (or set it under the cog) so Copy path gives the whole path on this PC.');
+    toast(full ? (file ? 'Copied its path: paste it into File Explorer\'s address bar, or into Word\'s Open box' : 'Copied: paste it into the File Explorer address bar')
+      : 'Copied the path inside Stella Systems. Paste a full path once (or set it under the cog) so Copy path gives the whole path on this PC.');
   } catch {
     toast(`Could not reach the clipboard. The path is: ${text}`, { warn: true, ms: 12000 });
   }
