@@ -6,6 +6,8 @@
 //    own `homeOrder`); on touch the ⋯ menu has Move earlier / later. Waiting
 //    is the waits to chase; product jobs with the customer fold into one line
 //    under them, the longest wait first (status.js splitWaits).
+// DUE (2026-11-26): the team's work overdue or due within a week, when there
+//    is any (views/numbers.js).
 // 2. BACKLOG: one row of my To-do jobs and sub-jobs untouched for 14 days or
 //    more, picked afresh each day, weighted toward the oldest. ▶ Start on each.
 // 3. READY FOR CHECKING and 4. CREW: the team (views/crew.js).
@@ -21,6 +23,7 @@ import { go } from '../router.js';
 import { newMasterCategory } from './sidebar.js';
 import { checksSection, crewSection } from './crew.js';
 import { requestsSection } from './managers.js';
+import { dueSection } from './numbers.js';
 import { stepsBanner } from './convert-steps.js';
 
 const FILTERS = [
@@ -119,6 +122,10 @@ export function renderHome(root) {
     if (open) sec.append(el('div', { class: 'grid' }, customer.map((t) => tile(t, { path: true, drag: false }))));
   }
   inner.append(sec);
+
+  // ── Due, across the team (only when something is) ──
+  const due = dueSection();
+  if (due) inner.append(due);
 
   // ── Backlog ──
   const pool = backlogPool();

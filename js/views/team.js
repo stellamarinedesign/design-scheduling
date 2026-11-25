@@ -7,7 +7,8 @@
 // with the customer folded under Waiting; To do last and folded, since a
 // lead's own To-do list runs long. The heading counts done
 // this week and this month (approved work; cancelled never counts) and how
-// long the oldest check has waited.
+// long the oldest check has waited, and the last 12 weeks in one line. Above
+// the columns, the team's last 12 weeks (views/numbers.js).
 //
 // ASSIGNING: drag a task onto someone's column (a mouse), or Assign to… in
 // any task's ⋯ (touch, and everywhere else). The open tasks inside it that
@@ -22,6 +23,7 @@ import { ageLabel } from '../dates.js';
 import { ROLE_LABEL, roleOf } from '../access.js';
 import { laneRow, face, seenLine } from './crew.js';
 import { customerFold } from './tile.js';
+import { teamNumbers, personNumbers } from './numbers.js';
 import { errorState } from './home.js';
 
 /** Which columns have their To do, or their waits on the customer, unfolded: "todo:<who>" (this visit only). */
@@ -44,6 +46,7 @@ export function renderTeam(root) {
   if (!TM.crewOf(state.access).length) {
     inner.append(el('div', { class: 'empty' }, el('span', {}, el('strong', {}, 'No designers yet. '), 'A master adds them under the cog, in Accounts, with a temporary password. Their columns appear here.')));
   }
+  inner.append(teamNumbers());
   const cols = el('div', { class: 'team-cols' });
   for (const email of people) cols.append(column(email));
   inner.append(cols);
@@ -69,6 +72,7 @@ function column(email) {
         el('span', { class: 'meta' }, `${open} open`),
         el('span', { class: 'meta' }, `Done ${done.week} this week · ${done.month} this month`),
         checks.length ? el('span', { class: 'meta' }, `${checks.length} in check · oldest ${oldest}`) : null,
+        personNumbers(email, { includeUnassigned: you }),
         you ? null : seenLine(lane))));
   const body = el('div', { class: 'team-body' });
   for (const g of groups) {

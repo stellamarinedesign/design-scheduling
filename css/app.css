@@ -913,6 +913,24 @@ input::-ms-reveal { display: none; }
 .track.t-check i { background: var(--st-check); }
 .track.t-fix i { background: var(--st-fix); }
 
+/* ── Due on Home, and the Team tab's last 12 weeks (views/numbers.js) ── */
+.due-list { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+.lrow.due-row { grid-template-columns: 124px minmax(0, 1fr) auto auto 30px; }
+.due-when { font-size: var(--fs-sm); color: var(--text2); white-space: nowrap; font-variant-numeric: tabular-nums; text-align: right; }
+.due-when.soon { color: var(--amber-text); }
+.due-when.late { color: var(--st-fix-text); font-weight: 600; }
+.stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--sp-3); }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; min-height: 96px; }
+.stat.skel { min-height: 96px; }
+.stat-label { font-size: var(--fs-micro); font-weight: 700; letter-spacing: var(--label-spacing); text-transform: uppercase; color: var(--text3); }
+.stat-value { font-size: 24px; font-weight: 600; line-height: 1.2; color: var(--text); }
+.stat-sub { font-size: var(--fs-sm); color: var(--text3); margin-top: auto; }
+/* Done per week: thin bars from one baseline, 2px apart, rounded only at the top. */
+.spark { display: flex; align-items: flex-end; gap: 2px; height: 32px; border-bottom: 1px solid var(--border); margin: 2px 0; }
+.spark-bar { flex: 1; max-width: 14px; height: 100%; display: flex; align-items: flex-end; }
+.spark-bar i { display: block; width: 100%; border-radius: 4px 4px 0 0; background: var(--text3); }
+.spark-bar.now i { background: var(--text); }
+.spark-bar:hover i { background: var(--text2); }
 .team-cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--sp-3); align-items: start; }
 .team-col { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); display: flex; flex-direction: column; min-width: 0; }
 .team-col.drop-into { outline: 2px dashed var(--focus); outline-offset: 2px; }
@@ -1588,6 +1606,9 @@ button.rc:hover i { border-color: var(--text2); }
   .lrow .track { grid-area: track; margin: 4px 8px 0 0; }
   .lrow-age { grid-area: age; }
   .lrow > .ib { grid-area: more; }
+  .lrow.due-row { grid-template-areas: "pill when more" "main main main"; }
+  .due-row > .due-when { grid-area: when; }
+  .due-row > .av { display: none; }
   .lrow-title { white-space: normal; overflow-wrap: break-word; -webkit-hyphens: auto; hyphens: auto; }
   .lrow .ib, .lrow > .ib { width: 44px; height: 44px; }
   .team-cols { grid-template-columns: 1fr; }

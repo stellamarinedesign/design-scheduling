@@ -22,6 +22,7 @@ import * as HB from '../js/hub-bridge.js';
 import * as SC from '../js/saved-copy.js';
 import * as HC from '../js/hub-card.js';
 import * as FF from '../js/folder-files.js';
+import * as MX from '../js/metrics.js';
 import { COL } from '../js/collections.js';
 import { sampleNodes, sampleStepNodes, tiledoData, tiledoArchive, excelRows, lineNodes, progressRows } from './samples.js';
 
@@ -1143,6 +1144,42 @@ export async function run() {
     expect([col.waiting, col.customer], [['plain', 'blocked', 'supplier'], ['p2', 'p1']]);
     const mine = Object.fromEntries(TM.myTaskGroups(idx, DA, { now: T0 }).map((g) => [g.key, g.rows.map((t) => t.id).sort()]));
     expect([mine.waiting, mine.customer], [['blocked', 'plain', 'supplier'], ['p1', 'p2']]);
+  });
+  // Due dates and throughput (2026-11-26). T0 is Wed 4 Nov 2026, noon in Brisbane.
+  test('due: open work past or within a week, the most overdue first; never part of a job, finished or undated', () => {
+    const idx = T.buildIndex(apply(teamNodes(), [
+      { id: 'j1', due: '2026-11-01' }, { id: 'j2', due: '2026-11-04' }, { id: 'j3', due: '2026-11-11' }, { id: 't1', due: '2026-11-12' },
+      { id: 'j4', due: '2026-10-01' }, { id: 's2b', due: '2026-11-02' }, { id: 't2', due: 'soon' },
+    ]));
+    const due = MX.dueList(idx, { now: T0 });
+    expect(due.map((d) => [d.t.id, d.days]), [['j1', -3], ['j2', 0], ['j3', 7]], 'a week out is in, eight days is not');
+    expect([-3, -1, 0, 1, 7].map(MX.dueWords), ['Overdue 3 days', 'Overdue 1 day', 'Due today', 'Due tomorrow', 'Due in 7 days']);
+  });
+  test('weeks run Monday to Sunday, local time, this week last', () => {
+    const w = MX.weekStarts(T0, 3);
+    expect(w, ['2026-10-19', '2026-10-26', '2026-11-02']);
+    expect(MX.weekOf(Date.parse('2026-11-08T14:30:00.000Z')), '2026-11-09', 'Sunday afternoon in UTC is Monday morning in Brisbane');
+    expect(MX.weekOf(Date.parse('2026-11-08T13:00:00.000Z')), '2026-11-02', 'and 11pm Sunday is still last week');
+  });
+  test('throughput: done per week, on time, usual times; medians, approved work only', () => {
+    const done = (id, d, extra = {}) => ({ id, status: 'done', doneAt: ago(d), createdAt: ago(d + 10), ...extra });
+    const idx = T.buildIndex(apply(teamNodes(), [
+      done('j1', 1, { assignee: DA, due: '2026-11-04', submittedAt: ago(2), checkedAt: ago(1) }),
+      done('j2', 8, { assignee: DA, due: '2026-10-20', createdAt: ago(400), submittedAt: ago(11), checkedAt: ago(8) }),
+      done('j3', 9, { assignee: DB }),
+      done('s2b', 1),
+      { id: 'j4', status: 'cancelled', doneAt: ago(1) },
+      done('t1', 200, { assignee: DA }),
+    ]));
+    const all = MX.throughput(idx, { now: T0, weeks: 3 });
+    expect([all.perWeek, all.done], [[0, 2, 1], 3], 'this week one, last week two; part of a job, cancelled and long ago are not');
+    expect([all.onTime, MX.onTimeWords(all.onTime)], [{ hit: 1, of: 2 }, '50%'], 'one on its day, one late');
+    expect([all.addedToDone, MX.spanWords(all.addedToDone)], [10, '10 days'], 'the median: one that sat a year does not drag it');
+    expect(MX.spanWords(all.checkWait), '2 days');
+    const alex = MX.throughput(idx, { now: T0, weeks: 3, who: DA });
+    expect([alex.done, alex.onTime.of], [2, 2]);
+    expect(MX.throughput(T.buildIndex(teamNodes()), { now: T0, weeks: 3, who: DB }).onTime, { hit: 0, of: 0 }, 'nothing with a due date');
+    expect([MX.spanWords(null), MX.spanWords(0.01), MX.spanWords(0.25), MX.spanWords(30), MX.onTimeWords({ hit: 0, of: 0 })], [null, 'under an hour', '6 hours', '4 weeks', null]);
   });
   test('a designer\'s list sorts by due date first, undated last', () => {
     const idx = T.buildIndex(apply(teamNodes(), [
