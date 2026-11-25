@@ -33,17 +33,7 @@ import { getFirebase, failureReason, isConfigured, localForced } from './firebas
 import { LOCAL_ACCESS, LOCAL_PEOPLE } from './team.js';
 import { idb } from './idb.js';
 import { copyAnswers } from './saved-copy.js';
-
-export const COL = {
-  settings: 'settings',     // settings/access: who is what (the rules read it)
-  people: 'people',         // people/{email}: display name, initials
-  tasks: 'tasks',           // every node: group | product | task (and step, until converted)
-  updates: 'updates',       // tasks/{id}/updates/{id}: the timeline
-  images: 'images',         // photos as Bytes, one per document (photos.js)
-  notes: 'notes',           // the Log
-  time: 'time',             // time tracking: one stretch of work per document (timing.js)
-  parts: 'parts',           // settings/quote/parts/{id}: the export's Word template, in pieces (quote.js)
-};
+import { COL } from './collections.js';
 
 /** settings/workday: the team's lunch and finish times (timing.js). */
 const WORKDAY_DOC = 'workday';

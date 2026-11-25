@@ -24,8 +24,8 @@ parent. Starting here is what loads this file, the project skills and the Impecc
   from `gstatic`. SheetJS from the CDN for imports.
 - **Its own Firebase project, for good.** It is deliberately not the board's project, and
   it keeps its own data, rules and roles.
-  - Collection names come from the one `COL` map in `js/store.js`. Never write a collection
-    name anywhere else.
+  - Collection names come from the one `COL` map in `js/collections.js`. Never write a
+    collection name anywhere else.
 - **Sign-in goes through Hubinator** (the hub, `stellamarinedesign.github.io`, repo
   `../../Stella-Hubinator/hub`), since 2026-11-23. One Stella login signs this app in to its
   OWN project, with a key the hub holds.
@@ -37,6 +37,8 @@ parent. Starting here is what loads this file, the project skills and the Impecc
     put a role editor back: `Store.saveAccess` rewrites the whole document.
   - When signed in through the hub (`Auth.viaHub`), Password and Sign out are the hub's.
     The app's own sign-in form shows only when the hub can't be reached.
+  - `js/hub-card.js` is the app's card on the hub page ("Ready for check", leads only). The
+    hub imports it, with a Firestore Lite handle: it must not import the store or Firebase.
   - The contract is the comment at the top of the hub's `core/v1/hub.js`; never copy it
     into this repo. The handover is `../../Stella-Hubinator/handoff/DESIGN_SCHEDULING_HUB_PATCH.md`.
 - **Local mode.** The Firebase project (`stella-design-scheduling`) is configured, so the app

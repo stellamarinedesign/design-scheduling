@@ -20,6 +20,8 @@ import * as PX from '../js/import/progress.js';
 import * as QT from '../js/quote.js';
 import * as HB from '../js/hub-bridge.js';
 import * as SC from '../js/saved-copy.js';
+import * as HC from '../js/hub-card.js';
+import { COL } from '../js/collections.js';
 import { sampleNodes, sampleStepNodes, tiledoData, tiledoArchive, excelRows, lineNodes, progressRows } from './samples.js';
 
 const results = [];
@@ -1963,6 +1965,70 @@ export async function run() {
     expect(reloads, 1, 'a device the hub left alone is never reloaded');
     expect(await HB.joinHub({ fb: { fa, auth }, projectId: 'p', load: async () => { throw new Error('404'); } }), null, 'no hub: as before');
     expect(await HB.joinHub({ fb: { fa, auth }, projectId: 'p', load: async () => ({ Hub: { connect: async () => { throw new Error('bug'); } } }) }), null, 'a hub that throws fails open');
+  });
+
+  // -------------------------------------------------------------------------
+  group = "the hub's card";
+  const cardNodes = [
+    { id: 'm', kind: 'group', parentId: null, order: 1, name: 'Products', archivedAt: null },
+    { id: 'g', kind: 'group', parentId: 'm', order: 1, name: 'Plinths', archivedAt: null },
+    { id: 'j1', kind: 'task', parentId: 'g', order: 1, title: 'Plinth A', status: 'check', assignee: 'alex@example.test', submittedBy: 'alex@example.test', statusAt: '2026-11-24T00:00:00.000Z', archivedAt: null },
+    { id: 'j2', kind: 'task', parentId: 'g', order: 2, title: 'Plinth B', status: 'in_progress', assignee: 'lead@example.test', archivedAt: null },
+    { id: 's', kind: 'group', parentId: 'j2', order: 1, name: 'Engineering', archivedAt: null },
+    { id: 't1', kind: 'task', parentId: 's', order: 1, title: 'Laser', status: 'check', assignee: 'sam@example.test', statusAt: '2026-11-20T00:00:00.000Z', archivedAt: null },
+    { id: 't2', kind: 'task', parentId: 'j2', order: 2, title: 'PDF', status: 'check', assignee: null, archivedAt: null },
+    { id: 'old', kind: 'task', parentId: 'g', order: 3, title: 'Archived', status: 'check', assignee: 'sam@example.test', archivedAt: AT },
+  ];
+  const CARD_NOW = Date.parse('2026-11-25T00:00:00.000Z');
+  test('the longest wait first; a task inside a job says its job; part of its job is not waiting', () => {
+    const c = HC.cardFrom(cardNodes.filter((n) => !n.archivedAt), { 'alex@example.test': { name: 'Alex' } }, CARD_NOW);
+    expect([c.title, c.count], ['Ready for check', 2]);
+    expect(c.items, [
+      { title: 'Laser', sub: 'sam · Plinth B · Plinths', when: '5d', href: '/design-scheduling/#/home?t=t1' },
+      { title: 'Plinth A', sub: 'Alex · Plinths', when: '1d', href: '/design-scheduling/#/home?t=j1' },
+    ]);
+  });
+  test('nothing waiting: no lines, and it says so; more than three: three lines, all of them counted', () => {
+    const none = HC.cardFrom([], {}, CARD_NOW);
+    expect([none.count, none.items, none.empty], [0, [], 'Nothing is waiting for your check.']);
+    const many = HC.cardFrom(Array.from({ length: 7 }, (_, i) => ({ ...cardNodes[2], id: `x${i}`, parentId: null })), {}, CARD_NOW);
+    expect([many.count, many.items.length], [7, 3]);
+  });
+  // A stand-in for Firestore Lite over the nodes above, counting its reads.
+  const lite = () => {
+    const reads = [];
+    const people = { 'alex@example.test': { name: 'Alex' } };
+    const at = (col, id) => (col === COL.tasks ? cardNodes.find((n) => n.id === id) : col === COL.people ? people[id] : null);
+    const snap = (id, data) => ({ id, exists: () => Boolean(data), data: () => { const { id: _, ...rest } = data; return rest; } });
+    return {
+      reads,
+      collection: (db, name) => name,
+      where: (f, op, v) => ({ f, op, v }),
+      limit: (n) => ({ n }),
+      query: (col, ...q) => ({ col, q }),
+      doc: (db, col, id) => ({ col, id }),
+      getDoc: async ({ col, id }) => { reads.push(`${col}/${id}`); return snap(id, at(col, id)); },
+      getDocs: async ({ col, q }) => {
+        ok(q.some((x) => x.n > 0), 'a limit');
+        const hits = (col === COL.tasks ? cardNodes : []).filter((n) => q.every((x) => !x.f || (n[x.f] ?? null) === x.v));
+        return { docs: hits.map((n) => snap(n.id, n)) };
+      },
+    };
+  };
+  await testAsync('the card reads what is waiting, what is above it and who, each once; nothing else', async () => {
+    const fs = lite();
+    const c = await HC.card({ db: {}, fs, role: 'lead' });
+    expect([c.count, c.items.map((i) => i.title)], [2, ['Laser', 'Plinth A']]);
+    expect(c.items.map((i) => i.sub), ['sam · Plinth B · Plinths', 'Alex · Plinths']);
+    expect([...fs.reads].sort(), [`${COL.people}/alex@example.test`, `${COL.people}/sam@example.test`,
+      `${COL.tasks}/g`, `${COL.tasks}/j2`, `${COL.tasks}/m`, `${COL.tasks}/s`]);
+  });
+  await testAsync('only a Design lead gets a card, and nothing is read for anyone else', async () => {
+    for (const role of ['designer', 'manager', 'contributor', 'link', undefined]) {
+      const fs = lite();
+      fs.getDocs = () => { throw new Error('read'); };
+      expect(await HC.card({ db: {}, fs, role }), null, String(role));
+    }
   });
 
   // -------------------------------------------------------------------------
