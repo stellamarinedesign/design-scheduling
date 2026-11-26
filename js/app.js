@@ -339,12 +339,35 @@ async function boot() {
 }
 
 // After the server's access list changed this person's role, the next load
-// reads the list from the server, not the device's copy (confirmAccess).
+// reads the list from the server, not the device's copy (confirmAccess). The
+// note goes in session storage; where that is blocked, in the address
+// (`?access=server`). Without it, an account taken off the lists would load
+// the device's copy again, be refused again, and go round reloading.
 const ACCESS_FROM_SERVER = 'stella.design.accessFromServer';
+const SERVER_MARK = 'access';
 const session = {
   take(k) { try { const v = sessionStorage.getItem(k); sessionStorage.removeItem(k); return v; } catch { return null; } },
-  put(k, v) { try { sessionStorage.setItem(k, v); } catch { /* a private window: the next load uses the cache and confirms again */ } },
+  put(k, v) { try { sessionStorage.setItem(k, v); return sessionStorage.getItem(k) === v; } catch { return false; } },
 };
+
+/** Is this load to read the access list from the server? Either note, taken once. */
+function takeFromServer() {
+  const q = new URLSearchParams(location.search);
+  const inAddress = q.get(SERVER_MARK) === 'server';
+  if (inAddress) {
+    q.delete(SERVER_MARK);
+    history.replaceState(history.state, '', `${location.pathname}${q.toString() ? `?${q}` : ''}${location.hash}`);
+  }
+  return session.take(ACCESS_FROM_SERVER) === '1' || inAddress;
+}
+
+/** Load again, reading the access list from the server. */
+function restartFromServer() {
+  if (session.put(ACCESS_FROM_SERVER, '1')) { location.reload(); return; }
+  const q = new URLSearchParams(location.search);
+  q.set(SERVER_MARK, 'server');
+  location.replace(`${location.pathname}?${q}${location.hash}`);
+}
 
 /**
  * The access list came from this device's copy, so the app could draw
@@ -353,23 +376,25 @@ const session = {
  * or an account taken off the lists, which may no longer read it - starts the
  * app again from the server's copy. Not reachable: the device's copy stands,
  * the strip says the data is unconfirmed, and this runs again once the server
- * answers (start).
+ * answers (start). A check that fails anyway - the connection came back and
+ * went again - is tried again in half a minute, until one gets an answer.
  */
 let confirming = false;
+let confirmAgain = null;
 async function confirmAccess() {
   if (confirming || !Store.accessFromCache) return;
   confirming = true;
+  clearTimeout(confirmAgain);
   const r = await Store.confirmAccess();
   confirming = false;
-  if (r.failed) return;
+  if (r.failed) { confirmAgain = setTimeout(confirmAccess, 30000); return; }
   Store.accessFromCache = false;
   console.info('[access] confirmed by the server');
-  const restart = () => { session.put(ACCESS_FROM_SERVER, '1'); location.reload(); };
-  if (r.refused) { restart(); return; }
+  if (r.refused) { restartFromServer(); return; }
   const was = state.role;
   setAccess(r.access);
   Auth.refreshRole();
-  if (Auth.role !== was) { restart(); return; }
+  if (Auth.role !== was) { restartFromServer(); return; }
   state.access = currentAccess();
   drawAll();
 }
@@ -387,7 +412,7 @@ async function start() {
   // the last load found the role had changed. A copy that lists this person
   // nowhere is never trusted: they may have been added since, so the server
   // decides that one before anything is drawn.
-  const fromServer = session.take(ACCESS_FROM_SERVER) === '1';
+  const fromServer = takeFromServer();
   setAccess(await Store.loadAccess({ cacheFirst: !fromServer }));
   if (Auth.mode === 'firebase') Auth.refreshRole();
   if (Store.accessFromCache && Auth.role === ROLE.NONE) {

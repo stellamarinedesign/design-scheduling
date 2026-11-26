@@ -22,7 +22,7 @@
 // lead to file. Manual order drags (a mouse); on touch the row's ⋯ has Move
 // earlier / later.
 
-import { el, btn, menu, prefs, isPhone, canDrag, withMenu, pill as uiPill } from '../ui.js';
+import { el, btn, menu, prefs, isPhone, canDrag, withMenu, moveFold, pill as uiPill } from '../ui.js';
 import { state, personName } from '../state.js';
 import * as T from '../tree.js';
 import * as S from '../status.js';
@@ -142,11 +142,11 @@ function group(g, sort) {
 /** Product jobs with the customer, and Done this month: a line each, until opened. */
 function foldGroup(g) {
   const open = foldOpen[g.key];
-  const toggle = () => { foldOpen[g.key] = !open; rerender(); };
+  const toggle = () => moveFold(`my-${g.key}`, !open, () => { foldOpen[g.key] = !open; rerender(); });
   const wrap = el('section', { class: 'my-grp', 'aria-label': g.label },
     g.key === 'customer' ? customerFold(g.rows, open, toggle)
       : el('div', { class: 'row' }, btn(`${g.label} · ${g.rows.length}`, toggle, { cls: 'sm ghost', ic: open ? 'chevDown' : 'chevRight', attrs: { 'aria-expanded': String(open), 'data-fk': 'fold-done' } })));
-  if (open) wrap.append(el('div', { class: 'my-list', role: 'list' }, g.rows.map((t) => myRow(t, {}))));
+  if (open) wrap.append(el('div', { class: 'my-list', role: 'list', dataset: { fold: `my-${g.key}` } }, g.rows.map((t) => myRow(t, {}))));
   return wrap;
 }
 

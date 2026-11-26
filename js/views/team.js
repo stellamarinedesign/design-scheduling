@@ -14,7 +14,7 @@
 // any task's ⋯ (touch, and everywhere else). The open tasks inside it that
 // were following it go too, with one Undo.
 
-import { el, btn, canDrag } from '../ui.js';
+import { el, btn, canDrag, moveFold } from '../ui.js';
 import { state, personName } from '../state.js';
 import * as S from '../status.js';
 import * as A from '../actions.js';
@@ -80,17 +80,20 @@ function column(email) {
     if (g.folds) {
       const key = `${g.key}:${email}`;
       const isOpen = unfolded.has(key);
-      const toggle = () => {
+      const toggle = () => moveFold(`team-${key}`, !isOpen, () => {
         if (isOpen) unfolded.delete(key); else unfolded.add(key);
         const sec = document.querySelector(`.team-col[data-who="${CSS.escape(email)}"]`);
         sec?.replaceWith(column(email));
         wireAssignDrag(document.querySelector('.team-cols'));
-      };
+      });
       const line = g.key === 'customer' ? customerFold(g.rows, isOpen, toggle, { label: 'With the customer', key })
         : btn(`${S.LABEL.todo} ${g.rows.length}`, toggle, { cls: 'sm ghost', ic: isOpen ? 'chevDown' : 'chevRight', attrs: { 'aria-expanded': String(isOpen), 'data-fk': `fold-${key}` } });
       line.classList.add('team-fold');
       body.append(line);
       if (!isOpen) continue;
+      // The rows that fold, as one block so they can move (ui.js moveFold).
+      body.append(el('div', { class: 'lane-fold', dataset: { fold: `team-${key}` } }, g.rows.map((t) => laneRow(t, { drag: canDrag(), showPill: false }))));
+      continue;
     } else {
       body.append(el('div', { class: 'band' }, el('span', { class: 'lbl' }, S.LABEL[g.key]), el('span', { class: 'meta' }, String(g.rows.length))));
     }

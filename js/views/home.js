@@ -12,7 +12,7 @@
 //    more, picked afresh each day, weighted toward the oldest. ▶ Start on each.
 // 3. READY FOR CHECKING and 4. CREW: the team (views/crew.js).
 
-import { el, btn, prefs, isPhone, loadProblem } from '../ui.js';
+import { el, btn, prefs, isPhone, loadProblem, moveFold } from '../ui.js';
 import { state, isMine } from '../state.js';
 import * as T from '../tree.js';
 import * as S from '../status.js';
@@ -118,8 +118,8 @@ export function renderHome(root) {
   }
   if (filter === 'waiting' && customer.length) {
     const open = prefs.get('homeCustomer', false);
-    sec.append(customerFold(customer, open, () => { prefs.set('homeCustomer', !open); go('/home', { keepTask: true }); }));
-    if (open) sec.append(el('div', { class: 'grid' }, customer.map((t) => tile(t, { path: true, drag: false }))));
+    sec.append(customerFold(customer, open, () => moveFold('home-customer', !open, () => { prefs.set('homeCustomer', !open); go('/home', { keepTask: true }); })));
+    if (open) sec.append(el('div', { class: 'grid', dataset: { fold: 'home-customer' } }, customer.map((t) => tile(t, { path: true, drag: false }))));
   }
   inner.append(sec);
 

@@ -18,7 +18,7 @@ import { Store } from './store.js';
 import { openDialog, confirmDialog } from './dialog.js';
 import { openPasswordDialog } from './password.js';
 import { ROLE_LABEL, normaliseAccess, accountRows } from './access.js';
-import { el, btn, toast, prefs, isRefusal, plainWhy, plainNext, toastError } from './ui.js';
+import { el, btn, toast, prefs, isRefusal, plainWhy, plainNext, toastError, savedOn } from './ui.js';
 import { getPrefix, setPrefix, parseWebRoot } from './folders.js';
 import { VERSION } from './version.js';
 import { go } from './router.js';
@@ -110,8 +110,9 @@ function thisPc(markClean) {
     err.textContent = '';
     input.value = r.prefix;
     markClean();
-    toast(r.prefix ? 'Saved: Copy path now gives full paths on this PC' : 'Cleared');
+    savedOn(savePath, r.prefix ? 'Saved' : 'Cleared');
   };
+  const savePath = btn('Save path', () => save(), { cls: 'sm' });
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } });
   const status = el('span', { class: 'settings-row-sub' }, 'Checking…');
   const connect = btn('Connect Stella Systems', async () => {
@@ -135,7 +136,7 @@ function thisPc(markClean) {
   return section('This PC',
     el('div', { class: 'field' }, el('label', {}, 'Where Stella Systems is on this PC'), input, err,
       el('div', { class: 'hint' }, 'Learnt automatically the first time you paste a full folder path. Copy path uses it to give the whole Windows path for this PC.'),
-      el('div', {}, btn('Save path', save, { cls: 'sm' }))),
+      el('div', {}, savePath)),
     el('div', { class: 'settings-row' }, status, connect),
     el('div', { class: 'settings-row' },
       el('label', { class: 'check-line', for: 'pcHelper' }, helper, 'Open in Explorer is set up on this PC'),
@@ -161,13 +162,14 @@ function onTheWeb(markClean) {
       input.value = address ?? '';
       said.textContent = address ? `Set: ${address}` : 'Not set: on a phone, folder links only copy their path.';
       markClean();
-      toast(address ? 'Saved: folder links open in OneDrive on a phone' : 'Cleared: folder links copy their path on a phone');
+      savedOn(saveAddress, address ? 'Saved' : 'Cleared');
     } catch (e) { toast(isRefusal(e) ? 'Could not save: only the Design lead sets this.' : `It did not save: ${plainWhy(e)}. ${plainNext(e)}`, { warn: true }); }
   };
+  const saveAddress = btn('Save address', () => save(), { cls: 'sm' });
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } });
   return section('Stella Systems on the web',
     el('div', { class: 'settings-row-sub' }, 'Lets a folder link open in OneDrive on a phone. Open Stella Systems in OneDrive on the web, copy the address bar and paste it here. Team-wide.'),
-    el('div', { class: 'field' }, input, err, said, el('div', {}, btn('Save address', save, { cls: 'sm' }))));
+    el('div', { class: 'field' }, input, err, said, el('div', {}, saveAddress)));
 }
 
 function backlog(markClean) {
@@ -232,14 +234,15 @@ function workday(markClean) {
     try {
       await p;
       markClean();
-      toast(`Workday saved: ${said}`);
+      savedOn(saveDay);
     } catch (e) { toast(isRefusal(e) ? 'Could not save: only the Design lead sets the workday.' : `The workday did not save: ${plainWhy(e)}. ${plainNext(e)}`, { warn: true }); }
   };
+  const saveDay = btn('Save workday', () => save(), { cls: 'sm' });
   return section('Workday',
     el('div', { class: 'settings-row-sub' }, 'For time tracking, team-wide: a running timer pauses at lunch, restarts after it, and stops at finish. Each person gets a warning five minutes before.'),
     el('div', { class: 'row workday-row' }, ...fields),
     err,
-    el('div', {}, btn('Save workday', save, { cls: 'sm' })));
+    el('div', {}, saveDay));
 }
 
 /**

@@ -1100,13 +1100,18 @@ here:
 | Dropdowns: look clickable, flip at the edge, keys, search in long lists | Chevrons on pickers; menus flip above, take arrows, Home/End and type-to-jump; pickers search. |
 | Motion | As in Motion above: 120–260ms, from the tokens, ease-out entrances, zero under reduced motion. |
 
+**Done since** (2026-11-26): folds move. A section, a Done or Cancelled strip, a waiting fold, a
+Team column's To do and a designer's folds grow open and shrink shut, 180ms opening and a little
+quicker shutting, ease-out, height and opacity only (`ui.moveFold`; the views redraw whole, so the
+body is found again by `data-fold`). Under reduced motion they snap. Saves that leave their button on
+screen (Settings' path, address and workday, the time export's rate) confirm on the button:
+"Saved" with a tick, one pulse, back after a moment (`ui.savedOn`). A refusal is still a toast that
+says why.
+
 **Still open** (not done in the 2026-11-23 pass, each its own change):
 
-- Collapsible groups snap open; the skill would animate their height (≤200ms). Each fold
-  redraws its whole view, so they would first have to fold in place.
 - Long sidebar names wrap to two lines rather than one line and an ellipsis (kept: two lines
   read better at 240px).
-- Saves confirm with a toast rather than the button's own label ("Saved") and one pulse.
 
 **A folder's files** (2026-11-26): under each folder link in the task panel, on a PC whose Stella
 Systems folder is connected (Edge or Chrome), the newest PDFs, drawings and checklists in it: a
@@ -1119,6 +1124,17 @@ connected yet, one line under the links offers Connect, or "Not on this PC" to h
 **Opening a folder** (2026-11-26): the row's one button is **Open** (File Explorer, with the PC
 helper: Settings › This PC), **OneDrive** on a phone when Stella Systems on the web is set, else
 **Copy path**. The others are in its ⋯.
+
+**Due on Home** (2026-11-26): the team's open work overdue or due within 7 days, under My work,
+only when there is any. Lane rows (pill, title, who and where, initials) with the due words at the
+end: "Overdue 3 days" in Fix red and semibold, "Due today" and "Due tomorrow" in amber, the rest in
+secondary ink. Six rows, then "See all N".
+
+**The last 12 weeks on Team** (2026-11-26): four figures above the columns, each a label in micro
+caps, the value at 24px semibold (proportional figures) and a muted line under it: Done (with a bar
+per week, thin grey bars from one baseline, this week darker), On time, Added to done, Wait for
+check. Single series, so no legend; the bar strip's accessible name and each bar's title carry
+every value. Each person's column adds one line of the same. Archived work counts.
 
 **Waiting, in two** (2026-11-26): a Waiting list (Home, Crew, Team, a designer's Tasks) shows the
 waits somebody has to chase. Product jobs with the customer (a product line's job whose "waits on

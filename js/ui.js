@@ -136,6 +136,69 @@ export const btn = (text, onClick, { cls = '', ic = null, title = null, attrs = 
   class: `btn ${cls}`.trim(), type: 'button', onclick: onClick, title, attrs,
 }, ic ? icon(ic, 16) : null, text);
 
+/**
+ * A FOLD THAT MOVES (stella-internal-ux, "Accordions and collapsible
+ * groups": height, 200ms or less, the one layout property allowed to
+ * animate). The views redraw whole, so a fold cannot simply ease its own
+ * height: shutting animates the open body away first and then redraws;
+ * opening redraws and then grows the new body from nothing. The body is found
+ * again across the redraw by `data-fold="<key>"`. Reduced motion, or a body
+ * that is not there yet (a redraw still to come), snaps as before.
+ */
+const FOLD_MS = 180;
+const FOLD_EASE = 'cubic-bezier(.23, 1, .32, 1)';
+export function moveFold(key, opening, redraw) {
+  const find = () => document.querySelector(`[data-fold="${CSS.escape(key)}"]`);
+  const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || !Element.prototype.animate;
+  if (still) { redraw(); return; }
+  if (!opening) {
+    const body = find();
+    if (!body) { redraw(); return; }
+    body.style.overflow = 'hidden';
+    // Shutting is a little quicker than opening: the system answering, not the person deciding.
+    const a = body.animate([{ height: `${body.offsetHeight}px`, opacity: 1 }, { height: '0px', opacity: 0 }],
+      { duration: Math.round(FOLD_MS * 0.8), easing: FOLD_EASE, fill: 'forwards' });
+    a.finished.then(redraw, redraw);
+    return;
+  }
+  redraw();
+  const grow = () => {
+    const body = find();
+    if (!body) return false;
+    const h = body.offsetHeight;
+    body.style.overflow = 'hidden';
+    const done = () => { body.style.overflow = ''; };
+    body.animate([{ height: '0px', opacity: 0 }, { height: `${h}px`, opacity: 1 }], { duration: FOLD_MS, easing: FOLD_EASE }).finished.then(done, done);
+    return true;
+  };
+  if (!grow()) requestAnimationFrame(grow);
+}
+
+/**
+ * A save confirmed on its own button (stella-internal-ux, "Success"): it says
+ * "Saved" with a tick, pulses once, and is itself again after a moment. Its
+ * width holds, so nothing beside it moves; aria-live says it to a screen
+ * reader. For a button that stays on screen after saving: one that closes a
+ * box needs nothing, and a refusal is still a toast that says why.
+ */
+export function savedOn(b, word = 'Saved') {
+  if (!b) return;
+  clearTimeout(b.savedTimer);
+  if (!b.savedLabel) b.savedLabel = [...b.childNodes];
+  b.style.minWidth = `${b.offsetWidth}px`;
+  b.setAttribute('aria-live', 'polite');
+  b.replaceChildren(icon('check', 16), word);
+  b.classList.remove('saved');
+  void b.offsetWidth;            // so a second save pulses again
+  b.classList.add('saved');
+  b.savedTimer = setTimeout(() => {
+    b.replaceChildren(...b.savedLabel);
+    b.savedLabel = null;
+    b.classList.remove('saved');
+    b.style.minWidth = '';
+  }, 1800);
+}
+
 /** The status pill. As a button it opens the status menu (one tap to change). */
 // The word sits in its own span, which is what ends in "…" when a row runs
 // short of room. The pill itself is never clipped, so its touch target can

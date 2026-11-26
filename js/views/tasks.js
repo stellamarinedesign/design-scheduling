@@ -32,7 +32,7 @@
 // with none listed, are not here. A line's ⋯ switches it on and off the
 // Tasks list; "Product line" in a category's ⋯ makes it one.
 
-import { el, icon, iconBtn, btn, pill, dot, menu, prefs, isPhone, withMenu } from '../ui.js';
+import { el, icon, iconBtn, btn, pill, dot, menu, prefs, isPhone, withMenu, moveFold } from '../ui.js';
 import { state, node, personName } from '../state.js';
 import * as T from '../tree.js';
 import * as S from '../status.js';
@@ -215,7 +215,7 @@ function categorySection(g) {
   const open = isExpanded(g);
   const cats = T.childrenOf(idx, g.id).filter(T.isGroupLike).length;
   const count = T.openJobCount(idx, g.id);
-  const toggle = () => { setExpanded([g.id], !open); rerender(); };
+  const toggle = () => moveFold(`grp-${g.id}`, !open, () => { setExpanded([g.id], !open); rerender(); });
   const head = el('div', {
     class: 'grp-head', dataset: { dropInto: g.id },
     draggable: state.role === 'lead' ? 'true' : null,
@@ -240,7 +240,7 @@ function categorySection(g) {
     class: `grp${master ? ' master' : ''}${open ? '' : ' closed'} span`,
     dataset: { group: g.id, id: g.id }, 'aria-label': T.nameOf(g),
   }, head);
-  if (open) sec.append(...containerBody(g));
+  if (open) sec.append(el('div', { class: 'grp-body', dataset: { fold: `grp-${g.id}` } }, ...containerBody(g)));
   return sec;
 }
 
@@ -248,7 +248,7 @@ function categorySection(g) {
 function categoryTile(g) {
   const idx = state.listIdx;
   const jobs = T.jobsUnder(idx, g.id).filter((j) => S.isOpen(j.status));
-  const expand = () => { setExpanded([g.id], true); rerender(); };
+  const expand = () => moveFold(`grp-${g.id}`, true, () => { setExpanded([g.id], true); rerender(); });
   const a = el('article', {
     class: 'card cat-tile', dataset: { id: g.id, dropInto: g.id, group: g.id },
     draggable: state.role === 'lead' ? 'true' : null,
@@ -542,15 +542,17 @@ function doneFold(parentId, done, page, kind = 'done') {
   const inLine = T.isLine(page);
   const wrap = el('div', { class: 'done-fold' },
     el('div', { class: 'row' },
-      btn(`${word} ${done.length}`, () => { prefs.set(key, !openFold); rerender(); }, { cls: 'sm ghost', ic: openFold ? 'chevDown' : 'chevRight', attrs: { 'aria-expanded': String(openFold) } }),
+      btn(`${word} ${done.length}`, () => moveFold(key, !openFold, () => { prefs.set(key, !openFold); rerender(); }), { cls: 'sm ghost', ic: openFold ? 'chevDown' : 'chevRight', attrs: { 'aria-expanded': String(openFold) } }),
       el('span', { class: 'sp' }),
       inLine ? el('span', { class: 'meta' }, 'Rows of the Progress page') : btn(`Archive all ${word.toLowerCase()}`, () => A.archive(done.map((d) => d.id)), { cls: 'sm ghost', ic: 'archive' })));
   if (openFold) {
     const shown = all ? sorted : sorted.slice(0, 4);
     const mode = viewMode(page);
-    if (mode === 'list') wrap.append(el('div', { class: 'rows' }, shown.map((t) => row(t, { assignee: true, drag: false }))));
-    else wrap.append(el('div', { class: 'grid' }, shown.map((t) => tile(t, { assignee: true, drag: false, menuExtra: [{ label: 'Archive', icon: 'archive', onSelect: () => A.archive(t.id) }] }))));
-    if (sorted.length > 4) wrap.append(el('div', { class: 'more-row' }, btn(all ? 'Show fewer' : `Show all ${sorted.length}`, () => { prefs.set(allKey, !all); rerender(); }, { cls: 'ghost sm' })));
+    const body = el('div', { class: 'done-fold', dataset: { fold: key } });
+    if (mode === 'list') body.append(el('div', { class: 'rows' }, shown.map((t) => row(t, { assignee: true, drag: false }))));
+    else body.append(el('div', { class: 'grid' }, shown.map((t) => tile(t, { assignee: true, drag: false, menuExtra: [{ label: 'Archive', icon: 'archive', onSelect: () => A.archive(t.id) }] }))));
+    if (sorted.length > 4) body.append(el('div', { class: 'more-row' }, btn(all ? 'Show fewer' : `Show all ${sorted.length}`, () => { prefs.set(allKey, !all); rerender(); }, { cls: 'ghost sm' })));
+    wrap.append(body);
   }
   return wrap;
 }

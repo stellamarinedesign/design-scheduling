@@ -15,7 +15,7 @@
 // when nothing has come from them for a few days. Their product jobs with the
 // customer fold into one line at the foot of the lane (status.js splitWaits).
 
-import { el, btn, iconBtn, pill, dot, avatar, countText } from '../ui.js';
+import { el, btn, iconBtn, pill, dot, avatar, countText, moveFold } from '../ui.js';
 import { state, personName } from '../state.js';
 import * as T from '../tree.js';
 import * as S from '../status.js';
@@ -153,8 +153,9 @@ export function crewSection() {
     for (const t of lane.rows) box.append(laneRow(t, { track: true }));
     if (lane.customer.length) {
       const open = customerOpen.has(email);
-      box.append(customerFold(lane.customer, open, () => { if (open) customerOpen.delete(email); else customerOpen.add(email); redraw(); }, { key: `customer-${email}` }));
-      if (open) for (const t of lane.customer) box.append(laneRow(t, { track: true }));
+      const key = `customer-${email}`;
+      box.append(customerFold(lane.customer, open, () => moveFold(key, !open, () => { if (open) customerOpen.delete(email); else customerOpen.add(email); redraw(); }), { key }));
+      if (open) box.append(el('div', { class: 'lane-fold', dataset: { fold: key } }, lane.customer.map((t) => laneRow(t, { track: true }))));
     }
     sec.append(box);
   }

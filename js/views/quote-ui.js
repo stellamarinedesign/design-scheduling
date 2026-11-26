@@ -12,7 +12,7 @@
 // time; before the job is Done the box says the time is so far, and an
 // internal document says so too.
 
-import { el, btn, toast, prefs, isRefusal, loadProblem, plainWhy, plainNext } from '../ui.js';
+import { el, btn, toast, prefs, isRefusal, loadProblem, plainWhy, plainNext, savedOn } from '../ui.js';
 import { state, node, realName } from '../state.js';
 import * as QT from '../quote.js';
 import { Store } from '../store.js';
@@ -273,7 +273,7 @@ export function quoteSettings(section, markClean) {
     try { q = (await Store.getQuote()) ?? {}; err.textContent = ''; }
     catch (e) { err.textContent = isRefusal(e) ? 'This account is not allowed to read the export settings.' : `The export settings did not load: ${plainWhy(e)}. Open Settings again to retry.`; }
     rate.value = rateText(q.rate);
-    rateSlot.replaceChildren(el('label', { class: 'field' }, el('span', { class: 'lbl' }, 'Default rate ($/h)'), rate), btn('Save rate', saveRate, { cls: 'sm' }));
+    rateSlot.replaceChildren(el('label', { class: 'field' }, el('span', { class: 'lbl' }, 'Default rate ($/h)'), rate), saveRateBtn);
     draw();
   };
 
@@ -331,9 +331,10 @@ export function quoteSettings(section, markClean) {
       p.catch((e) => toast(isRefusal(e) ? 'The rate did not save: only the Design lead sets it.' : `The rate did not save: ${plainWhy(e)}.`, { warn: true }));
       return;
     }
-    try { await p; q = { ...q, rate: r.rate }; rate.value = rateText(r.rate); markClean(); toast(said); }
+    try { await p; q = { ...q, rate: r.rate }; rate.value = rateText(r.rate); markClean(); savedOn(saveRateBtn, r.rate === null ? 'Cleared' : 'Saved'); }
     catch (e) { toast(isRefusal(e) ? 'Could not save: only the Design lead sets the rate.' : `The rate did not save: ${plainWhy(e)}. ${plainNext(e)}`, { warn: true }); }
   };
+  const saveRateBtn = btn('Save rate', () => saveRate(), { cls: 'sm' });
   rate.addEventListener('input', () => { rateErr.textContent = ''; rate.removeAttribute('aria-invalid'); rate.removeAttribute('aria-describedby'); });
   rate.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); saveRate(); } });
 
