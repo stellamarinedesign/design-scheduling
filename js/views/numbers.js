@@ -20,7 +20,7 @@ import * as MX from '../metrics.js';
 import { Store } from '../store.js';
 import { dayLabel } from '../dates.js';
 import { openTask, redraw } from '../router.js';
-import { statusMenu, taskMenu, whoBadge } from './tile.js';
+import { statusMenu, taskMenu } from './tile.js';
 
 // ---------------------------------------------------------------------------
 // Home: Due
@@ -55,7 +55,6 @@ function dueRow({ t, days }) {
     el('div', { class: 'lrow-main' },
       el('div', { class: 'lrow-title' }, t.title),
       el('div', { class: 'lrow-sub' }, [t.assignee ? personName(t.assignee) : null, where || 'Not in a category'].filter(Boolean).join(' · '))),
-    whoBadge(t.assignee) ?? el('span'),
     el('span', { class: `due-when${days < 0 ? ' late' : days <= 1 ? ' soon' : ''}`, title: dayLabel(t.due) }, MX.dueWords(days)),
     iconBtn('more', `More actions for ${t.title}`, (e) => { e.stopPropagation(); taskMenu(e.currentTarget, t); }, 'sm'));
   return withMenu(r, (at) => taskMenu(r.querySelector(':scope > .ib') ?? r, t, { at }));

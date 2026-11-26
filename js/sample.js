@@ -133,7 +133,14 @@ export async function loadSample() {
   const gone = task('Twin-membrane frame for a custom build', water, 'cancelled', 9, { cancelled: { by: me, at: ago(9), reason: 'Customer cancelled (verbal)', prevStatus: 'in_progress' } });
   say(gone, 'cancel', 'Customer cancelled (verbal)', 9, { from: 'in_progress', to: 'cancelled' });
   task('Aircon unit drawings', fixes, 'todo', 24);
-  task('Watertight door seal detail', fixes, 'todo', 17);
+  task('Watertight door seal detail', fixes, 'todo', 17, { due: dayOf(new Date(Date.now() - 3 * DAY)) });
+  // Approved work over the last weeks, for the Team tab's numbers: some on
+  // time, some late, some with no due date.
+  [[2, 1, alex], [5, -2, alex], [9, 0, sam], [12, null, alex], [16, 3, sam], [23, -5, me], [30, 1, alex], [44, null, sam], [58, 2, me]]
+    .forEach(([daysAgo, spare, who], i) => task(`Finished drawing set ${i + 1}`, fixes, 'done', daysAgo, {
+      assignee: who, createdAt: ago(daysAgo + 6 + i), doneAt: ago(daysAgo), submittedAt: ago(daysAgo + 1), checkedAt: ago(daysAgo), checkedBy: me,
+      due: spare === null ? null : dayOf(new Date(Date.now() - (daysAgo - spare) * DAY)),
+    }));
   task('Hinge plate thickness', fixes, 'todo', 4);
   task('Laser checklist template v2', laser, 'in_progress', 0.1);
   const big = task('Nesting rules for the cutting sheet', laser, 'todo', 40);

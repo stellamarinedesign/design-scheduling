@@ -773,7 +773,8 @@ function foldersSection(n) {
   if (connect) sec.append(connect);
   if (!can) return sec;
   const err = el('div', { class: 'form-err', role: 'alert' });
-  const input = el('input', { class: 'input', type: 'text', placeholder: 'Paste a folder path', 'aria-label': 'Paste a folder path', spellcheck: 'false' });
+  // An add box (data-keep): the folder it links shows at once, and the box keeps its focus.
+  const input = el('input', { class: 'input', type: 'text', placeholder: 'Paste a folder path', 'aria-label': 'Paste a folder path', spellcheck: 'false', dataset: { keep: `folder-${n.id}` } });
   const add = (raw) => {
     const r = normaliseFolder(raw ?? input.value);
     if (r.error) { err.textContent = r.error; return; }

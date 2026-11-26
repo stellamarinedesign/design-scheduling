@@ -923,11 +923,13 @@ input::-ms-reveal { display: none; }
 
 /* ── Due on Home, and the Team tab's last 12 weeks (views/numbers.js) ── */
 .due-list { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
-.lrow.due-row { grid-template-columns: 124px minmax(0, 1fr) auto auto 30px; }
+.lrow.due-row { grid-template-columns: 124px minmax(0, 1fr) auto 30px; }
 .due-when { font-size: var(--fs-sm); color: var(--text2); white-space: nowrap; font-variant-numeric: tabular-nums; text-align: right; }
 .due-when.soon { color: var(--amber-text); }
 .due-when.late { color: var(--st-fix-text); font-weight: 600; }
 .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--sp-3); }
+/* A phone: two to a row, so the columns below are still in reach. */
+@media (max-width: 699px) { .stats { grid-template-columns: 1fr 1fr; gap: var(--sp-2); } .stat { padding: 10px 12px; min-height: 0; } .stat-value { font-size: 20px; } }
 .stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; min-height: 96px; }
 .stat.skel { min-height: 96px; }
 .stat-label { font-size: var(--fs-micro); font-weight: 700; letter-spacing: var(--label-spacing); text-transform: uppercase; color: var(--text3); }
@@ -1616,7 +1618,6 @@ button.rc:hover i { border-color: var(--text2); }
   .lrow > .ib { grid-area: more; }
   .lrow.due-row { grid-template-areas: "pill when more" "main main main"; }
   .due-row > .due-when { grid-area: when; }
-  .due-row > .av { display: none; }
   .lrow-title { white-space: normal; overflow-wrap: break-word; -webkit-hyphens: auto; hyphens: auto; }
   .lrow .ib, .lrow > .ib { width: 44px; height: 44px; }
   .team-cols { grid-template-columns: 1fr; }
