@@ -843,6 +843,8 @@ input::-ms-reveal { display: none; }
 .arch-row + .arch-row { border-top: 1px solid var(--border); }
 
 /* Settings */
+.settings-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
+.settings-head .meta { font-variant-numeric: tabular-nums; }
 .settings-section { display: flex; flex-direction: column; gap: var(--sp-2); }
 .settings-card { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; display: flex; flex-direction: column; gap: var(--sp-3); }
 .settings-row { display: flex; gap: var(--sp-3); align-items: center; justify-content: space-between; flex-wrap: wrap; }

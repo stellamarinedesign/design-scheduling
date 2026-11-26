@@ -36,14 +36,16 @@ const THEME_KEY = 'stella.design.theme';
 export function openSettings() {
   return openDialog((box, close, { dismiss, markClean }) => {
     box.classList.add('settings');
-    box.append(el('h3', {}, 'Settings'));
+    // The build sits beside the heading, so checking which one is on screen
+    // needs no scroll to the foot of a long box.
+    box.append(el('div', { class: 'settings-head' }, el('h3', {}, 'Settings'), el('span', { class: 'meta' }, `Build ${VERSION}`)));
     const lead = state.role === 'lead';
     const designs = lead || state.role === 'designer';
     box.append(...[account(close), yourName(markClean), appearance(), designs ? thisPc(markClean) : null, lead ? onTheWeb(markClean) : null, lead ? backlog(markClean) : null, lead ? workday(markClean) : null, lead ? quoteSettings(section, markClean) : null, lead ? tasksOnYou() : null, lead ? storage() : null, lead || Store.mode === 'local' ? data(close) : null].filter(Boolean));
     const acc = el('div', { class: 'settings-section', hidden: true });
     box.append(acc);
     if (Auth.mode === 'firebase' && Auth.isMaster) { acc.hidden = false; accounts(acc, markClean); }
-    box.append(el('div', { class: 'actions' }, btn('Close', dismiss), el('span', { class: 'sp' }), el('span', { class: 'meta' }, `Build ${VERSION}`)));
+    box.append(el('div', { class: 'actions' }, btn('Close', dismiss)));
   }, { label: 'Settings', wide: true, guard: true });
 }
 
