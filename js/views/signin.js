@@ -3,9 +3,20 @@
 
 import { el, btn, withReveal, refuse, plainWhy } from '../ui.js';
 import { Auth, friendlyAuthError } from '../auth.js';
+import { hubSilent, SILENT_LINE } from '../hub-bridge.js';
 
 export function renderSignIn(app) {
   app.textContent = '';
+  // Up because the hub did not answer: say so, with the way back to it
+  // (hub-bridge.js, hubSilent). Its button is secondary; Sign in stays the one primary.
+  const silent = hubSilent({ mode: Auth.mode, hubState: Auth.hubState, host: location.hostname });
+  const again = silent ? btn('Try Hubinator again', () => {
+    again.style.minWidth = `${again.offsetWidth}px`;
+    again.disabled = true;
+    again.lastChild.textContent = 'Trying again…';
+    location.reload();
+  }) : null;
+  const why = silent ? el('div', { class: 'callout' },el('div', { class: 'callout-body' }, SILENT_LINE), el('div', {}, again)) : null;
   const email = el('input', { class: 'input', type: 'email', id: 'siEmail', autocomplete: 'username', spellcheck: 'false' });
   const pw = el('input', { class: 'input', type: 'password', id: 'siPw', autocomplete: 'current-password' });
   const err = el('div', { class: 'form-err', role: 'alert', id: 'siErr' });
@@ -17,7 +28,7 @@ export function renderSignIn(app) {
     // fresh load: Firebase remembers the sign-in and the shell starts signed in.
     try { await Auth.signIn(email.value, pw.value); location.reload(); }
     catch (e) {
-      err.textContent = friendlyAuthError(e);
+      err.textContent = friendlyAuthError(e, { hubSilent: silent });
       go.disabled = false;
       go.lastChild.textContent = 'Sign in';
       // A wrong address or password: the field it is about shakes once.
@@ -28,6 +39,7 @@ export function renderSignIn(app) {
   app.append(el('header', { class: 'hd' }, el('span', { class: 'hd-logo', 'aria-hidden': 'true' }), el('span', { class: 'hd-title' }, 'Design Scheduling')),
     el('main', { class: 'view' }, el('div', { class: 'box', style: { margin: '10vh auto 0' } },
       el('h3', {}, 'Sign in'),
+      why,
       el('div', { class: 'field' }, el('label', { for: 'siEmail' }, 'Email'), email),
       el('div', { class: 'field' }, el('label', { for: 'siPw' }, 'Password'), withReveal(pw)),
       err,

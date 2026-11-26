@@ -17,6 +17,7 @@
 
 import { normaliseAccess, roleOf, isMaster } from './access.js';
 import { LOCAL_AS } from './team.js';
+import { SILENT_REFUSED } from './hub-bridge.js';
 
 // Plain {} rather than normaliseAccess({}) at load: access.js imports
 // tidyEmail from here, and calling into it while the two modules are still
@@ -181,11 +182,15 @@ export const Auth = {
   get isMaster() { return this.mode === 'firebase' && Boolean(this.user?.email) && isMaster(access, this.user.email); },
 };
 
-/** Firebase's error codes are not sentences. Make them ones. */
-export function friendlyAuthError(e) {
+/**
+ * Firebase's error codes are not sentences. Make them ones. `hubSilent`: the
+ * own form is up because the hub did not answer (hub-bridge.js), so a refused
+ * password may well be a Hubinator one, and says so.
+ */
+export function friendlyAuthError(e, { hubSilent = false } = {}) {
   const code = e?.code ?? '';
   if (code.includes('invalid-credential') || code.includes('wrong-password')
-      || code.includes('user-not-found')) return 'Wrong email or password.';
+      || code.includes('user-not-found')) return hubSilent ? SILENT_REFUSED : 'Wrong email or password.';
   if (code.includes('weak-password')) return 'Firebase wants a stronger password — at least six characters.';
   if (code.includes('operation-not-allowed')) return 'Making accounts from the app is switched off in the Firebase console (Authentication, Sign-in method, Email/Password, "Enable create").';
   if (code.includes('email-already-in-use')) return 'That address already has a Firebase user.';

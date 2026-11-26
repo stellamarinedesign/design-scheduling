@@ -19,6 +19,7 @@ import * as RG from '../js/register.js';
 import * as PX from '../js/import/progress.js';
 import * as QT from '../js/quote.js';
 import * as HB from '../js/hub-bridge.js';
+import { friendlyAuthError } from '../js/auth.js';
 import * as SC from '../js/saved-copy.js';
 import * as HC from '../js/hub-card.js';
 import * as FF from '../js/folder-files.js';
@@ -2022,6 +2023,23 @@ export async function run() {
     expect(HB.noUserAction({ started: false, hubState: 'broken' }), 'nothing');
     expect(HB.noUserAction({ started: false, hubState: 'unreachable' }), 'signin');
     expect(HB.noUserAction({ started: false, hubState: null }), 'signin', 'no hub file');
+  });
+  test("the own form says why it is there only when the hub did not answer, on the live site", () => {
+    const live = HB.HUB_SITE;
+    expect(HB.hubSilent({ mode: 'firebase', hubState: 'unreachable', host: live }), true, 'unreachable');
+    expect(HB.hubSilent({ mode: 'firebase', hubState: null, host: live }), true, 'no hub file');
+    for (const s of ['in', 'legacy', 'none', 'broken']) expect(HB.hubSilent({ mode: 'firebase', hubState: s, host: live }), false, s);
+    expect(HB.hubSilent({ mode: 'firebase', hubState: null, host: 'localhost' }), false, 'no hub file off the live site');
+    expect(HB.hubSilent({ mode: 'local', hubState: null, host: live }), false, 'local mode');
+    expect(HB.hubSilent({ mode: 'local', hubState: 'unreachable', host: live }), false, 'local mode, whatever the hub said');
+  });
+  test('a refused password says what is true only while the hub is silent', () => {
+    for (const code of ['auth/invalid-credential', 'auth/wrong-password', 'auth/user-not-found']) {
+      expect(friendlyAuthError({ code }), 'Wrong email or password.', code);
+      expect(friendlyAuthError({ code }, { hubSilent: true }), HB.SILENT_REFUSED, `${code}, hub silent`);
+    }
+    expect(friendlyAuthError({ code: 'auth/too-many-requests' }, { hubSilent: true }), 'Too many attempts — wait a minute and try again.', 'other words unchanged');
+    expect(friendlyAuthError({ code: 'auth/network-request-failed' }, { hubSilent: true }), 'No connection to Firebase. Check the network.');
   });
   test("connect options call the app's own Firebase auth", () => {
     const calls = [];

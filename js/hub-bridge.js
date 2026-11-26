@@ -106,6 +106,34 @@ export function noUserAction({ started, hubState }) {
 }
 
 /**
+ * THE APP'S OWN FORM WHILE THE HUB IS SILENT (2026-11-27, from Hubinator's
+ * brief FALLBACK_FORM_WORDS). The form shows when the hub did not answer: no
+ * hub file in time, or connect said `unreachable`. A login already linked has
+ * no password of its own here any more (linking swapped it for the hub's
+ * key, which nobody knows), so its person can only type their Hubinator
+ * password, and "Wrong email or password" would be untrue and give them
+ * nothing to do; a few tries more and Firebase's "Too many attempts" can
+ * refuse the hub's own key for a while once it is back. So the form says why
+ * it is there, and a refused password says what is true.
+ *
+ * The live site only: anywhere else (localhost, a worktree, the tests page)
+ * there is never a hub file, so its absence says nothing about the hub. Local
+ * mode never shows the form. `in` and `legacy` come with a user; `none` and
+ * `broken` draw the hub's own card instead. The form itself goes at the
+ * clean-up release (`strict: true`), with the hub's own card in its place.
+ */
+export const HUB_SITE = 'stellamarinedesign.github.io';
+export const SILENT_LINE = "Hubinator isn't answering, so this is Design Scheduling's own sign-in. A Hubinator password won't work here.";
+export const SILENT_REFUSED = "That password doesn't sign in here. If it's your Hubinator password, try Hubinator again in a minute.";
+
+/** Is the app's own form up because the hub did not answer? */
+export function hubSilent({ mode, hubState, host }) {
+  if (mode !== 'firebase') return false;
+  if (hubState === 'unreachable') return true;
+  return hubState == null && host === HUB_SITE;
+}
+
+/**
  * The hub's person changed in another tab (signed out, or somebody else):
  * reload when they are no longer the app's own signed-in address. A device
  * the hub left alone (`legacy`) is never troubled.
