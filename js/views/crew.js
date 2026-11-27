@@ -135,7 +135,7 @@ export function crewSection() {
     el('div', { class: 'sec-head' }, el('h2', { class: 'h2' }, 'Crew'),
       crew.length ? el('span', { class: 'meta' }, 'Bars show time in the current status') : null));
   if (!crew.length) {
-    sec.append(el('div', { class: 'empty' }, 'No designers yet. A master adds them under the cog, in Accounts; their work shows here, a lane each.'));
+    sec.append(el('div', { class: 'empty' }, 'No designers yet. An admin adds them in the hub, under Accounts; their work shows here, a lane each.'));
     return sec;
   }
   sec.append(el('div', { class: 'lrow with-track axis', 'aria-hidden': 'true' }, el('span', {}), el('span', {}),

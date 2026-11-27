@@ -30,13 +30,21 @@ parent. Starting here is what loads this file, the project skills and the Impecc
   `../../Stella-Hubinator/hub`), since 2026-11-23. One Stella login signs this app in to its
   OWN project, with a key the hub holds.
   - `js/hub-bridge.js` loads `/core/v1/hub.js` from the site root and calls `Hub.connect`
-    before the app's own auth listener. It fails open: with no hub (localhost, local mode,
-    the tests page, or the hub down) the app signs in as it always did.
+    before the app's own auth listener, with no `legacy` and no `strict`. A device already
+    signed in carries on whatever the hub does.
+  - **No sign-in form of the app's own on the live site** (2026-11-27). A device that isn't
+    signed in and can't reach the hub gets the hub's "The hub cannot be reached" card. Where
+    the hub can't draw it (its file didn't load, connect threw, or its card's code didn't
+    load), the app draws its own copy, with the same words, and Try again reloads
+    (`noUserAction` 'cannot', `views/signin.js`).
+  - The old form shows only off the live site (localhost with `?local=0`), where there is never
+    a hub, for building and testing. It goes at the clean-up release (`strict: true`).
+  - On screen it is "the hub" in sentences, never "Hubinator" (a title may name it), and
+    "admin" for whoever may change the accounts, never "master". The data keeps `masters`.
   - People and roles are given in Hubinator, under Accounts; it writes `settings/access`.
     The cog's Accounts panel only names people (`people/{email}`) and shows roles. Never
     put a role editor back: `Store.saveAccess` rewrites the whole document.
   - When signed in through the hub (`Auth.viaHub`), Password and Sign out are the hub's.
-    The app's own sign-in form shows only when the hub can't be reached.
   - `js/hub-card.js` is the app's card on the hub page ("Ready for check", leads only). The
     hub imports it, with a Firestore Lite handle: it must not import the store or Firebase.
   - The contract is the comment at the top of the hub's `core/v1/hub.js`; never copy it

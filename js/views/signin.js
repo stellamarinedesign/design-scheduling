@@ -91,7 +91,7 @@ export function renderNotListed(app, address, { canClaim = false } = {}) {
       el('h1', { class: 'h1' }, canClaim ? 'A new Design Scheduling' : 'Signed in, but not listed yet'),
       el('p', {}, canClaim
         ? `Nobody has set this app up yet. ${address} can claim it as the Design lead, and then add everyone else under the cog.`
-        : `${address ?? 'This account'} can sign in, but nobody has given it a role, so there is nothing to show. Ask the Design lead to add it under the cog.`),
+        : `${address ?? 'This account'} can sign in, but nobody has given it a role, so there is nothing to show. Ask an admin to give it one in the hub.`),
       err,
       el('div', { class: 'row' }, claim, btn('Sign out', async () => { await Auth.signOutEverywhere(); location.reload(); })))));
 }

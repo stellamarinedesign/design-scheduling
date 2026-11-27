@@ -44,7 +44,7 @@ export function renderTeam(root) {
     return;
   }
   if (!TM.crewOf(state.access).length) {
-    inner.append(el('div', { class: 'empty' }, el('span', {}, el('strong', {}, 'No designers yet. '), 'A master adds them under the cog, in Accounts, with a temporary password. Their columns appear here.')));
+    inner.append(el('div', { class: 'empty' }, el('span', {}, el('strong', {}, 'No designers yet. '), 'An admin adds them in the hub, under Accounts. Their columns appear here.')));
   }
   inner.append(teamNumbers());
   const cols = el('div', { class: 'team-cols' });
