@@ -20,7 +20,7 @@ import * as S from '../status.js';
 import * as A from '../actions.js';
 import * as TM from '../team.js';
 import { ageLabel } from '../dates.js';
-import { ROLE_LABEL, roleOf } from '../access.js';
+import { roleOf } from '../access.js';
 import { laneRow, face, seenLine } from './crew.js';
 import { customerFold } from './tile.js';
 import { teamNumbers, personNumbers } from './numbers.js';
@@ -67,7 +67,9 @@ function column(email) {
       el('div', { class: 'row' }, face(email),
         el('div', { class: 'team-who' },
           el('h2', {}, personName(email)),
-          el('span', { class: 'meta' }, `${ROLE_LABEL[role] ?? ''}${you && role === 'lead' ? ' · yours includes the unassigned' : ''}`))),
+          // No role under the name: a person's role is shown only on an
+          // admin's accounts pages (owner, 2026-11-27).
+          you && role === 'lead' ? el('span', { class: 'meta' }, 'Includes the unassigned') : null)),
       el('div', { class: 'team-stats' },
         el('span', { class: 'meta' }, `${open} open`),
         el('span', { class: 'meta' }, `Done ${done.week} this week · ${done.month} this month`),

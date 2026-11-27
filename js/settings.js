@@ -56,9 +56,9 @@ function account(close) {
   return section('Account', el('div', { class: 'settings-row' },
     el('div', {},
       el('div', {}, local ? `Local mode · viewing as ${realName(state.me)} (${ROLE_LABEL[state.role]})` : (Auth.user?.email ?? '')),
-      el('div', { class: 'settings-row-sub' }, local
-        ? 'No accounts here: everything is saved in this browser only, never the live data. "View as" in the strip under the header switches between an invented lead, designer, contributor and manager, to check their screens. Open the app with ?local=0 to use the live data.'
-        : `${ROLE_LABEL[Auth.role] ?? 'Not listed'}${Auth.isMaster ? ' · admin (may change the accounts)' : ''}`)),
+      // Live, the address alone: a person's role is shown only on an admin's
+      // accounts pages (owner, 2026-11-27). Local mode's invented people keep theirs.
+      local ? el('div', { class: 'settings-row-sub' }, 'No accounts here: everything is saved in this browser only, never the live data. "View as" in the strip under the header switches between an invented lead, designer, contributor and manager, to check their screens. Open the app with ?local=0 to use the live data.') : null),
     // Signed in through the hub, Password and Sign out are the hub's.
     local ? null : el('div', { class: 'row' },
       btn('Password', () => { close(null); if (Auth.viaHub) Auth.hub.openPassword(); else openPasswordDialog(); }, { cls: 'sm' }),

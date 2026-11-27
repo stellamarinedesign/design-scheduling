@@ -148,8 +148,9 @@ let lastPath = null;
 /** A role with no page here (every role has the Log, so this is a fallback only). */
 function comingSoon(root) {
   root.append(el('div', { class: 'view-inner' }, el('div', { class: 'state-msg' },
-    el('h1', { class: 'h1' }, `Signed in as ${ROLE_LABEL[state.role] ?? state.role}`),
-    el('p', {}, 'Nothing here is for your account. The Log is under Log.'))));
+    // No role named: a person's role is shown only on an admin's accounts pages.
+    el('h1', { class: 'h1' }, 'Nothing here for your account'),
+    el('p', {}, 'The Log is under Log.'))));
 }
 
 function drawView() {
