@@ -324,13 +324,20 @@ async function boot() {
     if (mode === 'firebase' && !email) {
       // No user (hub-bridge.js noUserAction): reload if the page had started
       // (the session went while it was open, and the reload asks the hub
-      // again); nothing if the hub's full-screen card is up; else the form.
-      const { noUserAction } = await import('./hub-bridge.js');
-      const act = noUserAction({ started: state.started, hubState: Auth.hubState });
+      // again); nothing if the hub's full-screen card is up; the app's copy
+      // of its "cannot be reached" card if it could not draw one; the old
+      // form only off the live site.
+      const { noUserAction, HUB_SITE } = await import('./hub-bridge.js');
+      const act = noUserAction({
+        started: state.started, hubState: Auth.hubState,
+        onSite: location.hostname === HUB_SITE, hubCard: Boolean(document.querySelector('.shub-screen')),
+      });
       if (act === 'reload') { location.reload(); return; }
       bootDone();
       if (act === 'nothing') return;
-      (await import('./views/signin.js')).renderSignIn(document.getElementById('app'));
+      const view = await import('./views/signin.js');
+      if (act === 'cannot') view.renderCannotReach(document.getElementById('app'));
+      else view.renderSignIn(document.getElementById('app'));
       return;
     }
     if (mode === 'firebase' && email && !state.started) await start().catch(couldNotStart);

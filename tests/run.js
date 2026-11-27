@@ -19,7 +19,6 @@ import * as RG from '../js/register.js';
 import * as PX from '../js/import/progress.js';
 import * as QT from '../js/quote.js';
 import * as HB from '../js/hub-bridge.js';
-import { friendlyAuthError } from '../js/auth.js';
 import * as SC from '../js/saved-copy.js';
 import * as HC from '../js/hub-card.js';
 import * as FF from '../js/folder-files.js';
@@ -2016,30 +2015,21 @@ export async function run() {
 
   // -------------------------------------------------------------------------
   group = 'hub (Hubinator)';
-  test("no user: reload once started, nothing behind the hub's card, else the own form", () => {
-    expect(HB.noUserAction({ started: true, hubState: 'in' }), 'reload');
-    expect(HB.noUserAction({ started: true, hubState: null }), 'reload', 'started, with no hub too');
-    expect(HB.noUserAction({ started: false, hubState: 'none' }), 'nothing');
-    expect(HB.noUserAction({ started: false, hubState: 'broken' }), 'nothing');
-    expect(HB.noUserAction({ started: false, hubState: 'unreachable' }), 'signin');
-    expect(HB.noUserAction({ started: false, hubState: null }), 'signin', 'no hub file');
+  test("no user on the live site: reload once started, nothing behind the hub's card, else the app's copy of it; never the form", () => {
+    const on = { onSite: true };
+    expect(HB.noUserAction({ ...on, started: true, hubState: 'in' }), 'reload');
+    expect(HB.noUserAction({ ...on, started: true, hubState: null }), 'reload', 'started, with no hub too');
+    expect(HB.noUserAction({ ...on, started: false, hubState: 'none', hubCard: true }), 'nothing');
+    expect(HB.noUserAction({ ...on, started: false, hubState: 'broken', hubCard: true }), 'nothing');
+    expect(HB.noUserAction({ ...on, started: false, hubState: 'unreachable', hubCard: true }), 'nothing', "the hub's own card is up");
+    expect(HB.noUserAction({ ...on, started: false, hubState: 'unreachable', hubCard: false }), 'cannot', "unreachable, and the card's own code did not load");
+    expect(HB.noUserAction({ ...on, started: false, hubState: null }), 'cannot', 'no hub file, or connect threw');
+    for (const s of ['in', 'legacy']) expect(HB.noUserAction({ ...on, started: false, hubState: s }), 'cannot', `${s} with no user`);
   });
-  test("the own form says why it is there only when the hub did not answer, on the live site", () => {
-    const live = HB.HUB_SITE;
-    expect(HB.hubSilent({ mode: 'firebase', hubState: 'unreachable', host: live }), true, 'unreachable');
-    expect(HB.hubSilent({ mode: 'firebase', hubState: null, host: live }), true, 'no hub file');
-    for (const s of ['in', 'legacy', 'none', 'broken']) expect(HB.hubSilent({ mode: 'firebase', hubState: s, host: live }), false, s);
-    expect(HB.hubSilent({ mode: 'firebase', hubState: null, host: 'localhost' }), false, 'no hub file off the live site');
-    expect(HB.hubSilent({ mode: 'local', hubState: null, host: live }), false, 'local mode');
-    expect(HB.hubSilent({ mode: 'local', hubState: 'unreachable', host: live }), false, 'local mode, whatever the hub said');
-  });
-  test('a refused password says what is true only while the hub is silent', () => {
-    for (const code of ['auth/invalid-credential', 'auth/wrong-password', 'auth/user-not-found']) {
-      expect(friendlyAuthError({ code }), 'Wrong email or password.', code);
-      expect(friendlyAuthError({ code }, { hubSilent: true }), HB.SILENT_REFUSED, `${code}, hub silent`);
-    }
-    expect(friendlyAuthError({ code: 'auth/too-many-requests' }, { hubSilent: true }), 'Too many attempts — wait a minute and try again.', 'other words unchanged');
-    expect(friendlyAuthError({ code: 'auth/network-request-failed' }, { hubSilent: true }), 'No connection to Firebase. Check the network.');
+  test('off the live site there is never a hub: the old form, for building and testing', () => {
+    expect(HB.noUserAction({ onSite: false, started: false, hubState: null }), 'signin');
+    expect(HB.noUserAction({ onSite: false, started: true, hubState: null }), 'reload');
+    expect(HB.CANNOT_REACH, { title: 'The hub cannot be reached', say: 'Check the connection, then try again.', act: 'Try again' }, "the hub's card's words");
   });
   test("connect options call the app's own Firebase auth", () => {
     const calls = [];
@@ -2056,7 +2046,8 @@ export async function run() {
     o.signIn({ token: 'tok' });
     o.signOut();
     expect(calls, [['password', true, 'a@example.test', 'pw'], ['token', true, 'tok'], ['out', true]]);
-    expect(o.legacy(), undefined, 'legacy draws nothing itself');
+    expect('legacy' in o, false, "no legacy: the hub draws its own card when it cannot be reached");
+    expect(o.strict, undefined, 'not strict until the clean-up release');
     expect(HB.connectOptions({ fb: { fa, auth: { currentUser: null } }, projectId: 'p' }).session(), null, 'no session');
   });
   test('the hub changing in another tab: reload unless it is the same person, never on a device it left alone', () => {

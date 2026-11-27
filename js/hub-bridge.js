@@ -8,11 +8,16 @@
 // the comment at the top of that file, in the Stella-Hubinator repo; it is
 // never copied here.
 //
-// FAIL OPEN. The file lives at the site root, so its address only resolves
-// on the live site. Anywhere else (a worktree on localhost, the tests page),
-// or when it is slow or broken, loadHub returns null and the app signs in
-// exactly as it did before the hub. Local mode never gets this far
-// (auth.js returns before the Firebase branch).
+// A DEVICE ALREADY SIGNED IN CARRIES ON. The file lives at the site root, so
+// its address only resolves on the live site. When it is slow or broken,
+// loadHub returns null and a device with a session of its own here starts as
+// before. A device with none meets the hub's "cannot be reached" card, or the
+// app's own copy of it (noUserAction), never the app's old sign-in form
+// (2026-11-27): a linked login has no password of its own here, and an
+// unlinked one links through the hub. Off the live site (a worktree on
+// localhost) there is never a hub, and the old form stays, for building and
+// testing only. Local mode never gets this far (auth.js returns before the
+// Firebase branch).
 //
 // The decisions are small pure functions so the tests can reach them with a
 // stand-in Hub and a stand-in Firebase auth; nothing here imports the store
@@ -75,8 +80,10 @@ export function firstUser(fa, auth) {
  * ("No access to Design Scheduling", "Link your Design Scheduling login").
  * `signIn` takes a token as well as a password: nothing sends one today, it
  * is the seam a token service could use later with no app release.
- * `legacy` does nothing: with no user, the app's own listener draws the old
- * form (app.js boot).
+ * No `legacy` (2026-11-27): when the hub cannot be reached it draws its own
+ * card, with Try again, rather than handing back to the app's old form.
+ * Not `strict` either: that would also sign out every device that has never
+ * met the hub, which waits for the clean-up release.
  */
 export function connectOptions({ fb, projectId, title = 'Design Scheduling' }) {
   return {
@@ -87,50 +94,38 @@ export function connectOptions({ fb, projectId, title = 'Design Scheduling' }) {
       ? fb.fa.signInWithCustomToken(fb.auth, token)
       : fb.fa.signInWithEmailAndPassword(fb.auth, email, password)),
     signOut: () => fb.fa.signOut(fb.auth),
-    legacy: () => {},
   };
 }
+
+/** The live site, where the hub's file is. Anywhere else there is never a hub. */
+export const HUB_SITE = 'stellamarinedesign.github.io';
+
+/** The hub's own words on its "cannot be reached" card, which the app's copy repeats. */
+export const CANNOT_REACH = {
+  title: 'The hub cannot be reached',
+  say: 'Check the connection, then try again.',
+  act: 'Try again',
+};
 
 /**
  * Firebase reports no user: what the page does.
  *   reload   it had started: the session went while the page was open (a
  *            login just linked, or given a new key); a reload asks the hub again
- *   nothing  the hub has drawn its full-screen card (no access, or a key it
- *            could not mend); the app draws nothing behind it
- *   signin   no hub file, or the hub could not be reached: the app's own form
+ *   nothing  the hub has drawn its full-screen card (no access, a key it
+ *            could not mend, or it cannot be reached); the app draws nothing
+ *            behind it. `hubCard`: one of the hub's screens is on the page.
+ *   cannot   the hub could not be reached and could not say so itself (its
+ *            file did not load, connect threw, or its card's own code did
+ *            not): the app's own copy of that card
+ *   signin   off the live site (`onSite` false) with no hub, as there never
+ *            is one there: the app's old form, for building and testing only
  */
-export function noUserAction({ started, hubState }) {
+export function noUserAction({ started, hubState, onSite = false, hubCard = false }) {
   if (started) return 'reload';
   if (hubState === 'none' || hubState === 'broken') return 'nothing';
-  return 'signin';
-}
-
-/**
- * THE APP'S OWN FORM WHILE THE HUB IS SILENT (2026-11-27, from Hubinator's
- * brief FALLBACK_FORM_WORDS). The form shows when the hub did not answer: no
- * hub file in time, or connect said `unreachable`. A login already linked has
- * no password of its own here any more (linking swapped it for the hub's
- * key, which nobody knows), so its person can only type their Hubinator
- * password, and "Wrong email or password" would be untrue and give them
- * nothing to do; a few tries more and Firebase's "Too many attempts" can
- * refuse the hub's own key for a while once it is back. So the form says why
- * it is there, and a refused password says what is true.
- *
- * The live site only: anywhere else (localhost, a worktree, the tests page)
- * there is never a hub file, so its absence says nothing about the hub. Local
- * mode never shows the form. `in` and `legacy` come with a user; `none` and
- * `broken` draw the hub's own card instead. The form itself goes at the
- * clean-up release (`strict: true`), with the hub's own card in its place.
- */
-export const HUB_SITE = 'stellamarinedesign.github.io';
-export const SILENT_LINE = "Hubinator isn't answering, so this is Design Scheduling's own sign-in. A Hubinator password won't work here.";
-export const SILENT_REFUSED = "That password doesn't sign in here. If it's your Hubinator password, try Hubinator again in a minute.";
-
-/** Is the app's own form up because the hub did not answer? */
-export function hubSilent({ mode, hubState, host }) {
-  if (mode !== 'firebase') return false;
-  if (hubState === 'unreachable') return true;
-  return hubState == null && host === HUB_SITE;
+  if (hubState === 'unreachable' && hubCard) return 'nothing';
+  if (!onSite && hubState == null) return 'signin';
+  return 'cannot';
 }
 
 /**

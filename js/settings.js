@@ -345,7 +345,7 @@ async function accounts(host, markClean) {
   host.append(card);
   const access = normaliseAccess(await Store.loadAccess());
   card.textContent = '';
-  card.append(el('div', { class: 'settings-row-sub' }, 'Roles and new people are set in Hubinator, under ',
+  card.append(el('div', { class: 'settings-row-sub' }, 'Roles and new people are set in the hub, under ',
     el('a', { href: HUB_ACCOUNTS, target: '_blank', rel: 'noopener' }, 'Accounts'), '.'));
   const table = el('div', { class: 'acct-table' });
   for (const r of accountRows(access)) {
